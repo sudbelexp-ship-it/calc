@@ -25,14 +25,14 @@
   --line: #2b2c39; --line-strong: #3a3b4b;
   --accent: #7d74f2; --accent-ink: #ffffff; --accent-text: #b7b2ff; --accent-soft: #262448;
   --hero: #4a40c9; --hero-ink: #ffffff;
-  --ok: #5fd39a; --ok-soft: #15301f; --warn: #f0b35a; --warn-soft: #2f2615; --bad: #ff8a99; --bad-soft: #3a1820;
+  --ok: #5fd39a; --ok-soft: #15301f; --warn: #f0b35a; --warn-soft: #2f2615; --bad: #ff8a99; --bad-soft: #3a1820; --paper: #1b1c25;
   color-scheme: dark; } }
 :root[data-theme="dark"] {
   --bg: #121319; --surface: #1b1c25; --sunk: #23242f; --ink: #e8e8f2; --muted: #a0a0b8; --faint: #71718a;
   --line: #2b2c39; --line-strong: #3a3b4b;
   --accent: #7d74f2; --accent-ink: #ffffff; --accent-text: #b7b2ff; --accent-soft: #262448;
   --hero: #4a40c9; --hero-ink: #ffffff;
-  --ok: #5fd39a; --ok-soft: #15301f; --warn: #f0b35a; --warn-soft: #2f2615; --bad: #ff8a99; --bad-soft: #3a1820;
+  --ok: #5fd39a; --ok-soft: #15301f; --warn: #f0b35a; --warn-soft: #2f2615; --bad: #ff8a99; --bad-soft: #3a1820; --paper: #1b1c25;
   color-scheme: dark; }
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
@@ -67,6 +67,12 @@ header.top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; b
 .brand .home .logo { width: 30px; height: 19px; flex: none; }
 .brand .home:hover { color: var(--accent-text); }
 .brand b { display: block; font-size: 1.15rem; font-weight: 600; letter-spacing: -.02em; }
+.iconbtn { width: 36px; height: 34px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+.iconbtn svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* in the night mode the button shows the sun (switch to day), in the day mode — the moon */
+.ico-sun { display: none; }
+:root[data-theme="dark"] .ico-sun { display: block; }
+:root[data-theme="dark"] .ico-moon { display: none; }
 .pills { display: flex; gap: 6px; flex-wrap: wrap; margin-right: 8px; }
 .pill { font-size: .72rem; color: var(--muted); background: var(--sunk); border-radius: 999px; padding: 4px 10px; white-space: nowrap; }
 .menu { position: relative; }
@@ -131,12 +137,11 @@ main { flex: 1; display: grid; grid-template-columns: 250px minmax(0, 1fr) 340px
 .seg button:hover:not(:disabled) { background: none; color: var(--ink); }
 .seg button.on, .seg button.on:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); }
 .plots { flex: 1; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-/* графики всегда на светлом «листе» — как в отчёте */
 .plotbox { position: relative; flex: 3; min-height: 160px; background: var(--paper); border-radius: 16px; overflow: hidden; }
 .plotbox.spec { flex: 2; min-height: 120px; }
 .plotbox canvas { position: absolute; inset: 0; display: block; cursor: crosshair; }
-.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: #6c6c86; padding: 20px; pointer-events: none; }
-.empty b { color: #18182a; font-weight: 600; }
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); padding: 20px; pointer-events: none; }
+.empty b { color: var(--ink); font-weight: 600; }
 
 /* правая панель */
 .res { padding: 4px 6px 10px; display: flex; flex-direction: column; gap: 10px; }
@@ -257,6 +262,10 @@ kbd { border-radius: 6px; padding: 1px 6px; font-size: .74rem; background: var(-
     </div>
   </div>
   <span class="grow"></span>
+  <button id="btnTheme" class="iconbtn" title="Дневной / ночной режим">
+    <svg class="ico-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/></svg>
+    <svg class="ico-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></svg>
+  </button>
   <button id="btnHelp">Справка</button>
   <input type="file" id="inFiles" accept=".wav,audio/wav,audio/x-wav" multiple hidden>
   <input type="file" id="inDir" webkitdirectory multiple hidden>
@@ -879,6 +888,21 @@ const PlotLib = (() => {
   const FAMILY = '"Golos Text", system-ui, "Segoe UI", Arial, sans-serif';
   const FONT = '11px ' + FAMILY;
 
+  // Night palette lifts every line/marker colour so it stays readable on the dark plot field.
+  const THEMES = {
+    light: { bg: '#ffffff', grid: '#e5e7eb', text: '#374151', ink: '#111111', frame: '#9ca3af', zero: '#111111',
+      labelBg: 'rgba(255,255,255,.88)', hover: 'rgba(17,24,39,.35)', fillInk: '#ffffff', map: {} },
+    dark: { bg: '#1b1c25', grid: '#2b2c39', text: '#a0a0b8', ink: '#e8e8f2', frame: '#3a3b4b', zero: '#8a8aa0',
+      labelBg: 'rgba(27,28,37,.9)', hover: 'rgba(232,232,242,.35)', fillInk: '#121319', map: {
+        '#d62728': '#ff6b6b', '#1f4fd8': '#7aa2ff', '#2e7d32': '#66d17a', '#7c3aed': '#b794ff', '#ea580c': '#ff9147',
+        '#0891b2': '#4fd1ea', '#111827': '#f4f4fa', '#6b7280': '#9a9ab0', '#db2777': '#ff7ab6', '#64748b': '#a8b3c7',
+        '#d97706': '#ffb340', '#9ca3af': '#8a8aa0', '#0f766e': '#3fd1bd', '#92400e': '#e0a266', '#4338ca': '#9c93ff',
+        '#475569': '#a8b3c7', '#8c564b': '#c9a39b', '#7f7f7f': '#b5b5b5', '#9467bd': '#bfa2e6',
+        'rgba(37,99,235,.06)': 'rgba(125,116,242,.12)', 'rgba(245,158,11,.13)': 'rgba(245,158,11,.18)', 'rgba(17,24,39,.10)': 'rgba(255,255,255,.10)' } },
+  };
+  let current = THEMES.light;
+  const setTheme = name => { current = THEMES[name] || THEMES.light; };
+
   function niceStep(range, n) {
     const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
     return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
@@ -911,14 +935,15 @@ const PlotLib = (() => {
     return [lo - pad, hi + pad];
   }
 
-  function draw(ctx, W, H, d, view, hover) {
+  function draw(ctx, W, H, d, view, hover, T = current) {
+    const c = v => (v && T.map[v.toLowerCase()]) || v;
     const hasY2 = d.series.some(s => s.axis === 'y2');
     const R = { l: 72, r: W - (hasY2 ? 64 : 16), t: d.title ? 28 : 12, b: H - 40 };
     ctx.save();
-    ctx.fillStyle = '#fff';
+    ctx.fillStyle = T.bg;
     ctx.fillRect(0, 0, W, H);
     if (d.title) {
-      ctx.fillStyle = '#111'; ctx.font = '600 13px ' + FAMILY; ctx.textAlign = 'center';
+      ctx.fillStyle = T.ink; ctx.font = '600 13px ' + FAMILY; ctx.textAlign = 'center';
       ctx.fillText(d.title, (R.l + R.r) / 2, 17);
     }
     const [x1, x2] = view;
@@ -930,18 +955,18 @@ const PlotLib = (() => {
 
     const tx = ticks(x1, x2, Math.max(3, Math.round((R.r - R.l) / 90)));
     const ty = ticks(yr[0], yr[1], Math.max(3, Math.round((R.b - R.t) / 38)));
-    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+    ctx.strokeStyle = T.grid; ctx.lineWidth = 1;
     ctx.beginPath();
     for (const v of tx.out) { const px = Math.round(X(v)) + 0.5; ctx.moveTo(px, R.t); ctx.lineTo(px, R.b); }
     for (const v of ty.out) { const py = Math.round(Y(v)) + 0.5; ctx.moveTo(R.l, py); ctx.lineTo(R.r, py); }
     ctx.stroke();
 
     for (const b of d.bands || []) {
-      const a = Math.max(R.l, X(b.x1)), c = Math.min(R.r, X(b.x2));
-      if (c > a) { ctx.fillStyle = b.color; ctx.fillRect(a, R.t, c - a, R.b - R.t); }
+      const a = Math.max(R.l, X(b.x1)), e = Math.min(R.r, X(b.x2));
+      if (e > a) { ctx.fillStyle = c(b.color); ctx.fillRect(a, R.t, e - a, R.b - R.t); }
     }
 
-    ctx.fillStyle = '#374151'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    ctx.fillStyle = T.text; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     for (const v of tx.out) ctx.fillText(label(v, tx.st), X(v), R.b + 5);
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
     for (const v of ty.out) ctx.fillText(label(v, ty.st), R.l - 6, Y(v));
@@ -950,24 +975,24 @@ const PlotLib = (() => {
       ctx.textAlign = 'left';
       for (const v of t2.out) ctx.fillText(label(v, t2.st), R.r + 6, Y(v, yr2));
     }
-    ctx.strokeStyle = '#9ca3af';
+    ctx.strokeStyle = T.frame;
     ctx.strokeRect(R.l + 0.5, R.t + 0.5, R.r - R.l, R.b - R.t);
 
-    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#111';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = T.ink;
     ctx.font = '12px ' + FAMILY;
     if (d.xLabel) ctx.fillText(d.xLabel, (R.l + R.r) / 2, H - 6);
-    if (d.yLabel) { ctx.save(); ctx.translate(14, (R.t + R.b) / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = d.yColor || '#111'; ctx.fillText(d.yLabel, 0, 0); ctx.restore(); }
-    if (d.y2Label && yr2) { ctx.save(); ctx.translate(W - 10, (R.t + R.b) / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = d.y2Color || '#111'; ctx.fillText(d.y2Label, 0, 0); ctx.restore(); }
+    if (d.yLabel) { ctx.save(); ctx.translate(14, (R.t + R.b) / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = c(d.yColor) || T.ink; ctx.fillText(d.yLabel, 0, 0); ctx.restore(); }
+    if (d.y2Label && yr2) { ctx.save(); ctx.translate(W - 10, (R.t + R.b) / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = c(d.y2Color) || T.ink; ctx.fillText(d.y2Label, 0, 0); ctx.restore(); }
 
     ctx.save();
     ctx.beginPath(); ctx.rect(R.l, R.t, R.r - R.l, R.b - R.t); ctx.clip();
     if (yr[0] < 0 && yr[1] > 0) {
-      ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.beginPath();
+      ctx.strokeStyle = T.zero; ctx.lineWidth = 1; ctx.beginPath();
       const py = Math.round(Y(0)) + 0.5; ctx.moveTo(R.l, py); ctx.lineTo(R.r, py); ctx.stroke();
     }
     for (const s of d.series) {
       const r = s.axis === 'y2' ? yr2 : yr;
-      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.5; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.strokeStyle = c(s.color); ctx.lineWidth = s.width || 1.5; ctx.globalAlpha = s.alpha ?? 1;
       ctx.setLineDash(s.dash || []);
       ctx.beginPath();
       let started = false;
@@ -987,7 +1012,7 @@ const PlotLib = (() => {
     for (const m of marks) {
       const px = X(m.x);
       if (px < R.l - 1 || px > R.r + 1) continue;
-      ctx.strokeStyle = m.color; ctx.lineWidth = m.width || 1.5; ctx.setLineDash(m.dash || []);
+      ctx.strokeStyle = c(m.color); ctx.lineWidth = m.width || 1.5; ctx.setLineDash(m.dash || []);
       ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, R.t); ctx.lineTo(Math.round(px) + 0.5, R.b); ctx.stroke();
       ctx.setLineDash([]);
       if (m.label) {
@@ -999,26 +1024,26 @@ const PlotLib = (() => {
         while (rows[row] != null && rows[row] > lx - 2) row++;
         rows[row] = lx + w;
         const ly = R.t + 3 + row * 17;
-        ctx.fillStyle = m.fill || 'rgba(255,255,255,.88)';
+        ctx.fillStyle = m.fill ? c(m.fill) : T.labelBg;
         ctx.fillRect(lx, ly, w, 15);
-        ctx.fillStyle = m.textColor || m.color;
+        ctx.fillStyle = m.fill ? T.fillInk : c(m.textColor || m.color);
         ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         ctx.fillText(m.label, lx + 4, ly + 8);
       }
     }
     for (const p of d.points || []) {
       const px = X(p.x), py = Y(p.y, p.axis === 'y2' ? yr2 : yr);
-      ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = c(p.color); ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
       if (p.label) {
         ctx.font = FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
         const w = ctx.measureText(p.label).width + 8;
         let lx = px + 7; if (lx + w > R.r) lx = px - 7 - w;
-        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(lx, py - 18, w, 15);
-        ctx.fillStyle = '#111'; ctx.fillText(p.label, lx + 4, py - 10);
+        ctx.fillStyle = T.labelBg; ctx.fillRect(lx, py - 18, w, 15);
+        ctx.fillStyle = T.ink; ctx.fillText(p.label, lx + 4, py - 10);
       }
     }
     if (hover != null && hover >= x1 && hover <= x2) {
-      ctx.strokeStyle = 'rgba(17,24,39,.35)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.strokeStyle = T.hover; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(Math.round(X(hover)) + 0.5, R.t); ctx.lineTo(Math.round(X(hover)) + 0.5, R.b); ctx.stroke();
     }
     ctx.restore();
@@ -1119,11 +1144,12 @@ const PlotLib = (() => {
     c.width = W * k; c.height = H * k;
     const ctx = c.getContext('2d');
     ctx.setTransform(k, 0, 0, k, 0, 0);
-    draw(ctx, W, H, Object.assign({ series: [], markers: [], bands: [], points: [] }, d), view || d.xRange, null);
+    // report figures are always light, whatever the screen theme
+    draw(ctx, W, H, Object.assign({ series: [], markers: [], bands: [], points: [] }, d), view || d.xRange, null, THEMES.light);
     return c.toDataURL('image/png');
   }
 
-  return { Plot, image };
+  return { Plot, image, setTheme, theme: () => current };
 })();
 </script>
 
@@ -1910,23 +1936,24 @@ const PlotLib = (() => {
     cv.width = r.width * dpr; cv.height = r.height * dpr; cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, r.width, r.height);
+    const th = PlotLib.theme();
+    ctx.fillStyle = th.bg; ctx.fillRect(0, 0, r.width, r.height);
     const vals = state.piles.map(finalOf).filter(f => f && f.elr != null).map(f => f.elr);
-    ctx.font = '12px "Golos Text", system-ui, "Segoe UI", Arial'; ctx.fillStyle = '#111';
+    ctx.font = '12px "Golos Text", system-ui, "Segoe UI", Arial'; ctx.fillStyle = th.ink;
     ctx.fillText('Гистограмма ELR, % (ГОСТ Р 72171, Б.3): сваи вне ±10 % — на дополнительный анализ', 12, 18);
-    if (!vals.length) { ctx.fillStyle = '#6b7280'; ctx.fillText('Нет данных: задайте проектную длину и выполните анализ.', 12, 44); return; }
+    if (!vals.length) { ctx.fillStyle = th.text; ctx.fillText('Нет данных: задайте проектную длину и выполните анализ.', 12, 44); return; }
     const edges = []; for (let e = -30; e <= 30; e += 5) edges.push(e);
     const counts = new Array(edges.length + 1).fill(0);
     for (const v of vals) { let k = edges.findIndex(e => v < e); if (k < 0) k = edges.length; counts[k]++; }
     const L = 40, Rr = r.width - 14, T = 30, B = r.height - 26, n = counts.length, bw = (Rr - L) / n, mx = Math.max(...counts);
-    ctx.strokeStyle = '#9ca3af'; ctx.strokeRect(L, T, Rr - L, B - T);
+    ctx.strokeStyle = th.frame; ctx.strokeRect(L, T, Rr - L, B - T);
     for (let k = 0; k < n; k++) {
       const lo = k === 0 ? null : edges[k - 1], hi = k === edges.length ? null : edges[k];
       const ok = lo != null && hi != null && lo >= -10 && hi <= 10;
       const h = counts[k] / mx * (B - T - 6);
       ctx.fillStyle = ok ? '#60a5fa' : '#f59e0b';
       ctx.fillRect(L + k * bw + 2, B - h, bw - 4, h);
-      ctx.fillStyle = '#374151'; ctx.textAlign = 'center';
+      ctx.fillStyle = th.text; ctx.textAlign = 'center';
       if (counts[k]) ctx.fillText(counts[k], L + k * bw + bw / 2, B - h - 4);
       ctx.fillText(lo == null ? `<${hi}` : hi == null ? `>${lo}` : `${lo}…${hi}`, L + k * bw + bw / 2, B + 15);
     }
@@ -2469,6 +2496,22 @@ const PlotLib = (() => {
   }
 
   window.addEventListener('resize', () => { if (state.tab === 'table') drawHist(); });
+
+  // ---------------- day / night ----------------
+  // an explicit choice is remembered; without it the system setting is followed
+  const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
+  const themeNow = () => store.get('theme', null) || (darkQuery && darkQuery.matches ? 'dark' : 'light');
+  function applyTheme(redraw) {
+    const t = themeNow();
+    document.documentElement.dataset.theme = t;
+    PlotLib.setTheme(t);
+    $('btnTheme').title = t === 'dark' ? 'Дневной режим' : 'Ночной режим';
+    if (redraw) { renderSignal(true); renderSpectrum(true); if (state.tab === 'table') drawHist(); }
+  }
+  $('btnTheme').addEventListener('click', () => { store.set('theme', themeNow() === 'dark' ? 'light' : 'dark'); applyTheme(true); });
+  if (darkQuery && darkQuery.addEventListener) darkQuery.addEventListener('change', () => { if (!store.get('theme', null)) applyTheme(true); });
+  applyTheme(false);
+
   syncControls();
   renderAll(true);
 })();
