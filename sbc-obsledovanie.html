@@ -1,0 +1,870 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Калькулятор СБЦП 81-2001-25</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: слева белые карточки (плитки работ → панель настроек → здание → условия), справа липкая индиго-карточка итога */
+:root{
+  --bg:#f0f0f6; --surface:#ffffff; --sunk:#f5f5fa; --ink:#18182a; --muted:#6c6c86; --faint:#9a9ab0; --line:#e6e6ef; --line-strong:#d3d3e0;
+  --accent:#5146d6; --accent-ink:#ffffff; --accent-text:#3a31a8; --accent-soft:#f1f0ff;
+  --hero:#5146d6; --hero-ink:#ffffff; --warn:#9a5a00; --warn-soft:#fdf2e1;
+  --f-ui:"Golos Text",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-num:"JetBrains Mono",ui-monospace,"SFMono-Regular",Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#121319; --surface:#1b1c25; --sunk:#23242f; --ink:#e8e8f2; --muted:#a0a0b8; --faint:#71718a; --line:#2b2c39; --line-strong:#3a3b4b;
+  --accent:#7d74f2; --accent-ink:#ffffff; --accent-text:#b7b2ff; --accent-soft:#262448;
+  --hero:#4a40c9; --hero-ink:#ffffff; --warn:#f0b35a; --warn-soft:#2f2615; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#121319; --surface:#1b1c25; --sunk:#23242f; --ink:#e8e8f2; --muted:#a0a0b8; --faint:#71718a; --line:#2b2c39; --line-strong:#3a3b4b;
+  --accent:#7d74f2; --accent-ink:#ffffff; --accent-text:#b7b2ff; --accent-soft:#262448;
+  --hero:#4a40c9; --hero-ink:#ffffff; --warn:#f0b35a; --warn-soft:#2f2615; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{background:var(--bg);color:var(--ink);font-family:var(--f-ui);font-size:15px;line-height:1.45;margin:0;padding-inline:16px;padding-block:28px 100px;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1160px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px 20px}
+.top h1{font-size:clamp(1.35rem,2.4vw,1.75rem);font-weight:600;letter-spacing:-.02em;margin:0;text-wrap:balance}
+.top p{margin:4px 0 0;color:var(--muted);font-size:.9rem}
+.pills{display:flex;flex-wrap:wrap;gap:6px}
+.pill{font-size:.76rem;color:var(--muted);background:var(--surface);border-radius:999px;padding:5px 11px;white-space:nowrap}
+.pill b{font-weight:500;color:var(--ink);font-family:var(--f-num)}
+
+.grid{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:16px;align-items:start}
+@media (max-width:940px){.grid{grid-template-columns:minmax(0,1fr)}}
+form{display:flex;flex-direction:column;gap:16px;margin:0;min-width:0}
+.card{background:var(--surface);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:16px;min-width:0}
+.card-h{font-size:1rem;font-weight:600;margin:0}
+.lbl{font-size:.78rem;color:var(--muted)}
+.hint{font-size:.8rem;color:var(--muted);margin:0}
+
+/* плитки */
+.tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+@media (max-width:620px){.tiles{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.tile{font:inherit;color:var(--ink);text-align:left;cursor:pointer;border:1.5px solid var(--line);background:var(--surface);border-radius:16px;padding:12px;display:flex;flex-direction:column;gap:4px;min-height:92px;transition:border-color .15s,background .15s,box-shadow .15s}
+.tile svg{width:22px;height:22px;stroke:var(--faint);fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;margin-bottom:auto}
+.tile b{font-size:.95rem;font-weight:500;margin-top:8px}
+.tile small{font-size:.78rem;color:var(--muted)}
+.tile:hover{border-color:var(--line-strong)}
+.tile.on{border-color:var(--accent);background:var(--accent-soft)}
+.tile.on svg{stroke:var(--accent)}
+.tile.sel{box-shadow:0 0 0 1.5px var(--accent);border-width:1.5px}
+.tile:not(.on).sel{box-shadow:0 0 0 1.5px var(--line-strong)}
+.tile:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+/* панель настроек */
+.panel{background:var(--sunk);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.ph{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px}
+.ph h3{font-size:.98rem;font-weight:600;margin:0}
+.pbody{display:flex;flex-direction:column;gap:14px}
+.off .pbody{opacity:.45;pointer-events:none}
+
+/* сегменты */
+.seg{display:inline-flex;gap:2px;background:var(--surface);border-radius:11px;padding:3px;max-width:100%;flex-wrap:wrap}
+.seg label{position:relative;cursor:pointer}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg span{display:block;padding:6px 14px;border-radius:8px;font-size:.86rem;color:var(--muted);transition:background .15s,color .15s;white-space:nowrap;text-align:center}
+.seg label:hover span{color:var(--ink)}
+.seg input:checked+span{background:var(--accent);color:var(--accent-ink)}
+.seg input:focus-visible+span{outline:2px solid var(--accent);outline-offset:1px}
+.seg.cat span{min-width:40px;font-family:var(--f-num);font-size:.82rem}
+.seg.soft{background:var(--sunk)}
+.seg.soft input:checked+span{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(20,20,40,.12)}
+.seg.full{display:flex;flex-wrap:nowrap}.seg.full label{flex:1 1 0;min-width:0}.seg.full span{padding:6px 8px}
+.grp>.seg:not(.full){align-self:flex-start}
+
+/* переключатель */
+.sw-row{display:flex;align-items:center;gap:12px;cursor:pointer;font-size:.9rem}
+.sw-row small{display:block;font-size:.76rem;color:var(--muted)}
+input.sw{appearance:none;-webkit-appearance:none;flex:none;width:38px;height:22px;border-radius:999px;margin:0;cursor:pointer;
+  background:radial-gradient(circle at 11px 50%,#fff 8px,transparent 8.5px),var(--line-strong);transition:background .2s}
+input.sw:checked{background:radial-gradient(circle at 27px 50%,#fff 8px,transparent 8.5px),var(--accent)}
+input.sw:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.sws{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px 20px}
+
+/* элементы табл. 8–9 */
+details.el summary{cursor:pointer;list-style:none;font-size:.88rem;color:var(--accent-text);font-weight:500;display:inline-flex;gap:6px;align-items:center}
+details.el summary::-webkit-details-marker{display:none}
+details.el summary::after{content:"";width:6px;height:6px;border-right:1.5px solid currentColor;border-bottom:1.5px solid currentColor;transform:rotate(45deg);margin-left:4px;margin-top:-3px;transition:transform .2s}
+details.el[open] summary::after{transform:rotate(-135deg);margin-top:3px}
+.elist{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:2px 12px;margin-top:10px;background:var(--surface);border-radius:12px;padding:8px}
+.elist .chk{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:5px 6px;border-radius:8px;font-size:.84rem;cursor:pointer}
+.elist .chk:hover{background:var(--sunk)}
+.elist .pct{font-family:var(--f-num);font-size:.78rem;color:var(--faint)}
+input[type=checkbox]:not(.sw){accent-color:var(--accent);width:16px;height:16px;margin:2px 0 0;flex:none;cursor:pointer}
+
+/* системы */
+#sysList{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px}
+#sysList .chk{display:flex;gap:10px;align-items:flex-start;background:var(--surface);border:1.5px solid transparent;border-radius:12px;padding:10px 12px;font-size:.88rem;cursor:pointer;transition:border-color .15s}
+#sysList .chk:has(input:checked){border-color:var(--accent)}
+#sysList small{display:block;font-family:var(--f-num);font-size:.74rem;color:var(--muted);margin-top:2px}
+
+/* поля */
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.field{display:flex;flex-direction:column;gap:4px;background:var(--sunk);border-radius:12px;padding:8px 12px;border:1.5px solid transparent;transition:border-color .15s,background .15s;min-width:0;cursor:text}
+.field:focus-within{border-color:var(--accent);background:var(--surface)}
+.field .lbl{font-size:.74rem}
+.field .row{display:flex;align-items:baseline;gap:6px}
+.field input{font-family:var(--f-num);font-size:1.05rem;color:var(--ink);background:transparent;border:0;padding:0;width:100%;min-width:0;outline:none;-moz-appearance:textfield}
+.field input::-webkit-inner-spin-button,.field input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.field input::placeholder{color:var(--faint)}
+.field input.isauto{color:var(--muted)}
+.field .lbl:has(.am){display:flex;justify-content:space-between;align-items:center;gap:4px;white-space:nowrap}
+.am{font-size:.68rem;color:var(--faint)}
+.tagbtn{font:inherit;font-size:.68rem;line-height:1.3;color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:6px;padding:1px 6px;cursor:pointer;white-space:nowrap}
+.tagbtn:focus-visible{outline:2px solid var(--accent)}
+.field em{font-style:normal;font-family:var(--f-num);font-size:.85rem;color:var(--faint)}
+select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--sunk);border:1.5px solid transparent;border-radius:12px;padding:9px 34px 9px 12px;width:100%;appearance:none;-webkit-appearance:none;cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),linear-gradient(135deg,var(--muted) 50%,transparent 50%);background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;background-size:5px 5px;background-repeat:no-repeat}
+select:focus{outline:none;border-color:var(--accent)}
+.sel-f{display:flex;flex-direction:column;gap:5px;min-width:0}
+.calcline{font-family:var(--f-num);font-size:.78rem;color:var(--muted);line-height:1.6;font-variant-numeric:tabular-nums}
+.calcline b{color:var(--ink);font-weight:500}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.cols.c3{grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+.secblk{display:flex;flex-direction:column;gap:10px}
+#secList{display:flex;flex-direction:column;gap:16px}
+#secList:empty{display:none}
+.multi .secblk{border:1.5px solid var(--line);border-radius:16px;padding:12px}
+.sech{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:.92rem}
+.secname{display:flex;align-items:baseline;gap:4px;min-width:0;flex:1}
+.secnm{font:inherit;font-size:.95rem;font-weight:600;color:var(--ink);background:transparent;border:1.5px solid transparent;border-radius:8px;padding:3px 6px;margin-left:-7px;min-width:0;width:16ch;max-width:100%;
+  background-image:linear-gradient(var(--faint),var(--faint));background-size:0 0;cursor:text;transition:border-color .15s,background-color .15s}
+.secnm::placeholder{color:var(--ink);opacity:1}
+.secnm:hover{border-color:var(--line)}
+.secnm:focus{outline:none;border-color:var(--accent);background-color:var(--surface)}
+.secname::after{content:"✎";font-size:.75rem;color:var(--faint);order:1}
+.secname .sv{order:2}
+.sech .sv{font-family:var(--f-num);font-size:.78rem;color:var(--muted);margin-left:8px;font-weight:400}
+.delsec{font:inherit;font-size:.78rem;color:var(--muted);background:transparent;border:1.5px solid var(--line);border-radius:8px;padding:3px 10px;cursor:pointer}
+.delsec:hover{color:var(--ink);border-color:var(--line-strong)}
+.addsec{font:inherit;font-size:.88rem;font-weight:500;color:var(--accent-text);background:transparent;border:1.5px dashed var(--line-strong);border-radius:12px;padding:10px;cursor:pointer;transition:border-color .15s,background .15s}
+.addsec:hover{border-color:var(--accent);background:var(--accent-soft)}
+.delsec:focus-visible,.addsec:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.grp{display:flex;flex-direction:column;gap:6px;min-width:0}
+
+/* назначение */
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px}
+.opt{position:relative;cursor:pointer}
+.opt input{position:absolute;opacity:0;pointer-events:none}
+.opt div{height:100%;background:var(--sunk);border:1.5px solid transparent;border-radius:12px;padding:10px 12px;transition:border-color .15s,background .15s}
+.opt b{display:block;font-size:.88rem;font-weight:500}
+.opt small{display:block;font-size:.75rem;color:var(--muted);margin-top:2px}
+.opt input:checked+div{border-color:var(--accent);background:var(--accent-soft)}
+.opt input:focus-visible+div{outline:2px solid var(--accent);outline-offset:2px}
+
+/* фишки условий */
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{position:relative;cursor:pointer}
+.chip input{position:absolute;opacity:0;pointer-events:none}
+.chip span{display:inline-flex;gap:6px;align-items:center;border:1.5px solid var(--line);border-radius:999px;padding:6px 12px;font-size:.83rem;color:var(--muted);transition:all .15s}
+.chip span i{font-style:normal;font-family:var(--f-num);font-size:.74rem;color:var(--faint)}
+.chip:hover span{border-color:var(--line-strong);color:var(--ink)}
+.chip input:checked+span{border-color:var(--accent);color:var(--accent-text);background:var(--accent-soft)}
+.chip input:checked+span i{color:var(--accent-text)}
+.chip input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
+
+/* испытания */
+.tbl{overflow-x:auto;background:var(--surface);border-radius:12px}
+.lab-table{width:100%;border-collapse:collapse;font-size:.85rem;min-width:540px}
+.lab-table th{font-weight:500;font-size:.72rem;color:var(--faint);text-align:left;padding:10px 12px;border-bottom:1px solid var(--line)}
+.lab-table th:nth-child(2){text-align:right}
+.lab-table td{padding:7px 12px;border-bottom:1px solid var(--line);vertical-align:middle}
+.lab-table tr:last-child td{border-bottom:none}
+.lab-table td:nth-child(3){width:118px}.lab-table td:nth-child(4){width:84px}
+.lab-table input{font-family:var(--f-num);font-size:.86rem;color:var(--ink);background:var(--sunk);border:1.5px solid transparent;border-radius:9px;padding:6px 9px;width:100%;outline:none;-moz-appearance:textfield}
+.lab-table input:focus{border-color:var(--accent);background:var(--surface)}
+.lab-table input::-webkit-inner-spin-button{-webkit-appearance:none}
+.lab-table input::placeholder{color:var(--faint)}
+.lab-table .p{font-family:var(--f-num);color:var(--muted);white-space:nowrap;text-align:right;width:120px}
+.lab-table .p b{color:var(--ink);font-weight:500}
+.lab-table .p.muted b{color:var(--faint);text-decoration:line-through}
+.lab-table .p .base{display:block;font-size:.7rem;color:var(--faint)}
+
+/* итог */
+aside{position:sticky;top:calc(env(safe-area-inset-top,0px) + 16px);display:flex;flex-direction:column;gap:14px;min-width:0}
+@media (max-width:940px){aside{position:static}}
+.hero{background:var(--hero);color:var(--hero-ink);border-radius:20px;padding:20px;display:flex;flex-direction:column;gap:14px}
+.hero .ctl{display:grid;grid-template-columns:1fr;gap:8px}
+.hero select{background-color:rgba(255,255,255,.14);color:var(--hero-ink);
+  background-image:linear-gradient(45deg,transparent 50%,#fff 50%),linear-gradient(135deg,#fff 50%,transparent 50%)}
+.hero select option{color:#18182a;background:#fff}
+.hero select:focus{border-color:rgba(255,255,255,.7)}
+.hero .seg{background:rgba(255,255,255,.14)}
+.hero .seg span{color:rgba(255,255,255,.8)}
+.hero .seg label:hover span{color:#fff}
+.hero .seg input:checked+span{background:#fff;color:var(--hero)}
+.hero .tl{font-size:.8rem;opacity:.85}
+.hero .total{font-family:var(--f-num);font-size:clamp(1.8rem,3.4vw,2.2rem);font-weight:500;letter-spacing:-.03em;line-height:1.1;font-variant-numeric:tabular-nums;margin-top:2px}
+.hero .total small{font-size:1rem;opacity:.85}
+.hero .nov{font-size:.82rem;opacity:.85}
+.hero .nov b{font-family:var(--f-num);font-weight:500}
+.hero .box{background:rgba(255,255,255,.13);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.band{position:relative;height:8px;border-radius:999px;background:rgba(255,255,255,.18)}
+.band i{position:absolute;left:12%;right:12%;top:0;bottom:0;border-radius:999px;background:rgba(255,255,255,.4)}
+.band b{position:absolute;left:50%;top:-3px;width:3px;height:14px;margin-left:-1.5px;border-radius:2px;background:#fff}
+.range{display:grid;grid-template-columns:auto 1fr;gap:3px 10px;margin:0;font-size:.8rem}
+.range dt{opacity:.85}
+.range dd{margin:0;text-align:right;font-family:var(--f-num);font-variant-numeric:tabular-nums}
+.bk{width:100%;border-collapse:collapse;font-size:.8rem;font-variant-numeric:tabular-nums}
+.bk th{font-weight:400;opacity:.7;text-align:right;font-size:.72rem;padding:0 0 6px;border-bottom:1px solid rgba(255,255,255,.2)}
+.bk th:first-child{text-align:left}
+.bk td{padding:7px 0;border-bottom:1px solid rgba(255,255,255,.14);vertical-align:top}
+.bk td.n{text-align:right;font-family:var(--f-num);white-space:nowrap;padding-left:8px}
+.bk td.n:nth-child(2){opacity:.6}
+.bk tr.sum td{font-weight:500;border-bottom:none;padding-top:10px}
+.bk tr.vat td{border-bottom:none;opacity:.8;padding-top:0}
+.bar-in{display:block;height:3px;border-radius:2px;background:rgba(255,255,255,.15);margin-top:5px;overflow:hidden;max-width:130px}
+.bar-in i{display:block;height:100%;background:#fff;border-radius:2px}
+.bysec{display:flex;flex-direction:column;gap:7px;font-size:.8rem;padding-top:2px}
+.bysec .bh{font-size:.72rem;opacity:.7}
+.bysec .br{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:baseline}
+.bysec .br span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bysec .br b{font-family:var(--f-num);font-weight:500;font-variant-numeric:tabular-nums}
+.bysec .br i{grid-column:1/-1;display:block;height:3px;border-radius:2px;background:rgba(255,255,255,.15);overflow:hidden}
+.bysec .br i u{display:block;height:100%;background:#fff;border-radius:2px;text-decoration:none}
+.bysec .br.cm span{opacity:.75}
+.btns3{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.btns3 #reset{grid-column:1/-1}
+.btns3 .btn{padding:11px 10px}
+.btn{font:inherit;font-size:.9rem;font-weight:500;border:0;border-radius:12px;padding:11px 14px;cursor:pointer;background:#fff;color:var(--hero);transition:transform .05s,filter .15s}
+.btn:hover{filter:brightness(.96)}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{background:rgba(255,255,255,.14);color:#fff}
+.btn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.toast{font-size:.78rem;margin:-4px 0 0;min-height:1em;opacity:.9}
+.side{background:var(--surface);border-radius:20px;padding:18px;display:flex;flex-direction:column;gap:10px}
+.how{font-size:.78rem;color:var(--muted);display:flex;flex-direction:column;gap:6px;font-family:var(--f-num)}
+.how div{display:flex;justify-content:space-between;gap:10px}
+.how b{color:var(--ink);font-weight:500}
+.warn{font-size:.8rem;color:var(--warn);background:var(--warn-soft);border-radius:10px;padding:8px 10px;margin:0}
+details.notes summary{cursor:pointer;list-style:none;font-size:.82rem;color:var(--muted)}
+details.notes summary::-webkit-details-marker{display:none}
+.notes-body{font-size:.78rem;color:var(--muted);display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.notes-body p{margin:0}
+
+.mbar{display:none}
+@media (max-width:940px){
+  .mbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--hero);color:var(--hero-ink);padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px));justify-content:space-between;align-items:center;gap:12px}
+  .mbar .l{font-size:.74rem;opacity:.85;display:flex;flex-direction:column}
+  .mbar .t{font-family:var(--f-num);font-size:1.15rem;opacity:1}
+  .mbar a{font-size:.85rem;font-weight:500;color:var(--hero);background:#fff;border-radius:10px;padding:8px 14px;text-decoration:none}
+}
+@media (max-width:520px){.card,.hero{padding:16px;border-radius:16px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Калькулятор СБЦП 81-2001-25</h1>
+      <p>Обмеры, обследование, инженерные системы и испытания</p>
+    </div>
+    <div class="pills"><span class="pill">Приказ Минстроя № 270/пр</span><span class="pill">База цен <b>01.01.2001</b></span></div>
+  </header>
+
+  <div class="grid">
+    <form id="f" autocomplete="off">
+      <section class="card" aria-label="Состав работ">
+        <div class="tiles" role="tablist" aria-label="Виды работ">
+          <button type="button" class="tile sel" data-p="O" role="tab" aria-selected="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15l12-12 6 6-12 12z"/><path d="M7 11l2 2M10 8l2 2M13 5l2 2"/></svg><b>Обмеры</b><small id="tsO">кат. II</small></button>
+          <button type="button" class="tile" data-p="S" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10" cy="10" r="6"/><path d="M15 15l5 5M7.5 10l2 2 3.5-3.5"/></svg><b>Обследование</b><small id="tsS">кат. II</small></button>
+          <button type="button" class="tile" data-p="Y" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 8h8a3 3 0 0 1 3 3v10M3 12h6a1 1 0 0 1 1 1v8M14 5h7M17.5 5v3"/></svg><b>Системы</b><small id="tsY">выкл.</small></button>
+          <button type="button" class="tile" data-p="L" role="tab" aria-selected="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3"/><path d="M7 15h10"/></svg><b>Испытания</b><small id="tsL">—</small></button>
+        </div>
+
+        <div class="panel" id="wbO" data-panel="O">
+          <div class="ph"><label class="sw-row"><input type="checkbox" class="sw" id="onO" checked><h3>Обмерные работы</h3></label>
+            <div class="seg cat" role="radiogroup" aria-label="Категория сложности обмеров">
+              <label><input type="radio" name="wO" value="1"><span>I</span></label>
+              <label><input type="radio" name="wO" value="2" checked><span>II</span></label>
+              <label><input type="radio" name="wO" value="3"><span>III</span></label>
+            </div></div>
+          <div class="pbody">
+            <p class="hint" id="wOHint"></p>
+            <label class="sw-row"><input type="checkbox" class="sw" id="drawings"><span>Сверка с имеющимися чертежами · К 0,75</span></label>
+            <details class="el"><summary>Элементы: <span id="shareO">100</span> %</summary><div class="elist" id="listO"></div></details>
+          </div>
+        </div>
+
+        <div class="panel" id="wbS" data-panel="S" hidden>
+          <div class="ph"><label class="sw-row"><input type="checkbox" class="sw" id="onS" checked><h3>Обследование конструкций</h3></label>
+            <div class="seg cat" role="radiogroup" aria-label="Категория сложности обследования">
+              <label><input type="radio" name="wS" value="1"><span>I</span></label>
+              <label><input type="radio" name="wS" value="2" checked><span>II</span></label>
+              <label><input type="radio" name="wS" value="3"><span>III</span></label>
+            </div></div>
+          <div class="pbody">
+            <p class="hint" id="wSHint"></p>
+            <label class="sw-row"><input type="checkbox" class="sw" id="nocalc"><span>Без поверочного расчёта · К 0,8</span></label>
+            <details class="el"><summary>Элементы: <span id="shareS">100</span> %</summary><div class="elist" id="listS"></div></details>
+          </div>
+        </div>
+
+        <div class="panel" data-panel="Y" hidden>
+          <div class="ph"><h3>Инженерные системы</h3><span class="hint">табл. 15 · отметьте нужные</span></div>
+          <div id="sysList"></div>
+          <label class="sw-row"><input type="checkbox" class="sw" id="hiddenPipe"><span>Обследование скрытой прокладки трубопроводов<small>п. 2.5.4 · К до 1,2 — только если вскрываете/обследуете скрытые участки</small></span></label>
+        </div>
+
+        <div class="panel" data-panel="L" hidden>
+          <div class="ph"><h3>Испытания и отбор проб</h3>
+            <div class="sel-f" style="min-width:180px"><select id="labH" aria-label="Высота мест испытаний"><option value="0">Высота до 3 м</option><option value="1">До 9 м</option><option value="2">До 12 м</option><option value="3">До 15 м</option><option value="4">Более 15 м</option></select></div></div>
+          <div class="tbl"><table class="lab-table" id="labTable"></table></div>
+          <label class="sw-row"><input type="checkbox" class="sw" id="fieldNK" checked><span>Полевые условия для НК<small>п. 2.2.6 · К до 1,15 к табл. 13 — доставка и подготовка приборов на объекте</small></span></label>
+          <p class="hint">«По СБЦП» — текущая цена без НДС. Заполненная своя цена заменяет справочную. Количество 0 — позиция не считается.</p>
+        </div>
+
+        <div class="secblk" id="sec1">
+          <div class="sech" id="sec1h" hidden><span class="secname"><input type="text" class="secnm" id="nm1" maxlength="60" placeholder="Секция" aria-label="Название секции (можно изменить)" title="Нажмите, чтобы переименовать: пристройка, литер А и т. п."><span class="sv"></span></span></div>
+        <div class="fields">
+          <label class="field"><span class="lbl">Длина</span><span class="row"><input type="number" id="L" value="48" min="0" step="0.1" inputmode="decimal"><em>м</em></span></label>
+          <label class="field"><span class="lbl">Ширина</span><span class="row"><input type="number" id="B" value="15" min="0" step="0.1" inputmode="decimal"><em>м</em></span></label>
+          <label class="field"><span class="lbl">Высота</span><span class="row"><input type="number" id="H" value="11.5" min="0" step="0.1" inputmode="decimal"><em>м</em></span></label>
+          <label class="field"><span class="lbl">Общая площадь <span class="am" id="SmanTag">авто</span></span><span class="row"><input type="number" id="Sman" class="isauto mv" min="0" step="1" inputmode="numeric"><em>м²</em></span></label>
+          <label class="field"><span class="lbl">Объём <span class="am" id="VmanTag">авто</span></span><span class="row"><input type="number" id="Vman" class="isauto mv" min="0" step="1" inputmode="numeric"><em>м³</em></span></label>
+        </div>
+          <div class="cols c3">
+          <div class="grp"><span class="lbl">Этажность</span><div class="seg soft full">
+            <label><input type="radio" name="st" value="multi" checked><span>Многоэтажное</span></label>
+            <label><input type="radio" name="st" value="single"><span>Одноэтажное</span></label></div></div>
+          <div class="grp"><span class="lbl">Подвал</span><div class="seg soft full">
+            <label><input type="radio" name="base" value="yes" checked><span>Есть</span></label>
+            <label><input type="radio" name="base" value="no"><span>Нет</span></label></div></div>
+          <div class="grp"><span class="lbl">Кровля</span><div class="seg soft full">
+            <label><input type="radio" name="roof" value="flat" checked><span>Плоская</span></label>
+            <label><input type="radio" name="roof" value="pitched"><span>Скатная</span></label></div></div>
+          </div>
+        </div>
+        <div id="secList"></div>
+        <button type="button" class="addsec" id="addSec">+ Добавить секцию</button>
+      </section>
+
+      <section class="card" aria-labelledby="hB">
+        <h2 class="card-h" id="hB">Здание</h2>
+        <div class="cols">
+          <div class="grp"><span class="lbl">Схема</span><div class="seg soft full">
+            <label><input type="radio" name="frame" value="noframe" checked><span>Бескаркасная</span></label>
+            <label><input type="radio" name="frame" value="frame"><span>Каркасная</span></label></div></div>
+        </div>
+        <div class="grp"><span class="lbl">Назначение</span>
+          <div class="opts">
+            <label class="opt"><input type="radio" name="purpose" value="civil" checked><div><b>Жилищно-гражданское</b><small>К 1,0</small></div></label>
+            <label class="opt"><input type="radio" name="purpose" value="indBig"><div><b>Промышленное, крупное</b><small>пролёты &gt; 12 м и этаж &gt; 6 м · К 0,8</small></div></label>
+            <label class="opt"><input type="radio" name="purpose" value="indOther"><div><b>Промышленное, прочее</b><small>пролёты ≤ 12 м или этаж ≤ 6 м · К 1,0</small></div></label>
+          </div></div>
+        <div class="cols" style="align-items:center">
+          <label class="sw-row" id="craneRow"><input type="checkbox" class="sw" id="cranes"><span>Есть краны<small>мостовые или подвесные</small></span></label>
+          <div class="grp"><span class="lbl">Категория сложности здания</span>
+            <div class="seg soft cat" role="radiogroup" aria-label="Категория сложности здания">
+              <label><input type="radio" name="bc" value="1"><span>I</span></label>
+              <label><input type="radio" name="bc" value="2" checked><span>II</span></label>
+              <label><input type="radio" name="bc" value="3"><span>III</span></label>
+            </div><p class="hint" id="bcHint"></p></div>
+        </div>
+        <div class="calcline" id="geomLine"></div>
+      </section>
+
+      <section class="card" aria-labelledby="hC">
+        <h2 class="card-h" id="hC">Условия</h2>
+        <div class="chips">
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.2"><span>Просадочные грунты, карст <i>×1,2</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.15"><span>Стеснённость, оборудование <i>×1,15</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.2"><span>Вредное производство <i>×1,2</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.2"><span>Холодный сезон, неотапливаемое <i>×1,2</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.25"><span>Памятник архитектуры <i>×1,25</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.15"><span>Работа с лестниц <i>×1,15</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.2"><span>Ранее усиленные <i>×1,2</i></span></label>
+          <label class="chip"><input type="checkbox" class="k10" data-k="1.25"><span>Спецрежим <i>×1,25</i></span></label>
+        </div>
+        <div class="cols">
+          <div class="sel-f"><span class="lbl">Агрессивная среда</span><select id="aggr"><option value="1">Нет</option><option value="1.2">Слабая · ×1,2</option><option value="1.3">Средняя · ×1,3</option><option value="1.4">Сильная · ×1,4</option></select></div>
+          <div class="sel-f"><span class="lbl">Сейсмичность</span><select id="seism"><option value="1">До 6 баллов</option><option value="1.1">7 баллов · ×1,1</option><option value="1.2">8 баллов · ×1,2</option><option value="1.25">9 баллов · ×1,25</option></select></div>
+        </div>
+        <div class="sws">
+          <label class="sw-row"><input type="checkbox" class="sw" id="stepLt6"><span>Шаг несущих конструкций менее 6 м<small>п. 2.1.9 · К до 1,25 к обмерам и обследованию</small></span></label>
+          <label class="sw-row"><input type="checkbox" class="sw" id="predd" checked><span>Преддоговорные работы<small>+10 % ко всем видам работ по СБЦП (п. 2.1.14, 2.2.5, 2.3.1, 2.5.7)</small></span></label>
+          <label class="sw-row"><input type="checkbox" class="sw" id="smeta"><span>Смета по дефектной ведомости<small>10 % от обследования I кат.</small></span></label>
+        </div>
+      </section>
+    </form>
+
+    <aside id="res" aria-label="Итог">
+      <div class="hero">
+        <div class="ctl">
+          <select id="idxSel" aria-label="Индекс Минстроя">
+            <option value="7.22">Индекс III кв. 2026 — 7,22</option>
+            <option value="7.10">II кв. 2026 — 7,10</option>
+            <option value="6.99">I кв. 2026 — 6,99</option>
+            <option value="6.88">IV кв. 2025 — 6,88</option>
+            <option value="6.70">III кв. 2025 — 6,70</option>
+            <option value="custom">Ввести вручную…</option>
+          </select>
+          <label id="idxCustomWrap" class="field" hidden style="background:rgba(255,255,255,.14)"><span class="lbl" style="color:#fff;opacity:.85">Индекс из нового письма</span><span class="row"><input type="number" id="idxCustom" placeholder="7,35" step="0.01" min="0" inputmode="decimal" style="color:#fff"></span></label>
+          <div class="seg full" role="radiogroup" aria-label="НДС">
+            <label><input type="radio" name="vat" value="0"><span>НДС 0 %</span></label>
+            <label><input type="radio" name="vat" value="5" checked><span>5 %</span></label>
+            <label><input type="radio" name="vat" value="22"><span>22 %</span></label>
+          </div>
+        </div>
+        <div>
+          <div class="tl">Итого с НДС</div>
+          <div class="total" id="tot" aria-live="polite">—</div>
+          <div class="nov">без НДС <b id="totNoVat">—</b></div>
+        </div>
+        <div style="overflow-x:auto"><table class="bk" id="bk"></table></div>
+        <div class="bysec" id="bySec" hidden></div>
+        <div class="lbl" style="color:#fff;opacity:.85;margin-bottom:-6px">Скопировать расчёт</div>
+        <div class="btns3"><button type="button" class="btn" id="copyExt">Расширенный</button><button type="button" class="btn" id="copy">Упрощённый</button><button type="button" class="btn ghost" id="reset">Сбросить</button></div>
+        <p class="toast" id="copyMsg" aria-live="polite"></p>
+      </div>
+      <div class="side">
+        <div class="lbl">Как посчитано</div>
+        <div class="how" id="how"></div>
+        <p class="warn" id="warn" hidden></p>
+        <details class="notes"><summary>Что не входит в цену ›</summary>
+          <div class="notes-body">
+            <p>Вскрытия и заделка, шурфы, отбивка штукатурки, леса и подмости, освещение, откачка воды; сооружения (трубы, силосы, башни), длительные наблюдения, геология оснований, планово-высотная съёмка, командировки (п. 1.4–1.5).</p>
+            <p>Здание из нескольких объёмов разной высоты — по каждому объёму отдельно (п. 2.4.7). Визуальное обследование и паспорт — I категория (п. 2.1.11).</p>
+            <p>Индекс III кв. 2026 — письмо Минстроя от 23.07.2026 № 45358-ИФ/09.</p>
+          </div></details>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<div class="mbar"><span class="l">Итого с НДС<span class="t" id="barTot">—</span></span><a href="#res">Подробнее</a></div>
+
+<script>
+(function(){
+/* ---------- Данные СБЦП 81-2001-25 (руб. за 100 м³, цены 01.01.2001) ---------- */
+// [кат. работ][кат. здания] → значения по высотам; одноэтажные: 4…21+ м (18), многоэтажные: 6…21+ м (16)
+const T1=[[[383.8,366.4,348.6,330.6,312.4,294.8,277.4,259.8,242.0,223.6,205.6,188.2,170.4,152.0,134.2,124.8,106.6,81.4],[430.2,411.0,392.0,373.4,354.8,335.4,316.6,298.2,278.6,260.0,241.0,222.0,203.0,184.0,164.8,146.2,127.0,108.6],[475.0,455.0,435.0,414.6,394.4,374.0,354.2,334.2,314.0,294.0,273.8,253.8,234.0,213.6,193.4,173.2,153.8,133.0]],
+[[590.0,565.6,541.0,516.6,492.0,466.8,426.2,418.0,394.4,368.6,343.8,319.2,294.8,270.2,245.4,220.6,195.6,171.4],[718.6,688.8,659.2,628.4,597.8,567.4,536.8,506.2,475.6,444.4,413.6,382.8,352.8,321.8,292.2,259.2,229.6,198.8],[873.4,838.6,802.0,765.6,728.6,694.0,656.0,619.6,583.8,547.2,511.0,474.8,438.6,401.4,364.6,328.6,292.0,256.0]],
+[[711.4,684.4,657.2,629.8,602.8,575.2,547.8,512.6,485.4,458.4,431.4,403.4,376.2,349.2,322.6,294.0,267.0,240.0],[852.0,818.0,784.4,750.6,717.4,683.8,649.2,614.4,580.4,546.8,504.6,470.0,436.8,402.6,369.2,335.0,301.4,267.6],[946.8,909.4,873.2,837.8,801.6,765.6,729.0,692.8,657.2,621.4,585.8,549.8,504.8,468.6,432.6,396.1,361.4,323.6]]];
+const T2=[[[409.2,389.6,369.2,349.0,328.6,308.0,288.0,268.4,243.2,227.0,206.6,185.2,165.4,145.6,124.8,105.0],[465.0,443.2,421.0,399.4,377.8,355.6,333.4,311.8,289.9,267.8,245.4,223.4,201.4,179.4,157.0,105.0],[515.2,491.0,468.0,444.8,420.8,397.8,374.4,351.6,327.8,304.2,280.6,257.2,233.6,210.2,186.4,163.0]],
+[[661.4,634.6,608.0,581.0,554.6,528.0,500.8,473.8,446.8,419.8,393.4,361.0,338.4,311.2,284.2,256.6],[787.4,754.8,722.4,690.4,657.6,624.4,591.0,558.8,526.4,493.0,459.4,426.6,393.4,359.8,327.0,294.4],[916.6,879.4,842.0,804.2,767.4,729.4,696.4,654.2,616.4,579.0,541.4,503.0,466.0,420.0,391.6,355.2]],
+[[771.4,742.0,711.8,681.2,650.6,621.0,590.0,559.6,529.0,498.6,468.2,436.8,406.4,375.2,344.6,312.4],[883.2,851.2,818.4,785.2,752.8,719.4,686.0,653.0,620.2,586.0,552.6,519.2,485.4,452.6,418.6,385.2],[962.8,929.6,895.2,861.4,828.0,794.2,760.6,726.8,692.4,658.4,623.6,590.2,555.6,520.6,486.6,452.6]]];
+const T3=[[[381.6,364.6,347.4,330.0,312.8,296.0,279.6,261.8,244.4,227.6,210.4,193.4,176.2,159.2,142.2,125.2,108.6,91.2],[444.6,424.6,405.6,386.0,366.8,347.8,328.4,312.0,289.2,269.8,251.0,231.4,212.0,192.6,173.4,154.4,135.2,115.8],[496.4,475.8,455.0,433.8,412.8,392.8,371.8,350.4,329.6,308.6,287.8,267.2,246.6,225.6,204.4,183.8,163.8,142.2]],
+[[579.8,563.2,546.4,530.2,513.6,496.8,480.2,463.6,446.6,429.8,413.0,397.2,380.6,363.6,347.2,330.6,314.2,298.0],[643.2,626.6,609.8,593.0,576.4,559.6,542.8,526.0,509.0,492.6,475.6,459.2,442.2,425.4,408.8,391.8,375.4,358.2],[715.2,699.2,682.2,665.8,649.2,632.6,616.2,600.0,583.6,566.8,550.4,534.0,517.6,501.2,485.0,468.6,452.0,436.0]],
+[[691.6,668.4,644.6,621.0,597.8,570.6,551.0,527.8,504.4,481.2,458.0,436.2,412.0,388.6,365.2,341.8,319.0,295.6],[799.2,775.0,750.0,725.0,700.4,676.0,651.0,625.8,600.8,576.2,551.8,526.8,501.4,477.6,453.0,428.2,403.4,378.6],[910.2,883.0,855.8,829.0,801.6,774.6,747.6,720.2,693.0,666.0,639.6,611.4,584.0,556.8,529.6,502.6,475.4,452.6]]];
+const T4=[[[298.8,287.0,275.2,263.8,251.8,239.8,228.6,216.4,196.4,192.8,181.2,171.0,157.4,145.6,134.0,122.0],[338.8,325.6,312.2,298.2,285.0,271.6,258.2,244.6,230.6,217.0,203.8,190.2,176.6,163.0,149.6,136.0],[392.4,377.0,361.0,345.4,329.4,314.2,298.4,283.0,267.0,251.2,236.0,220.2,204.8,189.0,172.8,157.4]],
+[[587.4,570.0,551.8,533.8,516.0,498.0,479.6,461.4,443.0,424.6,406.8,389.2,370.8,352.4,334.6,317.0],[659.8,641.8,623.6,604.8,587.0,568.4,550.0,532.0,513.2,495.0,476.4,458.2,440.0,421.8,403.4,386.2],[732.0,714.4,696.4,678.4,664.2,642.2,625.2,607.6,589.6,571.8,553.8,536.2,518.0,499.8,481.2,464.4]],
+[[701.8,681.6,664.8,641.2,621.0,600.8,581.0,560.4,540.6,520.8,500.6,480.4,460.2,440.0,419.4,400.4],[780.8,760.2,739.4,717.4,698.4,677.6,657.6,637.0,618.4,596.2,575.4,555.2,534.4,514.0,493.4,473.8],[927.8,904.4,880.6,856.8,833.4,810.4,786.8,763.6,739.8,716.8,692.6,669.8,645.8,622.2,599.0,575.8]]];
+
+// Табл. 8, 9: [элемент, % одноэтажные, % многоэтажные]
+const P8={frame:[["Планы фундаментов, фундаменты, фундаментные балки",3.55,2.84],["Поэтажные планы",9.50,14.38],["Планы колонн и связей, подкрановых конструкций",3.37,2.00],["Планы полов с составом полов",1.80,3.12],["Разрезы с узлами сопряжений",9.94,21.34],["Фасады, окна, ворота",7.80,15.88],["Колонны и стойки",6.35,2.82],["Лестницы",0,2.98],["Подкрановые и тормозные конструкции",9.68,0],["Планы перекрытий со вскрытиями",0,22.85],["Планы несущих конструкций покрытия",10.34,0],["Планы ограждающих конструкций покрытия",8.88,0],["Стропильные и подстропильные конструкции",26.03,0],["Крыши",0,10.61],["Планы кровли со вскрытиями",2.76,1.18]],
+noframe:[["Планы фундаментов и фундаменты",3.55,2.84],["Поэтажные планы",12.33,16.38],["Планы полов с составом полов",2.80,3.12],["Разрезы с узлами сопряжений",13.94,21.34],["Фасады, окна, ворота",9.80,17.88],["Лестницы",0,3.82],["Планы перекрытий со вскрытиями",0,22.85],["Подкрановые конструкции",3.35,0],["Планы несущих конструкций покрытия",13.58,0],["Планы ограждающих конструкций покрытия",10.37,0],["Стропильные и подстропильные конструкции",27.52,0],["Крыши",0,10.59],["Планы кровли со вскрытиями",2.76,1.18]]};
+const P9={frame:[["Фундаменты",4.34,3.84],["Стены, перегородки, перемычки, окна, двери",14.22,23.40],["Полы",3.29,6.45],["Колонны, стойки и связи",10.13,9.19],["Лестницы",0,2.32],["Подкрановые и тормозные конструкции",16.65,0],["Перекрытия",0,34.20],["Несущие конструкции покрытия",37.70,0],["Ограждающие конструкции покрытия",9.57,0],["Совмещённые покрытия или крыши",0,17.20],["Кровля",4.10,3.40]],
+noframe:[["Фундаменты",7.34,3.84],["Стены, перегородки, перемычки, окна, двери",32.50,32.59],["Полы",5.29,6.45],["Лестницы",0,2.32],["Подкрановые конструкции",3.50,0],["Перекрытия",0,34.20],["Несущие конструкции покрытия",37.70,0],["Ограждающие конструкции покрытия",9.57,0],["Совмещённые покрытия или крыши",0,17.20],["Кровля",4.10,3.40]]};
+
+// Табл. 15: пороги в тыс. м³ → тыс. руб.; добавка за каждые следующие step тыс. м³
+const SYS=[
+ {id:"gvs",name:"Горячее водоснабжение",t:[[1,.6],[2,.9],[4,1.0],[8,2.2],[12,2.8],[16,3.5],[24,4.3],[32,5.1],[40,5.6]],add:.2,step:1,on:true},
+ {id:"otop",name:"Отопление",t:[[1,.9],[3,1.5],[5,2.5],[10,3.3],[15,4.0],[20,4.9]],add:.7,step:5,on:true},
+ {id:"hvs",name:"Холодное водоснабжение и канализация",t:[[1,.7],[2,1.0],[4,1.4],[8,2.4],[12,3.1],[16,3.9],[24,4.8],[32,5.7],[40,6.2]],add:.3,step:1,on:true},
+ {id:"vent",name:"Вентиляция",t:[[1,1.0],[3,2.2],[5,3.5],[10,4.4],[15,5.2],[20,6.6]],add:1.1,step:5,on:false},
+ {id:"gas",name:"Газоснабжение",t:[[1,.6],[2,.8],[4,1.1],[8,1.9],[12,2.5],[16,3.1],[24,3.8],[32,4.6],[40,5.0]],add:.2,step:1,on:false},
+ {id:"vodost",name:"Водостоки",t:[[1,.4],[3,.9],[5,1.5],[10,1.9],[15,2.2],[20,2.7]],add:.5,step:1,on:false},
+ {id:"elec",name:"Электросети и средства связи",perArea:1.2,on:true}
+];
+// Табл. 13: [кол-во мест: ≤50, 51–150, 151–250, 251–500, >500][высота]
+const T13={mech:[[70.6,84.8,101.6,122.0,142.2],[67.2,80.6,96.8,116.0,139.4],[55.8,67.0,80.6,96.6,116.0],[43.6,52.4,62.8,75.4,90.6],[36.4,43.6,52.4,62.8,75.4]],
+ us:[[73.0,87.6,105.0,126.0,151.2],[60.8,73.0,87.0,105.0,126.0],[57.8,69.4,83.4,100.0,121.4],[48.6,58.2,69.8,83.8,100.6],[41.6,49.8,59.8,71.6,86.0]]};
+// Табл. 14: составные цены за единицу (сумма операций)
+const LAB=[
+ {id:"kern",name:"Керн бетона: отбор + испытание",u:"обр.",p:185.6,q:3,own:6000},
+ {id:"skal",name:"Бетон, отрыв со скалыванием",u:"место",p:233.0,q:0},
+ {id:"skol",name:"Бетон, скол ребра",u:"место",p:162.2,q:0},
+ {id:"karb",name:"Карбонизация бетона",u:"место",p:88.2,q:0},
+ {id:"arm",name:"Защитный слой и армирование, магнитный метод",u:"место",p:94.6,q:10},
+ {id:"shtr",name:"Вскрытие арматуры (штраба)",u:"место",p:78.8,q:3},
+ {id:"kirp",name:"Кирпич: отбор, сжатие и изгиб",u:"кирп.",p:301.4,q:5},
+ {id:"drev",name:"Влажность древесины",u:"проба",p:35.0,q:0},
+ {id:"stalM",name:"Сталь: вырезка и мех. испытания",u:"обр.",p:1044.6,q:0},
+ {id:"stalH",name:"Сталь: химический состав",u:"обр.",p:752.6,q:0},
+ {id:"krov",name:"Вскрытие кровли/перекрытия с отбором",u:"место",p:178.8,q:2}
+];
+
+const BC_HINT={single:["Одно-/двухпролётное бескаркасное бескрановое, высота до 5 м","Всё, что не вошло в I и III","Каркас с двухъярусными кранами, более 3 прямоугольников в плане, криволинейное, много разнотипных помещений"],
+ multi:["Прямоугольное в плане, однотипные помещения на этаже","2–3 прямоугольника в плане или разнотипные помещения на этаже","Более 3 прямоугольников или криволинейное, разнотипные помещения"]};
+const WO_HINT=["Обмеры для визуального обследования / паспорта, схемы планов, разрезов, фасадов","Полные обмеры однотипных конструкций: узлы, армирование, сварные швы, болты, чертежи","То же, что II, при разнотипных конструкциях"];
+const WS_HINT=["Визуальное обследование, паспорт, дефектная ведомость — независимо от состояния","Детальное: состояние нормативное или работоспособное, с поверочными расчётами","Детальное: ограниченно работоспособное или аварийное, с противоаварийными мероприятиями"];
+
+const $=id=>document.getElementById(id);
+const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
+const seg=n=>document.querySelector('input[name="'+n+'"]:checked').value;
+const rad=n=>+document.querySelector('input[name="'+n+'"]:checked').value;
+const esc0=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+const fmt=(v,d=0)=>v.toLocaleString("ru-RU",{minimumFractionDigits:d,maximumFractionDigits:d});
+const rub=v=>fmt(Math.round(v))+" ₽";
+
+/* ---------- Списки элементов ---------- */
+let listKey="";
+// Строки, существующие только при наличии кранов, и названия без «подкрановых» для зданий без кранов
+const CRANE_ONLY=/^Подкрановые/;
+const NO_CRANE_NAME={"Планы колонн и связей, подкрановых конструкций":"Планы колонн и связей с узлами сопряжений"};
+function renderLists(multi,frame,cranes){
+  const key=(multi?"m":"s")+frame+(cranes?"c":"");
+  if(key===listKey)return; listKey=key;
+  const col=multi?2:1;
+  [["listO",P8],["listS",P9]].forEach(([id,P])=>{
+    const vis=P[frame].filter(r=>r[col]>0&&(cranes||!CRANE_ONLY.test(r[0])));
+    const tot=vis.reduce((s,r)=>s+r[col],0)||100;
+    $(id).dataset.tot=tot;
+    $(id).innerHTML=vis.map((r,i)=>{
+      const p=r[col]*100/tot, name=(!cranes&&NO_CRANE_NAME[r[0]])||r[0];
+      return `<label class="chk"><span style="display:flex;gap:8px"><input type="checkbox" id="${id}_${frame}_${col}_${i}${cranes?"c":""}" data-p="${r[col]}" checked><span>${name}</span></span><span class="pct">${fmt(p,2)}</span></label>`;}).join("");
+  });
+}
+function share(id){let s=0;$(id).querySelectorAll("input:checked").forEach(c=>s+=+c.dataset.p);return s}
+
+/* ---------- Системы и лаборатория ---------- */
+$("sysList").innerHTML=SYS.map(s=>`<label class="chk"><input type="checkbox" id="sys_${s.id}" ${s.on?"checked":""}><span>${s.name} <small id="sysp_${s.id}"></small></span></label>`).join("");
+const NK=[{id:"nkM",m:"mech",name:"Прочность бетона НК, механический метод",u:"место",q:30},{id:"nkU",m:"us",name:"Прочность бетона НК, ультразвук",u:"место",q:0}];
+$("labTable").innerHTML=`<tr class="lh"><th>Позиция</th><th>По СБЦП</th><th>Своя цена, ₽</th><th>Кол-во</th></tr>`+
+  NK.concat(LAB).map(l=>`<tr><td>${l.name}</td><td class="p" id="labp_${l.id}"></td><td><input type="number" id="own_${l.id}" value="${l.own??""}" min="0" step="10" placeholder="по СБЦП" aria-label="${l.name}, своя цена"></td><td><input type="number" id="lab_${l.id}" value="${l.q}" min="0" step="1" aria-label="${l.name}, количество"></td></tr>`).join("");
+
+function sysPrice(s,Vk,area){
+  if(s.perArea)return s.perArea*area/1000;
+  for(const [lim,p] of s.t) if(Vk<=lim+1e-9) return p;
+  const last=s.t[s.t.length-1];
+  return last[1]+(Vk-last[0])/s.step*s.add; // «на каждые последующие…» — пропорционально, как в ГРАНД-Смете
+}
+function kSmall(V){return V<=1000?4.3:V<=2000?3.5:V<=3000?2.2:V<=4000?1.8:V<=5000?1.3:1}
+function colIdx(h,multi){let c=h<=4?4:Math.ceil(h-1e-9);if(c>21)c=21;if(multi&&c<6)c=6;return multi?c-6:c-4}
+function colLabel(h,multi){let c=h<=4?4:Math.ceil(h-1e-9);if(multi&&c<6)c=6;return c>=21?"21 и выше":"до "+c}
+
+let lastText="", extText="", extHtml="";
+
+/* ---------- Секции здания ---------- */
+const SECS=[{n:1,L:"L",B:"B",H:"H",S:"Sman",V:"Vman",st:"st",base:"base",roof:"roof",nm:"nm1"}];
+let secN=1;
+function geom(d){
+  // высота этажа — не менее 3 м: одноэтажное не ниже 3 м, многоэтажное не ниже 6 м (2 этажа); подвал — 3 м
+  const multi=seg(d.st)==="multi", Hmin=multi?6:3, Hin=num(d.H);
+  const L=num(d.L),B=num(d.B),H=Math.max(Hin,Hmin),Hassumed=Hin<Hmin,hb=seg(d.base)==="yes"?3:0;
+  $(d.H).placeholder=multi?"6 (2 эт.)":"3 (1 эт.)"; // подсказка: минимум по этажности, подвал не влияет
+  // площадь и объём: по умолчанию считаются из L×B×H и показываются в полях; введённое вручную значение имеет приоритет
+  const areaMan=$(d.S).dataset.man==="1", volMan=$(d.V).dataset.man==="1";
+  // этажей: многоэтажное — по высоте этажа ~3,3 м (не меньше 2), подвал — ещё один уровень
+  // надземных этажей: по высоте ~3,3 м, но так, чтобы этаж был не ниже 3 м; многоэтажное — не меньше 2
+  const nFl=(multi?Math.max(2,Math.min(Math.round(H/3.3),Math.floor(H/3))):1)+(hb>0?1:0);
+  const Sauto=L*B>0?L*B*nFl:0, S=areaMan?num(d.S):Sauto;
+  const byArea=areaMan&&S>0; // площадь введена вручную — объём считается от неё
+  const fp=byArea?S/nFl:L*B; // пятно застройки
+  const Bw=B>0?B:Math.sqrt(fp/2.5); // ширина для чердака; без размеров — при L:B ≈ 2,5
+  // скатная кровля: средний уклон ~27°, конёк ≈ 0,25 × ширины (не выше 6 м); объём чердака — треугольник
+  const hr=seg(d.roof)==="pitched"?Math.min(6,0.25*Bw):0;
+  const Vab=L*B*H+L*B*hr/2, Vbe=L*B*hb;
+  // по общей площади: многоэтажное ≈ 3,6 м³ на 1 м² + чердак; одноэтажное — пятно × высоту (+ подвал, чердак)
+  const Vs=multi?S*3.6+(hr>0?fp*hr/2:0):fp*(H>0?H:4)+fp*hb+(hr>0?fp*hr/2:0);
+  const Vauto=byArea?Vs:Vab+Vbe, V=volMan?num(d.V):Vauto;
+  [[d.S,areaMan,S],[d.V,volMan,Vauto]].forEach(([id,man,val])=>{const el=$(id);
+    if(!man&&document.activeElement!==el) el.value=val>0?Math.round(val):"";
+    el.classList.toggle("isauto",!man);
+    $(id+"Tag").innerHTML=man?'<button type="button" class="tagbtn" data-auto="'+id+'" title="Введено вручную. Нажмите, чтобы вернуть расчёт по размерам">↺ авто</button>':"авто";});
+  const Hc=H, idx=colIdx(Hc,multi); // ставка — по введённой высоте здания (как «высота здания до … м» в ГРАНД-Смете)
+  // площадь для электросетей: общая площадь, иначе объём / 3,3 м на этаж (одноэтажное — объём / высоту)
+  const Sx=S>0?S:(multi?V/3.3:(L*B>0?L*B:V/Math.max(H,3)));
+  const line=(byArea?`V по площади ${fmt(S)} м² ≈ <b>${fmt(Vauto)} м³</b>`:`V = ${fmt(L,1)}×${fmt(B,1)}×${fmt(H,1)}${hr>0?" + чердак "+fmt(L*B*hr/2):""}${hb>0?" + подвал "+fmt(Vbe):""} = <b>${fmt(Vauto)} м³</b>`)+
+    `${Hassumed&&V>0?` <i>(высота ${Hin>0?"меньше минимальной":"не указана"} — принята ${fmt(Hmin)} м: ${multi?"2 этажа":"1 этаж"} по 3 м)</i>`:""}${volMan?" · в расчёт (вручную): <b>"+fmt(V)+" м³</b>":""} · расчётная высота <b>${fmt(Hc,1)} м</b> → колонка «${colLabel(Hc,multi)}» · ${multi?"многоэтажное":"одноэтажное"}`;
+  return {d,L,B,H,Hin,Hassumed,multi,hb,hr,S,Sx,byArea,V,Hc,idx,line};
+}
+function segHtml(name,opts,val){return `<div class="seg soft full">${opts.map(([v,tx])=>`<label><input type="radio" name="${name}" value="${v}"${v===val?" checked":""}><span>${tx}</span></label>`).join("")}</div>`}
+function addSection(){
+  secN++; const n=secN, p="s"+n;
+  const d={n,L:p+"L",B:p+"B",H:p+"H",S:p+"S",V:p+"V",st:p+"st",base:p+"base",roof:p+"roof",nm:p+"name"};
+  const fld=(id,lbl,u,auto)=>`<label class="field"><span class="lbl">${lbl}${auto?` <span class="am" id="${id}Tag">авто</span>`:""}</span><span class="row"><input type="number" id="${id}"${auto?' class="isauto mv"':""} min="0" step="${u==="м"?"0.1":"1"}" inputmode="decimal"><em>${u}</em></span></label>`;
+  $("secList").insertAdjacentHTML("beforeend",`<div class="secblk" data-n="${n}">
+    <div class="sech"><span class="secname"><input type="text" class="secnm" id="${d.nm}" maxlength="60" placeholder="Секция" aria-label="Название секции (можно изменить)" title="Нажмите, чтобы переименовать: пристройка, литер А и т. п."><span class="sv"></span></span><button type="button" class="delsec" data-n="${n}">Удалить</button></div>
+    <div class="fields">${fld(d.L,"Длина","м")}${fld(d.B,"Ширина","м")}${fld(d.H,"Высота","м")}${fld(d.S,"Общая площадь","м²",1)}${fld(d.V,"Объём","м³",1)}</div>
+    <div class="cols c3">
+      <div class="grp"><span class="lbl">Этажность</span>${segHtml(d.st,[["multi","Многоэтажное"],["single","Одноэтажное"]],seg("st"))}</div>
+      <div class="grp"><span class="lbl">Подвал</span>${segHtml(d.base,[["yes","Есть"],["no","Нет"]],seg("base"))}</div>
+      <div class="grp"><span class="lbl">Кровля</span>${segHtml(d.roof,[["flat","Плоская"],["pitched","Скатная"]],seg("roof"))}</div>
+    </div></div>`);
+  SECS.push(d); calc(); $(d.L).focus();
+}
+function delSection(n){
+  const i=SECS.findIndex(d=>d.n===n); if(i<1)return;
+  SECS.splice(i,1); document.querySelector(`.secblk[data-n="${n}"]`).remove(); calc();
+}
+function calc(){
+  const iSel=$("idxSel").value; $("idxCustomWrap").hidden=iSel!=="custom";
+  const index=iSel==="custom"?(num("idxCustom")||7.22):+iSel;
+  const frame=seg("frame"), purpose=seg("purpose");
+  // каждая секция считается отдельным объёмом (п. 2.4.7): своя высота, этажность, таблица и колонка
+  const G=SECS.map(geom), g1=G[0], multi=g1.multi, many=G.length>1;
+  $("f").classList.toggle("multi",many); $("sec1h").hidden=!many;
+  G.forEach((g,i)=>{const h=g.d.n===1?$("sec1h"):document.querySelector(`.secblk[data-n="${g.d.n}"] .sech`);
+    // название: своё (пристройка, литер А…) или «Секция N» по порядку
+    const inp=$(g.d.nm); inp.placeholder=`Секция ${i+1}`; g.name=inp.value.trim()||inp.placeholder; inp.style.width=Math.min(40,Math.max(9,(inp.value||inp.placeholder).length+2))+"ch";
+    h.querySelector(".sv").textContent=g.V>0?fmt(g.V)+" м³":"";});
+  // краны — только у одноэтажных секций
+  const anySingle=G.some(g=>!g.multi); $("craneRow").hidden=!anySingle; const cranes=anySingle&&$("cranes").checked;
+  renderLists(multi,frame,!multi&&cranes);
+  const V=G.reduce((s,g)=>s+g.V,0), S=G.reduce((s,g)=>s+g.Sx,0);
+  const L=g1.L,B=g1.B,H=g1.H,hb=g1.hb,hr=g1.hr,byArea=g1.byArea,Hc=g1.Hc,idx=g1.idx;
+  $("geomLine").innerHTML=G.map((g,i)=>(many?`<b>${esc0(g.name)}:</b> `:"")+g.line).join("<br>")+
+    (many?`<br>Суммарный объём <b>${fmt(V)} м³</b> — по нему К табл. 11 (п. 2.1.8), общие сети и общая площадь <b>${fmt(S)} м²</b>`:"");
+
+  const bc=rad("bc"), wO=rad("wO"), wS=rad("wS");
+  $("bcHint").textContent=BC_HINT[multi?"multi":"single"][bc-1];
+  $("wOHint").textContent=WO_HINT[wO-1];
+  $("wSHint").textContent=WS_HINT[wS-1];
+
+  let k10=1; document.querySelectorAll(".k10:checked").forEach(c=>k10*=+c.dataset.k);
+  k10*=+$("aggr").value*+$("seism").value;
+  const kP=purpose==="indBig"?0.8:1, kPs=purpose==="civil"?1:0.8;
+  // п. 2.1.9: бескаркасные (несущие стены, шаг < 6 м) — К 1,25; каркасные с сеткой 6 м и более — К 1,0
+  // п. 2.1.9 (шаг несущих < 6 м, К до 1,25) не применяется — как в ГРАНД-Смете
+  const kS=kSmall(V), kStep=$("stepLt6").checked?1.25:1; // п. 2.1.9
+  const rows=[]; const how=[];
+  const shO=share("listO"), shS=share("listS");
+  // в расчёт идёт фактическая доля табл. 8–9; на экране — доля от доступного состава
+  $("shareO").textContent=fmt(shO*100/(+$("listO").dataset.tot||100),2); $("shareS").textContent=fmt(shS*100/(+$("listS").dataset.tot||100),2);
+  const onO=$("onO").checked,onS=$("onS").checked;
+  $("wbO").classList.toggle("off",!onO); $("wbS").classList.toggle("off",!onS);
+  const kCommon=kP*k10*kS*kStep;
+
+  // доля состава табл. 8–9 для секций другой этажности — та же доля от доступного состава
+  const avail=(P,m)=>P[frame].reduce((s,r)=>s+(r[m?2:1]>0&&(!m&&cranes||!CRANE_ONLY.test(r[0]))?r[m?2:1]:0),0);
+  const fO=shO/(avail(P8,multi)||100), fS=shS/(avail(P9,multi)||100);
+  const dr=$("drawings").checked, nc=$("nocalc").checked;
+  let cO=0,cS=0,cSm=0;
+  G.forEach((g,i)=>{
+    const TO=g.multi?T2:T1, TS=g.multi?T4:T3;
+    g.rO=TO[wO-1][bc-1][g.idx]; g.rS=TS[wS-1][bc-1][g.idx]; g.r1=TS[0][bc-1][g.idx];
+    g.shO=g.multi===multi?shO:fO*avail(P8,g.multi); g.shS=g.multi===multi?shS:fS*avail(P9,g.multi);
+    g.cO=onO?g.rO*g.V/100*g.shO/100*kCommon*(dr?0.75:1):0;
+    g.cS=onS?g.rS*g.V/100*g.shS/100*kCommon*(nc?0.8:1):0;
+    g.cSm=0.1*g.r1*g.V/100*kP*kS;
+    cO+=g.cO; cS+=g.cS; cSm+=g.cSm;
+    const pre=many?`${g.name}: `:"";
+    if(onO) how.push([pre+"ставка обмеров, руб/100 м³",fmt(g.rO,1)]);
+    if(onS) how.push([pre+"ставка обследования, руб/100 м³",fmt(g.rS,1)]);
+  });
+  if(onO) rows.push(["Обмерные работы",cO]);
+  if(onS) rows.push(["Обследование конструкций",cS]);
+  const predd=$("predd").checked;
+  let cPre=predd?0.1*(cO+cS):0; // преддоговорные по всем видам работ — одной строкой
+  if($("smeta").checked) rows.push(["Смета по деф. ведомости",cSm]);
+
+  // системы
+  // общие сети здания — по суммарному объёму и общей площади всех секций
+  const Vk=V/1000, area=S;
+  // табл. 16 относится к однотипным работам (повторные корпуса) — для разных систем одного здания К = 1
+  const kHid=$("hiddenPipe").checked?1.2:1; // п. 2.5.4
+  const kSys=kPs*k10*kHid; // п. 2.5.3 назначение × табл. 10 условия × п. 2.5.4
+  let cSys=0; const sysItems=[];
+  SYS.forEach(s=>{const p=sysPrice(s,Vk,area);$("sysp_"+s.id).textContent=fmt(p,2)+" тыс. ₽";if($("sys_"+s.id).checked){cSys+=p*1000*kSys;sysItems.push({s,p});}});
+  if(cSys>0){rows.push(["Инженерные системы",cSys]); if(predd) cPre+=0.1*cSys;} // п. 2.5.7
+
+  // лаборатория
+  const hi=+$("labH").value, kH14=[1,1.5,1.5,1.5,2][hi];
+  const kFld=$("fieldNK").checked?1.15:1; // п. 2.2.6
+  const kNK=k10*kFld; // табл. 10 условия × п. 2.2.6
+  let c13=0, cOwn=0; const labItems=[]; NK.forEach(l=>{
+    const q=Math.round(num("lab_"+l.id)), ci=q<=50?0:q<=150?1:q<=250?2:q<=500?3:4;
+    const r=T13[l.m][ci][hi], ownSet=$("own_"+l.id).value!=="", own=num("own_"+l.id);
+    if(ownSet) cOwn+=q*own/(index||1); else c13+=q*r*kNK;
+    if(q>0) labItems.push({name:l.name+" (табл. 13)",u:l.u,q,p:r,k:kNK,own:ownSet?own:null});
+    const cell=$("labp_"+l.id); cell.classList.toggle("muted",ownSet);
+    cell.innerHTML=`<b>${fmt(Math.round(r*index*kNK))} ₽</b>/${l.u}<span class="base">база ${fmt(r,1)}</span>`;});
+  // c14 — в ценах 2001 г.; своя цена (текущая, без НДС) приводится к базе делением на индекс
+  let c14=0; LAB.forEach(l=>{
+    const q=num("lab_"+l.id), ownSet=$("own_"+l.id).value!=="", own=num("own_"+l.id);
+    if(ownSet) cOwn+=q*own/(index||1); else c14+=q*l.p*kH14;
+    if(q>0) labItems.push({name:l.name+" (табл. 14)",u:l.u,q,p:l.p,k:kH14,own:ownSet?own:null});
+    const cell=$("labp_"+l.id); cell.classList.toggle("muted",ownSet);
+    cell.innerHTML=`<b>${fmt(Math.round(l.p*index*kH14))} ₽</b>/${l.u}<span class="base">база ${fmt(l.p,1)}</span>`;});
+  // преддоговорные 10 % — только на позиции по СБЦП; свои цены идут как есть
+  const cLab=c13+c14+cOwn;
+  if(cLab>0){rows.push(["Испытания и отбор проб",cLab]); if(predd) cPre+=0.1*(c13+c14);} // п. 2.2.5, 2.3.1 (свои цены — без надбавки)
+  if(cPre>0) rows.push(["Преддоговорные работы (10 %)",cPre]);
+
+  /* ---------- Расширенный расчёт: смета (HTML-таблица для Excel/Word + текст) ---------- */
+  {
+    const vX=+seg("vat")/100, n2=v=>fmt(v,2), RN=["I","II","III"];
+    const R=[]; let sec=0, tot01=0, totCur=0, buf=[];
+    // подпункты копятся в буфер; flush подгоняет последний подпункт под округлённый итог раздела (как на странице)
+    const item=(no,name,unit,qty,price,k,sum)=>buf.push({no,name,unit,qty,price,k,s01:Math.round(sum),sc:Math.round(sum*index)});
+    const flush=tt=>{if(!buf.length)return; const l=buf[buf.length-1];
+      l.s01+=Math.round(tt)-buf.reduce((s,b)=>s+b.s01,0); l.sc+=Math.round(tt*index)-buf.reduce((s,b)=>s+b.sc,0);
+      buf.forEach(b=>{tot01+=b.s01;totCur+=b.sc;R.push({t:"item",c:[b.no,b.name,b.unit,b.qty,b.price,b.k,fmt(b.s01),fmt(b.sc)]});}); buf=[];};
+    const secRow=name=>{sec++;R.push({t:"sec",c:[sec+".",name]});};
+    const note=s=>R.push({t:"note",c:["",s]});
+    const kList=extra=>[`п. 2.1.2 назначение — ${n2(kP)}`,`табл. 10 условия — ${fmt(k10,3)}`,`табл. 11 объём — ${n2(kS)}`].concat(kStep>1?[`п. 2.1.9 шаг несущих < 6 м — ${n2(kStep)}`]:[]).concat(extra).join("; ");
+    const sp=(g,i)=>many?`${g.name}, `:"", col=g=>` (H ${fmt(g.Hc,1)} м, колонка «${colLabel(g.Hc,g.multi)}»)`;
+    if(onO){secRow("Обмерные работы");
+      G.forEach((g,i)=>item(`${sec}.${i+1}`,`${sp(g,i)}обмерные работы, табл. ${g.multi?2:1}, ${RN[wO-1]} кат. сложности работ (табл. 6)${col(g)}`,"100 м³",n2(g.V/100),n2(g.rO),fmt(g.shO/100*kCommon*(dr?0.75:1),4),g.cO)); flush(cO);
+      note(`Доля состава работ по табл. 8 — ${G.map(g=>n2(g.shO)).join(" / ")} %; ${kList(dr?["п. 2.1.12 сверка с чертежами — 0,75"]:[])}`);}
+    if(onS){secRow("Обследование строительных конструкций");
+      G.forEach((g,i)=>item(`${sec}.${i+1}`,`${sp(g,i)}инженерное обследование, табл. ${g.multi?4:3}, ${RN[wS-1]} кат. сложности работ (табл. 7)${col(g)}`,"100 м³",n2(g.V/100),n2(g.rS),fmt(g.shS/100*kCommon*(nc?0.8:1),4),g.cS)); flush(cS);
+      note(`Доля состава работ по табл. 9 — ${G.map(g=>n2(g.shS)).join(" / ")} %; ${kList(nc?["п. 2.1.13 без поверочного расчёта — 0,8"]:[])}`);}
+    if(sysItems.length){secRow("Обследование систем инженерного обеспечения (табл. 15)"); let i=0;
+      sysItems.forEach(({s,p})=>{i++; item(`${sec}.${i}`,s.name+(s.perArea?`, площадь ${fmt(area)} м²`:`, объём здания ${n2(Vk)} тыс. м³`),s.perArea?"1000 м²":"здание",s.perArea?n2(area/1000):"1",n2((s.perArea||p)*1000),n2(kSys),p*1000*kSys);});
+      flush(cSys); note(`п. 2.5.3 назначение — ${n2(kPs)}; табл. 10 условия — ${fmt(k10,3)}${kHid>1?"; п. 2.5.4 скрытая прокладка — 1,20":""}`);}
+    if(labItems.length){secRow("Испытания и отбор проб (табл. 13–14)"); let i=0;
+      labItems.forEach(l=>{i++;
+        if(l.own!=null) item(`${sec}.${i}`,l.name.replace(/ \(табл\. 1[34]\)/,"")+" — договорная цена",l.u,fmt(l.q),"—","—",l.q*l.own/index);
+        else item(`${sec}.${i}`,l.name,l.u,fmt(l.q),n2(l.p),n2(l.k),l.q*l.p*l.k);});
+      flush(cLab); note(`К табл. 13: табл. 10 условия — ${fmt(k10,3)}${kFld>1?" × п. 2.2.6 полевые условия 1,15":""}; К табл. 14: п. 2.3.2 высота отбора — ${n2(kH14)}`);}
+    if($("smeta").checked){secRow("Сметная документация по дефектной ведомости");
+      G.forEach((g,i)=>item(`${sec}.${i+1}`,`${sp(g,i)}10 % от базовой цены обследования I кат. (п. 2.1.15)`,"100 м³",n2(g.V/100),n2(g.r1*0.1),n2(kP*kS),g.cSm)); flush(cSm);}
+    if(cPre>0){secRow("Преддоговорные работы"); item(sec+".1","10 % от стоимости работ по СБЦП (п. 2.1.14, 2.2.5, 2.3.1, 2.5.7)","%","10","—","—",cPre); flush(cPre);}
+    const vatS=Math.round(totCur*vX);
+    const TOT=[["Итого в ценах 01.01.2001",fmt(tot01),""],[`Итого в текущих ценах (индекс ${n2(index)}), без НДС`,"",fmt(totCur)],[`НДС ${fmt(vX*100)} %`,"",fmt(vatS)],["ВСЕГО с НДС","",fmt(totCur+vatS)]];
+    const HEAD=["№","Наименование работ","Ед. изм.","Кол-во","Базовая цена, руб.","К общий","Стоимость в ценах 2001, руб.","Стоимость в текущих ценах, руб."];
+    const META=[
+      "Основание: СБЦП 81-2001-25 «Справочник базовых цен на обмерные работы и обследования зданий и сооружений» (приказ Минстроя России от 25.04.2016 № 270/пр)",
+      `Индекс изменения сметной стоимости проектных работ к ценам 01.01.2001 — ${n2(index)}`,
+      `Объект: ${frame==="frame"?"каркасное":"бескаркасное"}, ${purpose==="civil"?"жилищно-гражданское":"промышленное"}${cranes?", с кранами":""}; категория сложности здания ${RN[bc-1]} (табл. 5)${many?"; секций — "+G.length+" (п. 2.4.7: каждая секция — самостоятельный объём, сети общие)":""}`,
+      ...G.map((g,i)=>`${many?g.name+": ":""}${g.byArea?"общая площадь "+fmt(g.S)+" м²":fmt(g.L,1)+" × "+fmt(g.B,1)+" м"}, высота ${fmt(g.H,1)} м, ${g.multi?"многоэтажная":"одноэтажная"}${g.hb>0?", с подвалом":""}${g.hr>0?", скатная кровля":""}; V = ${fmt(g.V)} м³; расчётная высота ${fmt(g.Hc,1)} м (колонка «${colLabel(g.Hc,g.multi)}»)`),
+      ...(many?[`Суммарный строительный объём ${fmt(V)} м³, общая площадь ${fmt(S)} м²`]:[])];
+    const FOOT="Не учтены (п. 1.4–1.5 СБЦП): вскрытия и их заделка, шурфы, леса и подмости, временное освещение, откачка воды, геология оснований, геодезическая съёмка, командировочные расходы.";
+    const TITLE="СМЕТНЫЙ РАСЧЁТ стоимости обмерных работ и обследования здания (ориентировочный)";
+    // текст
+    const T=[TITLE,...META,"",HEAD.join("\t")];
+    R.forEach(r=>T.push(r.c.join("\t"))); T.push(""); TOT.forEach(x=>T.push(["",x[0],"","","","",x[1],x[2]].join("\t"))); T.push("",FOOT);
+    extText=T.join("\n");
+    // HTML
+    const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+    const bd="border:0.5pt solid #000;padding:3pt 5pt;vertical-align:top;";
+    const tx="mso-number-format:'\\@';";
+    const num=`${bd}text-align:right;white-space:nowrap;${tx}`;
+    let h=`<div style="font-family:Arial,sans-serif;font-size:10pt;color:#000">`+
+      `<p style="font-size:13pt;font-weight:bold;margin:0 0 6pt">${esc(TITLE)}</p>`+META.map(m=>`<p style="margin:0 0 2pt">${esc(m)}</p>`).join("")+
+      `<table style="border-collapse:collapse;margin-top:8pt;font-family:Arial,sans-serif;font-size:10pt;width:100%">`+
+      `<colgroup><col width="45"><col width="380"><col width="70"><col width="60"><col width="90"><col width="70"><col width="110"><col width="120"></colgroup>`+
+      `<tr>${HEAD.map(c=>`<th style="${bd}background:#e7e6f0;font-weight:bold;text-align:center;vertical-align:middle">${esc(c)}</th>`).join("")}</tr>`;
+    R.forEach(r=>{
+      if(r.t==="sec") h+=`<tr><td style="${bd}${tx}background:#f3f3f7;font-weight:bold">${esc(r.c[0])}</td><td colspan="7" style="${bd}background:#f3f3f7;font-weight:bold">${esc(r.c[1])}</td></tr>`;
+      else if(r.t==="note") h+=`<tr><td style="${bd}"></td><td colspan="7" style="${bd}font-style:italic;font-size:8.5pt;color:#444">${esc(r.c[1])}</td></tr>`;
+      else h+=`<tr><td style="${bd}${tx}">${esc(r.c[0])}</td><td style="${bd}">${esc(r.c[1])}</td><td style="${bd}text-align:center">${esc(r.c[2])}</td>`+r.c.slice(3).map(c=>`<td style="${num}">${esc(c)}</td>`).join("")+`</tr>`;
+    });
+    TOT.forEach((x,i)=>{const b=i===0||i===3?"font-weight:bold;":""; const bg=i===3?"background:#e7e6f0;":"";
+      h+=`<tr><td colspan="6" style="${bd}${b}${bg}text-align:right">${esc(x[0])}</td><td style="${num}${b}${bg}">${esc(x[1])}</td><td style="${num}${b}${bg}">${esc(x[2])}</td></tr>`;});
+    h+=`</table><p style="margin:6pt 0 0;font-size:8.5pt;color:#444">${esc(FOOT)}</p></div>`;
+    extHtml=h;
+  }
+
+  // итоги складываются из округлённых строк, чтобы разбивка сходилась с суммой до рубля
+  const base=rows.reduce((s,r)=>s+Math.round(r[1]),0);
+  const vat=+seg("vat")/100;
+  const cur=rows.reduce((s,r)=>s+Math.round(r[1]*index),0), vatSum=Math.round(cur*vat), withVat=cur+vatSum;
+  // по секциям (текущие цены, без НДС): свои обмеры, обследование, смета + их преддоговорные; сети и испытания — общие
+  const smOn=$("smeta").checked, kPre=predd?1.1:1;
+  const bySec=G.map(g=>({name:g.name,v:Math.round(((g.cO+g.cS)*kPre+(smOn?g.cSm:0))*index)}));
+  const common=cur-bySec.reduce((s,x)=>s+x.v,0);
+  if(many&&cur>0){
+    const ln=(n,v,cls="")=>`<div class="br ${cls}"><span>${esc0(n)}</span><b>${fmt(v)}</b><i><u style="width:${(v/cur*100).toFixed(1)}%"></u></i></div>`;
+    $("bySec").innerHTML=`<div class="bh">По секциям, без НДС</div>`+bySec.map(x=>ln(x.name,x.v)).join("")+(common>0?ln("Общие: сети, испытания",common,"cm"):"");
+    $("bySec").hidden=false;
+  } else $("bySec").hidden=true;
+
+  let h=`<tr><th>Статья</th><th>2001, ₽</th><th>Текущие, ₽</th></tr>`;
+  rows.forEach(r=>h+=`<tr><td>${r[0]}<span class="bar-in"><i style="width:${base>0?(r[1]/base*100).toFixed(1):0}%"></i></span></td><td class="n">${fmt(Math.round(r[1]))}</td><td class="n">${fmt(Math.round(r[1]*index))}</td></tr>`);
+  h+=`<tr class="sum"><td>Итого без НДС</td><td class="n">${fmt(Math.round(base))}</td><td class="n">${fmt(Math.round(cur))}</td></tr>`;
+  h+=`<tr class="vat"><td>НДС ${fmt(vat*100)} %</td><td></td><td class="n">${fmt(vatSum)}</td></tr>`;
+  $("bk").innerHTML=h;
+  $("tot").innerHTML=fmt(Math.round(withVat))+" <small>₽</small>";
+  $("barTot").textContent=rub(withVat);
+  $("totNoVat").textContent=rub(cur);
+
+  const howRows=[[many?"Суммарный объём, м³":"Строительный объём, м³",fmt(V)],...G.map((g,i)=>[(many?`${g.name}: `:"")+"высота / колонка",fmt(g.Hc,1)+" м / "+colLabel(g.Hc,g.multi)]),...how,
+    ["К малого объёма (табл. 11)",fmt(kS,1)],["К назначения (п. 2.1.2)",fmt(kP,1)],["К усложняющих (табл. 10)",fmt(k10,3)]];
+  howRows.push(["Индекс к 2001 г.",fmt(index,2)]);
+  $("how").innerHTML=howRows.map(r=>`<div><span>${esc0(r[0])}</span><b>${r[1]}</b></div>`).join("");
+
+  const w=[];
+  if(V<=0)w.push("Введите размеры здания, общую площадь или объём.");
+  if(G.some(g=>g.V>0&&g.Hin<=0))w.push("Высота не указана — принята минимальная (этаж 3 м). Укажите фактическую: от неё зависит ставка за 100 м³.");
+  if(G.some(g=>g.multi&&g.idx===15)&&bc===2&&wO===1&&onO)w.push("Для этой ячейки табл. 2 справочник даёт 105,0 руб./100 м³ — вероятно, опечатка оригинала.");
+  if(G.some(g=>!g.multi&&g.Hc>5)&&bc===1)w.push("I категория одноэтажных — здания высотой до 5 м; проверьте категорию.");
+  $("warn").hidden=!w.length; $("warn").textContent=w.join(" ");
+
+  lastText=[`Оценка по СБЦП 81-2001-25`,
+   ...G.map((g,i)=>`${many?g.name:"Здание"}: ${g.byArea?"общая площадь "+fmt(g.S)+" м²":fmt(g.L,1)+"×"+fmt(g.B,1)+" м"}, высота ${fmt(g.H,1)} м, ${g.multi?"многоэтажное":"одноэтажное"}${g.hb>0?", с подвалом":""}; V = ${fmt(g.V)} м³`),
+   `${many?"Суммарный объём "+fmt(V)+" м³; ":""}категория сложности здания ${["I","II","III"][bc-1]}`,
+   onO?`Обмеры: категория ${["I","II","III"][wO-1]}, ${fmt(shO,2)} % состава`:"",
+   onS?`Обследование: категория ${["I","II","III"][wS-1]}, ${fmt(shS,2)} % состава`:"",
+   ...rows.map(r=>`${r[0]}: ${fmt(Math.round(r[1]))} ₽ (2001) → ${fmt(Math.round(r[1]*index))} ₽`),
+   ...(many?["По секциям (без НДС): "+bySec.map(x=>`${x.name} — ${rub(x.v)}`).join("; ")+(common>0?`; общие (сети, испытания) — ${rub(common)}`:"")]:[]),
+   `Итого в ценах 2001: ${fmt(Math.round(base))} ₽; индекс ${fmt(index,2)}`,
+   `Итого без НДС: ${rub(cur)}; с НДС ${fmt(vat*100)} %: ${rub(withVat)}`].filter(Boolean).join("\n");
+}
+
+// ручной ввод площади/объёма (во всех секциях): пока поле не пустое — «вручную»; пустое после ухода — снова авто
+$("f").addEventListener("input",e=>{const el=e.target; if(el.classList&&el.classList.contains("mv")) el.dataset.man=el.value!==""?"1":"";});
+$("f").addEventListener("focusout",e=>{const el=e.target; if(el.classList&&el.classList.contains("mv")&&el.value===""){el.dataset.man="";calc();}});
+document.addEventListener("click",e=>{
+  const b=e.target.closest(".tagbtn"); if(b){e.preventDefault(); $(b.dataset.auto).dataset.man=""; calc(); return;}
+  const d=e.target.closest(".delsec"); if(d){e.preventDefault(); delSection(+d.dataset.n);}
+});
+$("addSec").addEventListener("click",addSection);
+$("f").addEventListener("input",calc);
+$("f").addEventListener("change",calc);
+$("f").addEventListener("submit",e=>e.preventDefault());
+$("res").addEventListener("change",calc);
+$("res").addEventListener("input",calc);
+$("listO").addEventListener("change",calc);
+function copyText(txt,msg,html){
+  const done=()=>{$("copyMsg").textContent=msg};
+  // запасной путь: выделяем отрисованный фрагмент — браузер кладёт в буфер и HTML, и текст
+  const fallback=()=>{const a=document.createElement("div");a.contentEditable="true";a.style.cssText="position:absolute;left:-9999px;top:0;background:#fff;color:#000";
+    if(html)a.innerHTML=html;else a.textContent=txt; document.body.appendChild(a);
+    const rg=document.createRange();rg.selectNodeContents(a);const sl=getSelection();sl.removeAllRanges();sl.addRange(rg);
+    try{document.execCommand("copy")?done():fail()}catch(e){fail()} sl.removeAllRanges();a.remove()};
+  const fail=()=>{$("copyMsg").textContent="Не удалось скопировать — браузер запретил доступ к буферу."};
+  try{
+    if(html&&window.ClipboardItem&&navigator.clipboard&&navigator.clipboard.write){
+      navigator.clipboard.write([new ClipboardItem({"text/html":new Blob([html],{type:"text/html"}),"text/plain":new Blob([txt],{type:"text/plain"})})]).then(done,fallback);
+    } else if(!html&&navigator.clipboard){navigator.clipboard.writeText(txt).then(done,fallback)} else fallback();
+  }catch(e){fallback()}
+}
+$("copy").addEventListener("click",()=>copyText(lastText,"Упрощённый расчёт скопирован."));
+$("copyExt").addEventListener("click",()=>copyText(extText,"Смета скопирована — вставьте в Excel или Word.",extHtml));
+$("reset").addEventListener("click",()=>{
+  // обнуляем размеры и количества, выключаем все работы, системы и коэффициенты; свои цены сохраняются
+  SECS.slice(1).forEach(d=>document.querySelector(`.secblk[data-n="${d.n}"]`).remove()); SECS.length=1;
+  ["L","B","H","Sman","Vman","nm1"].forEach(id=>$(id).value=""); ["Sman","Vman"].forEach(id=>$(id).dataset.man="");
+  document.querySelectorAll('#f input[type=checkbox]').forEach(c=>{if(!c.closest(".elist"))c.checked=false});
+  document.querySelectorAll('#labTable input[id^="lab_"]').forEach(i=>i.value="0");
+  $("aggr").value="1"; $("seism").value="1";
+  $("copyMsg").textContent="Всё обнулено.";
+  $("f").dispatchEvent(new Event("change",{bubbles:true}));
+});
+calc();
+})();
+</script>
+<script>
+(function(){
+  const tiles=[...document.querySelectorAll(".tile")], panels=[...document.querySelectorAll("[data-panel]")];
+  tiles.forEach(t=>t.addEventListener("click",()=>{
+    tiles.forEach(x=>{x.classList.toggle("sel",x===t);x.setAttribute("aria-selected",x===t)});
+    panels.forEach(p=>p.hidden=p.dataset.panel!==t.dataset.p);
+  }));
+  const R=["I","II","III"], g=id=>document.getElementById(id);
+  const pl=(n,a,b,c)=>{const m=n%10,h=n%100;return n+" "+(m===1&&h!==11?a:m>=2&&m<=4&&(h<12||h>14)?b:c)};
+  function upd(){
+    const on={O:g("onO").checked,S:g("onS").checked};
+    const wO=document.querySelector('input[name="wO"]:checked').value, wS=document.querySelector('input[name="wS"]:checked').value;
+    g("tsO").textContent=on.O?"кат. "+R[wO-1]:"выкл."; g("tsS").textContent=on.S?"кат. "+R[wS-1]:"выкл.";
+    const nY=g("sysList").querySelectorAll("input:checked").length;
+    g("tsY").textContent=nY?pl(nY,"вид","вида","видов"):"выкл.";
+    const nL=[...g("labTable").querySelectorAll('input[id^="lab_"]')].filter(i=>parseFloat(i.value)>0).length;
+    g("tsL").textContent=nL?pl(nL,"позиция","позиции","позиций"):"выкл.";
+    const st={O:on.O,S:on.S,Y:nY>0,L:nL>0};
+    tiles.forEach(t=>t.classList.toggle("on",st[t.dataset.p]));
+    g("wbO").classList.toggle("off",!on.O); g("wbS").classList.toggle("off",!on.S);
+  }
+  g("f").addEventListener("input",upd); g("f").addEventListener("change",upd); upd();
+})();
+</script>
+
+</body></html>

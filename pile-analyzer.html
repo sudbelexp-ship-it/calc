@@ -1,0 +1,2401 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Анализ свай</title>
+<style>
+:root {
+  --bg: #e9edf2; --panel: #fff; --line: #d6dce5; --text: #1f2937; --muted: #6b7280;
+  --accent: #2563eb; --accent-d: #1d4ed8; --head: #5d7a89;
+  --ok: #15803d; --ok-bg: #dcfce7; --warn: #a16207; --warn-bg: #fef3c7; --bad: #b91c1c; --bad-bg: #fee2e2;
+  font: 13px/1.4 "Segoe UI", system-ui, Roboto, Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); }
+body { display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+button { font: inherit; padding: 5px 11px; border: 1px solid var(--line); background: #f8fafc; border-radius: 6px; cursor: pointer; color: inherit; white-space: nowrap; }
+button:hover:not(:disabled) { background: #eef2f7; }
+button:disabled { opacity: .45; cursor: default; }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary:hover:not(:disabled) { background: var(--accent-d); }
+button.small { padding: 2px 8px; font-size: 12px; }
+input[type=number], input[type=text], select, textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 5px; background: #fff; color: var(--text); }
+input[type=number] { width: 78px; }
+input:disabled { background: #f3f4f6; color: var(--muted); }
+.grow { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: 11.5px; }
+.sep { width: 1px; height: 24px; background: var(--line); margin: 0 3px; }
+
+header.top { display: flex; align-items: center; gap: 7px; padding: 6px 10px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 14px; margin-right: 6px; line-height: 1.15; }
+.brand small { display: block; font-weight: 400; color: var(--muted); font-size: 11px; }
+.menu { position: relative; }
+.menu-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 20; background: #fff; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.12); padding: 4px; min-width: 230px; }
+.menu-list button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; }
+.menu-list button:hover { background: #eef2f7; }
+
+.objbar { display: flex; gap: 16px; align-items: center; padding: 6px 10px; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+label.f { display: flex; align-items: center; gap: 6px; color: var(--muted); white-space: nowrap; }
+label.chk { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+label.chk input[type=number] { margin-left: 2px; }
+label.chk:has(> input[type=checkbox]:disabled) { color: var(--muted); cursor: default; }
+
+main { flex: 1; display: grid; grid-template-columns: 240px minmax(0, 1fr) 330px; gap: 8px; padding: 8px; min-height: 0; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.panel > h3 { margin: 0; padding: 7px 10px; font-size: 13px; background: var(--head); color: #fff; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+.scroll { overflow: auto; flex: 1; min-height: 0; }
+
+.pile .pdel { grid-row: 1 / span 2; grid-column: 4; align-self: center; border: 0; background: none; padding: 2px 4px; color: var(--muted); opacity: 0; font-size: 12px; }
+.pile:hover .pdel, .pile.sel .pdel { opacity: 1; }
+.pile .pdel:hover { color: var(--bad); background: var(--bad-bg); }
+.pile { display: grid; grid-template-columns: 18px 1fr auto auto; gap: 0 6px; padding: 7px 10px 7px 6px; border-bottom: 1px solid #eef1f5; cursor: pointer; }
+.pile .tog { grid-row: 1 / span 2; align-self: center; border: 0; background: none; padding: 0; width: 18px; font-size: 13px; color: var(--muted); }
+.pile .tog:hover { color: var(--text); background: none; }
+.pile:hover { background: #f5f8fc; }
+.pile.sel { background: #e7effc; }
+.pile .pname { font-weight: 600; }
+.pile .pmeta { color: var(--muted); font-size: 11.5px; grid-column: 2; }
+.pile .pres { grid-row: 1 / span 2; grid-column: 3; align-self: center; font-weight: 600; font-variant-numeric: tabular-nums; padding: 2px 7px; border-radius: 10px; font-size: 12px; }
+.st-ok { background: var(--ok-bg); color: var(--ok); }
+.st-warn { background: var(--warn-bg); color: var(--warn); }
+.st-bad { background: var(--bad-bg); color: var(--bad); }
+.st-none { background: #f1f5f9; color: var(--muted); }
+.hits { background: #f7f9fc; border-bottom: 1px solid var(--line); padding: 4px 0 6px; }
+.hits .avgrow { display: flex; padding: 4px 10px 4px 12px; font-weight: 600; }
+.hits .avgrow:hover { background: #edf2f8; }
+.hits .avgrow.sel { background: #dbe7fb; }
+.hit .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
+.hit.hl { background: #e9eef6; }
+.hit { display: flex; gap: 6px; align-items: center; padding: 3px 10px 3px 14px; cursor: pointer; font-size: 12.5px; }
+.hit:hover { background: #edf2f8; }
+.hit.sel { background: #dbe7fb; }
+.hit .t { color: var(--muted); margin-left: auto; font-size: 11px; }
+.hit.off span:not(.t) { color: var(--muted); text-decoration: line-through; }
+
+.center { display: flex; flex-direction: column; min-height: 0; min-width: 0; gap: 6px; }
+.tabs { display: flex; gap: 4px; align-items: center; }
+.tab { border-radius: 6px 6px 0 0; background: #dfe5ec; border-color: transparent; }
+.tab.active { background: #fff; border-color: var(--line); font-weight: 600; }
+.tabpane { flex: 1; display: flex; flex-direction: column; min-height: 0; gap: 6px; }
+.viewbar, .procbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-radius: 0; padding: 3px 10px; background: #fff; }
+.seg button.on { background: var(--head); color: #fff; }
+.plots { flex: 1; display: flex; flex-direction: column; gap: 6px; min-height: 0; }
+.plotbox { position: relative; flex: 3; min-height: 160px; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.plotbox.spec { flex: 2; min-height: 120px; }
+.plotbox canvas { position: absolute; inset: 0; display: block; cursor: crosshair; }
+.plot-title { position: absolute; top: 5px; left: 0; right: 0; text-align: center; font-weight: 600; pointer-events: none; }
+.empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; color: var(--muted); padding: 20px; pointer-events: none; }
+.empty b { color: var(--text); }
+
+.res { padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+.res .params { display: grid; grid-template-columns: 1fr auto; gap: 6px 8px; align-items: center; }
+.res .params input { width: 90px; }
+.mcard { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; display: grid; grid-template-columns: 10px 1fr auto; gap: 2px 8px; align-items: center; }
+.mcard .dot { width: 10px; height: 10px; border-radius: 50%; }
+.mcard .nm { font-weight: 600; }
+.mcard .val { font-weight: 700; font-size: 15px; font-variant-numeric: tabular-nums; }
+.mcard .det { grid-column: 2 / 4; color: var(--muted); font-size: 11.5px; }
+.mcard.used { border-color: #94a3b8; background: #fafcff; }
+.mpair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+.mopt { padding: 3px 6px; border-radius: 5px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.mopt:hover { background: #f1f5f9; }
+.mopt.on { background: #fde9c8; color: #92400e; font-weight: 600; }
+.measL { font-size: 16px; font-weight: 700; margin: 2px 0 6px; font-variant-numeric: tabular-nums; }
+.frow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 7px; }
+.frow input { width: 80px; }
+.lrow { display: flex; gap: 5px; align-items: center; margin-bottom: 4px; }
+.lrow input { width: 64px; }
+.lrow select { flex: 1; min-width: 0; }
+.chip { display: inline-block; padding: 0 7px; border-radius: 9px; font-size: 11px; font-weight: 600; }
+.final { border: 2px solid #111827; border-radius: 10px; padding: 9px 11px; }
+.final .big { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.final .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 3px; }
+.box { border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px; }
+.box h4 { margin: 0 0 4px; font-size: 12.5px; }
+.box ul { margin: 0; padding-left: 18px; }
+.warnbox { background: var(--warn-bg); border-color: #fcd34d; color: #713f12; }
+textarea { width: 100%; min-height: 96px; resize: vertical; }
+.hint { color: var(--muted); font-size: 11.5px; }
+
+.tablewrap { flex: 1; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 8px; min-height: 0; }
+table.sum { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+table.sum th, table.sum td { border-bottom: 1px solid #eef1f5; padding: 5px 8px; text-align: right; white-space: nowrap; }
+table.sum th { position: sticky; top: 0; background: #f1f5f9; font-weight: 600; z-index: 1; }
+table.sum td:first-child, table.sum th:first-child, table.sum td.l, table.sum th.l { text-align: left; }
+table.sum tbody tr { cursor: pointer; }
+table.sum tbody tr:hover { background: #f5f8fc; }
+.histbox { height: 190px; position: relative; background: #fff; border: 1px solid var(--line); border-radius: 8px; }
+
+footer.status { display: flex; gap: 10px; padding: 4px 10px; background: #fff; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+#dropHint { position: fixed; inset: 0; background: rgba(37,99,235,.12); border: 3px dashed var(--accent); display: none; align-items: center; justify-content: center; font-size: 20px; font-weight: 600; color: var(--accent-d); z-index: 50; pointer-events: none; }
+#dropHint.on { display: flex; }
+#toast { position: fixed; bottom: 34px; left: 50%; transform: translateX(-50%); background: #111827; color: #fff; padding: 8px 14px; border-radius: 8px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 60; max-width: 80vw; }
+#toast.on { opacity: .95; }
+dialog { border: 1px solid var(--line); border-radius: 10px; max-width: 760px; padding: 18px 22px; }
+dialog h2 { margin-top: 0; font-size: 17px; }
+dialog h3 { font-size: 14px; margin: 14px 0 4px; }
+dialog p, dialog li { line-height: 1.5; }
+kbd { border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; font-size: 11.5px; background: #f8fafc; }
+
+#report { display: none; }
+@media print {
+  @page { size: A4; margin: 12mm; }
+  html, body { height: auto; overflow: visible; background: #fff; display: block; }
+  body > *:not(#report) { display: none !important; }
+  #report { display: block; color: #000; font-size: 11pt; }
+  .rpage { page-break-after: always; break-after: page; }
+  .rpage:last-child { page-break-after: auto; break-after: auto; }
+  .rpage h1 { font-size: 15pt; margin: 0 0 2mm; text-align: center; }
+  .rpage .sub { text-align: center; margin-bottom: 4mm; font-size: 10pt; }
+  .rpage table { border-collapse: collapse; width: 100%; margin: 2mm 0; font-size: 10pt; }
+  .rpage td, .rpage th { border: 1px solid #555; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+  .rpage th { background: #eee; }
+  .rpage img { width: 100%; display: block; margin: 1mm 0 3mm; }
+  .rpage .cap { font-size: 9.5pt; font-weight: 600; margin-top: 2mm; }
+  .rpage .sign { margin-top: 8mm; display: flex; justify-content: space-between; font-size: 10pt; }
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="brand">Анализ свай<small>Спектр-4.3 · ГОСТ Р 72171-2025</small></div>
+  <button id="btnOpenDir" title="Папка объекта или сваи (как на планшете: Spectr/data/Объект/Свая)">Открыть папку…</button>
+  <button id="btnOpenFiles">Открыть файлы…</button>
+  <span class="sep"></span>
+  <button id="btnAuto" class="primary" disabled>▶ Автоматический анализ</button>
+  <button id="btnAutoAll" disabled>Анализ всех свай</button>
+  <span class="sep"></span>
+  <div class="menu">
+    <button id="btnExport" disabled>Экспорт ▾</button>
+    <div class="menu-list" id="exportMenu" hidden>
+      <button data-exp="pdf">PDF-отчёт: текущая свая</button>
+      <button data-exp="pdfall">PDF-отчёт: все сваи с результатом</button>
+      <button data-exp="docx">Word-отчёт: текущая свая</button>
+      <button data-exp="docxall">Word-отчёт: все сваи с результатом</button>
+      <button data-exp="xlsx">Excel (.xlsx): сводная + сигнал</button>
+      <button data-exp="txt">Сигнал текущей сваи (.txt)</button>
+    </div>
+  </div>
+  <span class="grow"></span>
+  <button id="btnHelp">Справка</button>
+  <input type="file" id="inFiles" accept=".wav,audio/wav,audio/x-wav" multiple hidden>
+  <input type="file" id="inDir" webkitdirectory multiple hidden>
+</header>
+
+<div class="objbar">
+  <label class="f">Объект <input type="text" id="objName" style="width:170px" placeholder="название"></label>
+  <span class="f" title="Скорость продольной волны — одна на весь объект; у отдельной сваи можно задать свою. Её можно ввести напрямую или получить из прочности (Оникс-2.6 / Оникс-ОС) или класса бетона по ГОСТ Р 72171-2025, А.4">
+    <select id="objVMode"><option value="v">V, м/с</option><option value="mpa">R, МПа</option><option value="class">Класс бетона</option></select>
+    <input type="number" id="objV" min="1" max="8000" step="10">
+    <select id="objCls"></select>
+    <span id="objVInfo" class="small"></span></span>
+  <label class="f" title="Проектная длина по умолчанию для всех свай (у сваи можно задать свою). Задаёт масштаб графика и ELR; на поиск влияет только при включённом окне поиска">L проектная, м <input type="number" id="objLp" min="0" max="80" step="0.1" placeholder="—"></label>
+  <span class="f" title="Включено: отражение от нижнего конца ищется в диапазоне L проектная ± окно. Выключено: поиск по всей глубине 1,5–30 м, проектная длина не учитывается">
+    <label class="chk"><input type="checkbox" id="objWinOn"> Окно поиска ±</label>
+    <input type="number" id="objWin" min="10" max="90" step="5" style="width:58px"> %</span>
+  <label class="f" title="Анализ всегда по одному каналу: «Боковой» — по боковому датчику, остальные режимы — по основному">Датчики
+    <select id="objCh">
+      <option value="main">Основной</option>
+      <option value="main+side">Основной + Боковой</option>
+      <option value="side">Боковой</option>
+      <option value="main+hammer">Основной + Молоток</option>
+    </select></label>
+  <label class="f" title="Удары из одной папки, между которыми пауза больше этого времени, считаются разными сваями. 0 — не разделять">Разделять сваи при паузе &gt;
+    <input type="number" id="objSplit" min="0" max="600" step="1" style="width:58px"> мин</label>
+</div>
+
+<main>
+  <section class="panel">
+    <h3>Сваи <span id="pileCount" class="small"></span></h3>
+    <div class="scroll" id="pileList"></div>
+  </section>
+
+  <section class="center">
+    <div class="tabs">
+      <button class="tab active" data-tab="signal">Сигнал</button>
+      <button class="tab" data-tab="table">Сводная таблица</button>
+      <span class="grow"></span>
+      <span id="cursorInfo" class="muted small"></span>
+    </div>
+    <div class="tabpane" id="tabSignal">
+      <div class="viewbar">
+        <div class="seg" id="segScale"><button data-v="depth">Длина, м</button><button data-v="time">Время, мкс</button></div>
+        <label class="chk"><input type="checkbox" id="vSpectrum"> спектр</label>
+        <label class="chk" id="lblExtended"><input type="checkbox" id="vExtended"> расширенный спектр</label>
+        <span class="grow"></span>
+        <span class="muted small">колесо — масштаб · перетаскивание — сдвиг · двойной щелчок — сброс · щелчок — точка т.1/т.2 · правый щелчок — убрать ближайшую точку</span>
+        <button class="small" id="btnClearMeas" disabled title="Убрать точки т.1/т.2 с графика сигнала и точки на спектре (Esc)">Очистить точки</button>
+      </div>
+      <div class="plots">
+        <div class="plotbox" id="boxSignal"><canvas id="cvSignal"></canvas>
+          <div class="empty" id="emptyHint"><div><b>Перетащите сюда папку объекта или сваи</b><br>(как на планшете: Spectr/data/Объект/Свая)<br>или нажмите «Открыть папку…» / «Открыть файлы…»<br><br>Файлы обрабатываются только на этом компьютере и никуда не отправляются.</div></div>
+        </div>
+        <div class="plotbox spec" id="boxSpectrum"><canvas id="cvSpectrum"></canvas></div>
+      </div>
+      <div class="procbar">
+        <label class="chk" title="Ускорение → скорость (должен быть включён)"><input type="checkbox" id="pInt"> Интегратор</label>
+        <label class="chk"><input type="checkbox" id="pHp"> ФВЧ <input type="number" id="pHpF" min="1" max="3000" step="10"> Гц</label>
+        <label class="chk"><input type="checkbox" id="pLp"> ФНЧ <input type="number" id="pLpF" min="100" max="20000" step="50"> Гц</label>
+        <span class="sep"></span>
+        <label class="f" title="Авто: ударный импульс делается положительным">Полярность сваи
+          <select id="pPol"><option value="auto">Авто</option><option value="direct">Прямая</option><option value="inverted">Инвертированная</option></select></label>
+        <span class="sep"></span>
+        <label class="chk"><input type="checkbox" id="pGain"> Усиление</label>
+        <label class="f">Ma×10⁻³ <input type="number" id="pMa" min="0" max="400" step="1" style="width:64px"></label>
+        <label class="chk" title="Подбор по ГОСТ: амплитуда отражения ≈ амплитуде удара"><input type="checkbox" id="pMaAuto"> авто</label>
+        <label class="f">Задержка, м <input type="number" id="pDelay" min="0" max="30" step="0.1" style="width:60px"></label>
+      </div>
+    </div>
+    <div class="tabpane" id="tabTable" hidden>
+      <div class="viewbar">
+        <b>Сводная таблица по объекту</b>
+        <span class="muted small">щелчок по строке — открыть сваю</span>
+        <span class="grow"></span>
+        <button id="btnAutoAll2" class="primary">Анализ всех свай</button>
+      </div>
+      <div class="tablewrap"><table class="sum" id="sumTable"></table></div>
+      <div class="histbox"><canvas id="cvHist"></canvas></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h3>Результат <span id="resPile" class="small"></span></h3>
+    <div class="scroll" id="resultBody"></div>
+  </section>
+</main>
+
+<footer class="status"><span id="stPath">Файлы не загружены</span><span class="grow"></span><span id="stComment"></span></footer>
+<div id="dropHint">Отпустите папку или файлы .wav</div>
+<div id="toast"></div>
+
+<dialog id="helpDlg">
+  <h2>Анализ сигналов «Спектр-4.3»</h2>
+  <h3>Загрузка</h3>
+  <p>«Открыть папку…» — выберите папку объекта (в ней подпапки свай) или папку одной сваи. Можно перетащить папку прямо в окно. Сваи группируются по номеру из служебного блока WAV (PILE_NUM), иначе по имени папки. Внутри одного номера удары упорядочиваются по времени из имени файла; если пауза между соседними ударами больше порога «Разделять сваи при паузе &gt; … мин» (по умолчанию 2 мин, 0 — не разделять), начинается новая свая: «Свая 1 · гр. 2». У каждой группы свои настройки и результат.</p>
+  <h3>Параметры</h3>
+  <ul>
+    <li><b>V объекта</b> вводится один раз и действует на все сваи. Вместо V можно ввести прочность бетона R, МПа (по Оникс-2.6 или Оникс-ОС) или класс бетона: класс → V по ГОСТ Р 72171-2025, А.4 (B20 — 3600, B35 — 4100, выше B35 — до 4500 м/с при B60, линейно между точками), прочность → V линейной интерполяцией между соседними классами B10…B60 как опорными точками «средняя прочность класса R̄ (ГОСТ 26633, табл. 6) — V класса»; ниже B10 и выше B60 — 3500 и 4500 м/с. В отчёт попадает только итоговая V, м/с. Для отдельной сваи V и проектную длину можно переопределить в правой панели.</li>
+    <li><b>Датчики</b> — как в «Спектре»: «Основной», «Основной + Боковой», «Боковой», «Основной + Молоток». Анализ всегда ведётся по одному каналу: в режиме «Боковой» — по боковому датчику, в остальных — по основному; второй канал в комбинированных режимах показывается на графике для сравнения (синхронизация по основному). Если выбранный канал почти пустой, программа предупредит.</li>
+    <li>Обработка как в «Спектре»: интегратор, ФВЧ/ФНЧ (фильтры без фазового сдвига), экспоненциальное усиление Ma с задержкой.</li>
+  </ul>
+  <h3>Автоматический анализ</h3>
+  <p>Удары сваи совмещаются по моменту удара и усредняются (галочками можно исключить неудачные удары). Ноль — экстремум ударного импульса. Длина определяется тремя методами:</p>
+  <ul>
+    <li><b>М1 · Временной</b> — наиболее выраженный пик отражения той же полярности, что и удар, на сигнале скорости: L = V·Δt/2.</li>
+    <li><b>М2 · По усиленному сигналу</b> — сигнал усиливается экспоненциально так, чтобы отражение было соизмеримо с ударом (ГОСТ Р 72171, прил. А), усиление ограничено проектной длиной; берётся первое сильное отражение.</li>
+    <li><b>М3 · Спектральный</b> — шаг резонансных пиков Δf по гребёнке гармоник: L = V/(2·Δf).</li>
+  </ul>
+  <p>Итог — среднее согласующихся методов (расхождение ≤ 8 %). Достоверность снижается при расхождении методов, разбросе по ударам и помехах. ELR = (L − Lпроект)/Lпроект; при |ELR| &gt; 10 % свая помечается для дополнительного анализа (ГОСТ, Б.3). Аномалии — сильные отражения выше нижнего конца.</p>
+  <h3>Ручная правка</h3>
+  <p>Итог правится в правой панели: кнопки «◀ пред. пик / след. пик ▶» переносят его на соседний пик отражения, в поле «L, м» длину можно ввести числом, кнопка «взять за итог» у метода принимает его результат. Щелчок по графику ставит точки т.1, т.2, т.3… (сколько нужно); в блоке «Измерение длины» выберите первую и вторую точку (или «удар») — длина между ними считается сразу и её можно принять за итог. Правый щелчок убирает ближайшую точку. На спектре две точки дают Δf и длину.</p>
+  <h3>Слои и стыки</h3>
+  <p>В правой панели можно задать известные отметки по длине сваи: стык секций, границу грунта, уширение. Они рисуются на графике; если найденная аномалия совпадает с отметкой (±0,3 м или ±4 %), она подписывается как эта отметка и не попадает в «аномалии, требующие анализа». Для стыка дополнительно показывается место повторного отражения «L + стык» — отражение от низа, вернувшееся вниз и отразившееся от стыка. Стык удобно добавить кнопкой «+ стык на … м» после измерения расстояния между двумя похожими пиками; кнопка «на все сваи» копирует отметки на остальные сваи объекта.</p>
+  <h3>Экспорт</h3>
+  <p>PDF-отчёт открывается в окне печати — выберите «Сохранить как PDF». Word-отчёт (.docx) скачивается сразу: тот же протокол, по одной свае на лист A4, его можно дописать и оформить в Word. Excel — сводная таблица и отсчёты сигнала. Настройки и ручные правки запоминаются в этом браузере.</p>
+  <h3>Клавиши</h3>
+  <p><kbd>Alt</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> — предыдущая/следующая свая · правый щелчок по графику — убрать ближайшую к курсору точку · кнопка «Очистить точки» или <kbd>Esc</kbd> — убрать все точки</p>
+  <p class="muted small">Автоматический результат — помощь специалисту, а не замена его заключения. Проверяйте сигналы перед выдачей отчёта.</p>
+  <form method="dialog" style="text-align:right"><button>Закрыть</button></form>
+</dialog>
+
+<div id="report"></div>
+
+<script id="dsp">
+const DSP = (() => {
+  'use strict';
+
+  // ---------------- WAV ----------------
+  function tagAt(u8, o) { return String.fromCharCode(u8[o], u8[o + 1], u8[o + 2], u8[o + 3]); }
+
+  function decodeText(bytes) {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); }
+    catch (e) { return new TextDecoder('windows-1251').decode(bytes); }
+  }
+
+  function unescapeXml(s) {
+    return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'").replace(/&#(\d+);/g, (m, d) => String.fromCharCode(+d)).replace(/&amp;/g, '&');
+  }
+
+  function parseMeta(u8, from) {
+    let start = -1;
+    for (let i = from; i < u8.length - 9; i++) {
+      if (u8[i] === 0x3C && (tagAt(u8, i + 1) === 'META' || tagAt(u8, i + 1) === '?xml')) { start = i; break; }
+    }
+    if (start < 0) return {};
+    const text = decodeText(u8.subarray(start));
+    const meta = {};
+    text.replace(/<([A-Z_]+)\s*\/>/g, (m, k) => { meta[k] = ''; return m; });
+    text.replace(/<([A-Z_]+)>([^<]*)<\/\1>/g, (m, k, v) => { meta[k] = unescapeXml(v).trim(); return m; });
+    return meta;
+  }
+
+  function parseWav(buf) {
+    const u8 = new Uint8Array(buf), dv = new DataView(buf);
+    if (u8.length < 44 || tagAt(u8, 0) !== 'RIFF' || tagAt(u8, 8) !== 'WAVE') throw new Error('файл не является WAV');
+    let pos = 12, fmt = null, dataOff = -1, dataLen = 0;
+    while (pos + 8 <= u8.length) {
+      const id = tagAt(u8, pos), size = dv.getUint32(pos + 4, true);
+      if (id === 'fmt ') {
+        fmt = { format: dv.getUint16(pos + 8, true), channels: dv.getUint16(pos + 10, true),
+          rate: dv.getUint32(pos + 12, true), bits: dv.getUint16(pos + 22, true) };
+        if (fmt.format === 0xFFFE && size >= 26) fmt.format = dv.getUint16(pos + 32, true);
+      } else if (id === 'data') {
+        dataOff = pos + 8; dataLen = Math.min(size, u8.length - dataOff);
+      }
+      if (dataOff >= 0 && fmt) break;
+      if (pos + 8 + size > u8.length) break;
+      pos += 8 + size + (size & 1);
+    }
+    if (!fmt || dataOff < 0) throw new Error('в WAV нет блока fmt или data');
+    const bps = fmt.bits / 8, nch = fmt.channels, frame = bps * nch;
+    const n = Math.floor(dataLen / frame);
+    const ch = [];
+    for (let c = 0; c < nch; c++) ch.push(new Float64Array(n));
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < nch; c++) {
+        const o = dataOff + i * frame + c * bps;
+        let v;
+        if (fmt.format === 3) v = bps === 8 ? dv.getFloat64(o, true) : dv.getFloat32(o, true);
+        else if (bps === 1) v = u8[o] - 128;
+        else if (bps === 2) v = dv.getInt16(o, true);
+        else if (bps === 3) { v = u8[o] | (u8[o + 1] << 8) | (u8[o + 2] << 16); if (v & 0x800000) v -= 0x1000000; }
+        else v = dv.getInt32(o, true);
+        ch[c][i] = v;
+      }
+    }
+    return { fs: fmt.rate, bits: fmt.bits, channels: ch, meta: parseMeta(u8, dataOff + dataLen) };
+  }
+
+  // ---------------- helpers ----------------
+  function median(arr) {
+    const a = Float64Array.from(arr).sort();
+    const m = a.length >> 1;
+    return a.length ? (a.length & 1 ? a[m] : 0.5 * (a[m - 1] + a[m])) : 0;
+  }
+  function argmax(s, i1, i2, sign = 1) {
+    let best = i1;
+    for (let i = i1; i < i2; i++) if (sign * s[i] > sign * s[best]) best = i;
+    return best;
+  }
+  const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+  // ---------------- filters ----------------
+  function biquadCoef(type, fc, fs) {
+    const w = 2 * Math.PI * fc / fs, c = Math.cos(w), al = Math.sin(w) / Math.SQRT2, a0 = 1 + al;
+    const b = type === 'lp' ? [(1 - c) / 2, 1 - c, (1 - c) / 2] : [(1 + c) / 2, -(1 + c), (1 + c) / 2];
+    return [b[0] / a0, b[1] / a0, b[2] / a0, -2 * c / a0, (1 - al) / a0];
+  }
+  function biquadRun(x, k) {
+    const [b0, b1, b2, a1, a2] = k, y = new Float64Array(x.length);
+    let x1 = x[0], x2 = x[0], y1, y2;
+    const dc = (b0 + b1 + b2) / (1 + a1 + a2);
+    y1 = y2 = isFinite(dc) ? x[0] * dc : 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = x[i], o = b0 * v + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = v; y2 = y1; y1 = o; y[i] = o;
+    }
+    return y;
+  }
+  // zero-phase filter (forward-backward) with odd padding, so peak times are not shifted
+  function filtfilt(x, type, fc, fs) {
+    if (!(fc > 0) || fc >= fs / 2) return Float64Array.from(x);
+    const k = biquadCoef(type, fc, fs), n = x.length;
+    const pad = Math.min(n - 1, Math.ceil(3 * fs / fc));
+    const ext = new Float64Array(n + 2 * pad);
+    for (let i = 0; i < pad; i++) {
+      ext[i] = 2 * x[0] - x[pad - i];
+      ext[n + pad + i] = 2 * x[n - 1] - x[n - 2 - i];
+    }
+    ext.set(x, pad);
+    let y = biquadRun(ext, k);
+    y.reverse(); y = biquadRun(y, k); y.reverse();
+    return y.slice(pad, pad + n);
+  }
+
+  // ---------------- processing ----------------
+  // counts of the 24-bit ADC -> display units; calibrated so the screen values match the «Спектр» program
+  let SCALE = 8.3e-5;
+  function setScale(k) { SCALE = k; }
+
+  function onsetIndex(a) {
+    let mx = 0;
+    for (let i = 0; i < a.length; i++) mx = Math.max(mx, Math.abs(a[i]));
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i]) > 0.2 * mx) return i;
+    return 0;
+  }
+
+  // a: raw channel (acceleration counts). Returns velocity (or filtered acceleration if integrator is off).
+  function processChannel(raw, fs, p) {
+    const base = median(raw), n = raw.length;
+    const a = new Float64Array(n);
+    for (let i = 0; i < n; i++) a[i] = raw[i] - base;
+    let v;
+    if (p.integrate) {
+      v = new Float64Array(n);
+      let s = 0;
+      for (let i = 1; i < n; i++) { s += 0.5 * (a[i] + a[i - 1]) / fs; v[i] = s; }
+      for (let i = 0; i < n; i++) v[i] *= SCALE;
+      if (!p.hp) {
+        const on = onsetIndex(a), tail = Math.max(1, Math.floor(n * 0.1));
+        let m = 0;
+        for (let i = n - tail; i < n; i++) m += v[i];
+        m /= tail;
+        for (let i = on; i < n; i++) v[i] -= m * (i - on) / Math.max(1, n - 1 - on);
+      }
+    } else {
+      v = new Float64Array(n);
+      // acceleration in m/s² (SCALE turns counts into mm/s², hence 1e-3)
+      for (let i = 0; i < n; i++) v[i] = a[i] * SCALE * 1e-3;
+    }
+    if (p.hp) v = filtfilt(v, 'hp', p.hpF, fs);
+    if (p.lp) v = filtfilt(v, 'lp', p.lpF, fs);
+    return { v, onset: onsetIndex(a) };
+  }
+
+  // impact = extremum of the first strike half-wave (as in «Спектр»); polarity chosen so the pulse is positive
+  function findImpact(v, onset, fs, mode) {
+    const n = v.length;
+    const w1 = clamp(onset - Math.round(0.0002 * fs), 0, n - 1);
+    const w2 = clamp(onset + Math.round(0.0006 * fs), w1 + 1, n);
+    let pol;
+    if (mode === 'direct') pol = 1;
+    else if (mode === 'inverted') pol = -1;
+    else {
+      let k = w1;
+      for (let i = w1; i < w2; i++) if (Math.abs(v[i]) > Math.abs(v[k])) k = i;
+      pol = v[k] >= 0 ? 1 : -1;
+    }
+    let i0 = w1;
+    for (let i = w1; i < w2; i++) if (pol * v[i] > pol * v[i0]) i0 = i;
+    return { i0, pol };
+  }
+
+  function applyPolarity(v, pol) {
+    if (pol === 1) return v;
+    const o = new Float64Array(v.length);
+    for (let i = 0; i < v.length; i++) o[i] = -v[i];
+    return o;
+  }
+
+  // aligns traces on their impact index and averages them
+  function average(traces) {
+    if (traces.length === 1) return { s: traces[0].s, i0: traces[0].i0 };
+    const i0 = Math.max(...traces.map(t => t.i0));
+    const n = Math.min(...traces.map(t => t.s.length - t.i0)) + i0;
+    const s = new Float64Array(n), cnt = new Float64Array(n);
+    for (const t of traces) {
+      const sh = i0 - t.i0;
+      for (let i = 0; i < t.s.length; i++) {
+        const j = i + sh;
+        if (j >= 0 && j < n) { s[j] += t.s[i]; cnt[j]++; }
+      }
+    }
+    for (let i = 0; i < n; i++) s[i] = cnt[i] ? s[i] / cnt[i] : 0;
+    return { s, i0 };
+  }
+
+  const depthToIndex = (x, i0, V, fs) => i0 + 2 * x / V * fs;
+  const indexToDepth = (i, i0, V, fs) => (i - i0) / fs * V / 2;
+
+  // exponential amplification: ma ·1e-3 per sample after the delay, capped at capIdx
+  function applyGain(s, i0, ma, delayIdx, capIdx) {
+    const o = new Float64Array(s.length), k = ma * 1e-3;
+    const start = i0 + delayIdx, stop = capIdx > start ? capIdx : s.length;
+    for (let i = 0; i < s.length; i++) o[i] = s[i] * Math.exp(k * clamp(i - start, 0, stop - start));
+    return o;
+  }
+
+  // gain such that the strongest arrival in the toe window equals the strike amplitude (ГОСТ Р 72171, прил. А)
+  function autoGain(s, i0, w1, w2, delayIdx, capIdx) {
+    const A0 = Math.abs(s[i0]);
+    const peakAt = ma => {
+      const g = applyGain(s, i0, ma, delayIdx, capIdx);
+      let m = 0;
+      for (let i = w1; i < w2; i++) m = Math.max(m, Math.abs(g[i]));
+      return m;
+    };
+    if (peakAt(0) >= A0) return 0;
+    let lo = 0, hi = 5;
+    while (peakAt(hi) < A0 && hi < 400) hi *= 2;
+    for (let it = 0; it < 40; it++) {
+      const mid = 0.5 * (lo + hi);
+      if (peakAt(mid) < A0) lo = mid; else hi = mid;
+    }
+    return 0.5 * (lo + hi);
+  }
+
+  // ---------------- peaks ----------------
+  function prominence(s, p, maxScan) {
+    let lmin = s[p], rmin = s[p];
+    for (let k = p - 1; k >= Math.max(0, p - maxScan); k--) { if (s[k] > s[p]) break; lmin = Math.min(lmin, s[k]); }
+    for (let k = p + 1; k < Math.min(s.length, p + maxScan); k++) { if (s[k] > s[p]) break; rmin = Math.min(rmin, s[k]); }
+    return s[p] - Math.max(lmin, rmin);
+  }
+  function refine(s, p) {
+    if (p <= 0 || p >= s.length - 1) return p;
+    const d = s[p - 1] - 2 * s[p] + s[p + 1];
+    return d < 0 ? p + clamp(0.5 * (s[p - 1] - s[p + 1]) / d, -0.5, 0.5) : p;
+  }
+  function positivePeaks(s, i1, i2, maxScan) {
+    const out = [];
+    for (let i = Math.max(1, i1); i < Math.min(s.length - 1, i2); i++) {
+      if (s[i] > 0 && s[i] > s[i - 1] && s[i] >= s[i + 1]) out.push({ i, a: s[i], prom: prominence(s, i, maxScan) });
+    }
+    return out;
+  }
+  function pulseEnd(s, i0) {
+    for (let i = i0 + 1; i < s.length; i++) if (s[i] <= 0) return i;
+    return i0 + 1;
+  }
+
+  function confidenceLabel(c) { return c >= 0.6 ? 'высокая' : c >= 0.35 ? 'средняя' : 'низкая'; }
+
+  function pickResult(name, s, i0, chosen, others, ctx) {
+    const idx = refine(s, chosen.i);
+    const L = indexToDepth(idx, i0, ctx.V, ctx.fs);
+    const rival = others.filter(c => c !== chosen && Math.abs(c.i - chosen.i) > ctx.minSep)
+      .reduce((m, c) => Math.max(m, c.prom), 0);
+    const distinct = clamp((chosen.prom - rival) / chosen.prom, 0, 1);
+    const level = clamp(chosen.prom / (Math.abs(s[i0]) * ctx.levelRef), 0, 1);
+    const conf = 0.65 * distinct + 0.35 * level;
+    return { method: name, ok: true, L, idx, dtUs: (idx - i0) / ctx.fs * 1e6, conf, confLabel: confidenceLabel(conf),
+      amp: chosen.a / Math.abs(s[i0]), candidates: others.map(c => indexToDepth(c.i, i0, ctx.V, ctx.fs)) };
+  }
+
+  // Method 1: toe reflection on the velocity signal (L = V·Δt/2)
+  function methodTime(s, i0, ctx) {
+    const w1 = Math.max(Math.ceil(depthToIndex(ctx.xMin, i0, ctx.V, ctx.fs)), pulseEnd(s, i0));
+    const w2 = Math.floor(depthToIndex(ctx.xMax, i0, ctx.V, ctx.fs));
+    const cand = positivePeaks(s, w1, w2, ctx.scan);
+    if (!cand.length) return { method: 'time', ok: false, reason: 'нет отражений в окне поиска' };
+    const best = cand.reduce((m, c) => c.prom > m.prom ? c : m);
+    return pickResult('time', s, i0, best, cand, { ...ctx, levelRef: 0.15 });
+  }
+
+  // Method 2: exponentially amplified signal; the earliest strong arrival is taken as the toe
+  function methodGain(s, i0, ctx) {
+    const w1 = Math.max(Math.ceil(depthToIndex(ctx.xMin, i0, ctx.V, ctx.fs)), pulseEnd(s, i0));
+    const w2 = Math.floor(depthToIndex(ctx.xMax, i0, ctx.V, ctx.fs));
+    const delayIdx = Math.round(2 * ctx.gainDelay / ctx.V * ctx.fs);
+    const capIdx = Math.round(depthToIndex(ctx.gainCap, i0, ctx.V, ctx.fs));
+    const ma = ctx.ma != null ? ctx.ma : autoGain(s, i0, w1, w2, delayIdx, capIdx);
+    const g = applyGain(s, i0, ma, delayIdx, capIdx);
+    const cand = positivePeaks(g, w1, w2, ctx.scan);
+    if (!cand.length) return { method: 'gain', ok: false, reason: 'нет отражений в окне поиска', ma };
+    const strongest = cand.reduce((m, c) => c.prom > m.prom ? c : m);
+    const chosen = cand.find(c => c.prom >= 0.75 * strongest.prom);
+    const r = pickResult('gain', g, i0, chosen, cand, { ...ctx, levelRef: 0.5 });
+    r.ma = ma; r.gained = g;
+    return r;
+  }
+
+  // ---------------- FFT / spectrum ----------------
+  function fft(re, im) {
+    const n = re.length;
+    for (let i = 1, j = 0; i < n; i++) {
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j) { let t = re[i]; re[i] = re[j]; re[j] = t; t = im[i]; im[i] = im[j]; im[j] = t; }
+    }
+    for (let len = 2; len <= n; len <<= 1) {
+      const ang = -2 * Math.PI / len, wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i = 0; i < n; i += len) {
+        let cr = 1, ci = 0;
+        for (let k = 0; k < len / 2; k++) {
+          const a = i + k, b = a + len / 2;
+          const tr = re[b] * cr - im[b] * ci, ti = re[b] * ci + im[b] * cr;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+          const nr = cr * wr - ci * wi; ci = cr * wi + ci * wr; cr = nr;
+        }
+      }
+    }
+  }
+
+  // amplitude spectrum of the record from just before the strike to the end (tapered tail, zero padded)
+  function spectrum(s, i0, fs, nfft) {
+    const start = Math.max(0, i0 - Math.round(0.0005 * fs));
+    const seg = s.subarray(start), m = seg.length;
+    let N = 1;
+    while (N < Math.max(nfft, m)) N <<= 1;
+    const re = new Float64Array(N), im = new Float64Array(N);
+    const taper = Math.floor(m * 0.2);
+    for (let i = 0; i < m; i++) {
+      let w = 1;
+      if (i >= m - taper) w = 0.5 * (1 + Math.cos(Math.PI * (i - (m - taper)) / taper));
+      re[i] = seg[i] * w;
+    }
+    fft(re, im);
+    const half = N / 2, mag = new Float64Array(half);
+    for (let k = 0; k < half; k++) mag[k] = Math.hypot(re[k], im[k]);
+    return { mag, df: fs / N };
+  }
+
+  // Method 3: resonance peak spacing Δf (L = V/2Δf). A harmonic comb k·Δf is matched against the
+  // whitened log-spectrum; extra peaks from anomalies do not form a comb and are suppressed.
+  function methodSpectrum(s, i0, ctx) {
+    const { mag, df } = spectrum(s, i0, ctx.fs, 32768);
+    const dfMin = ctx.V / (2 * ctx.xMax), dfMax = ctx.V / (2 * ctx.xMin);
+    const k1 = Math.max(1, Math.floor(0.8 * dfMin / df));
+    const k2 = Math.min(mag.length - 2, Math.ceil(ctx.fMax / df));
+    if (k2 - k1 < 16) return { method: 'spectrum', ok: false, reason: 'узкая полоса спектра' };
+    let mx = 0;
+    for (let k = k1; k <= k2; k++) mx = Math.max(mx, mag[k]);
+    const lg = new Float64Array(mag.length);
+    for (let k = 0; k < mag.length; k++) lg[k] = Math.log(mag[k] + 1e-4 * mx);
+    const half = Math.max(2, Math.round(0.5 * dfMax / df));
+    const pre = new Float64Array(lg.length + 1);
+    for (let k = 0; k < lg.length; k++) pre[k + 1] = pre[k] + lg[k];
+    const w = new Float64Array(mag.length);
+    for (let k = k1; k <= k2; k++) {
+      const a = Math.max(0, k - half), b = Math.min(lg.length, k + half + 1);
+      w[k] = lg[k] - (pre[b] - pre[a]) / (b - a);
+    }
+    const tolBins = f => Math.max(2, Math.round(0.015 * f / df));
+    const matchAt = f => {
+      const c = Math.round(f / df), t = tolBins(f);
+      let best = c;
+      for (let k = Math.max(k1, c - t); k <= Math.min(k2, c + t); k++) if (w[k] > w[best]) best = k;
+      return best;
+    };
+    const comb = d => {
+      let sum = 0, cnt = 0;
+      for (let f = d; f <= ctx.fMax; f += d) { if (f / df < k1) continue; sum += w[matchAt(f)]; cnt++; }
+      return cnt >= 2 ? sum / cnt : -Infinity;
+    };
+    const steps = [];
+    for (let d = dfMin; d <= dfMax; d += df) steps.push({ d, sc: comb(d) });
+    const valid = steps.filter(x => isFinite(x.sc));
+    if (valid.length < 5) return { method: 'spectrum', ok: false, reason: 'нет резонансных пиков' };
+    const top = valid.reduce((m, x) => x.sc > m.sc ? x : m);
+    const mean = valid.reduce((m, x) => m + x.sc, 0) / valid.length;
+    const sd = Math.sqrt(valid.reduce((m, x) => m + (x.sc - mean) ** 2, 0) / valid.length) || 1;
+    const z = (top.sc - mean) / sd;
+    // least-squares spacing through the matched peaks: Δf = Σk·f_k / Σk²
+    let num = 0, den = 0;
+    const peaks = [];
+    for (let k = 1; k * top.d <= ctx.fMax; k++) {
+      const f = k * top.d;
+      if (f / df < k1) continue;
+      const b = matchAt(f);
+      if (w[b] > 0 && w[b] >= w[b - 1] && w[b] >= w[b + 1]) {
+        const fk = refine(w, b) * df;
+        num += k * fk; den += k * k;
+        peaks.push({ k, f: fk });
+      }
+    }
+    if (peaks.length < 2 || top.sc <= 0) return { method: 'spectrum', ok: false, reason: 'резонансные пики не выражены' };
+    const dfRes = num / den;
+    const conf = clamp((z - 1.5) / 2.5, 0, 1) * clamp(peaks.length / 4, 0, 1);
+    return { method: 'spectrum', ok: true, L: ctx.V / (2 * dfRes), dfHz: dfRes, conf, confLabel: confidenceLabel(conf),
+      z, peaks, harmonics: Array.from({ length: Math.floor(ctx.fMax / dfRes) }, (_, i) => (i + 1) * dfRes) };
+  }
+
+  // ---------------- combination ----------------
+  function combine(results, Lp) {
+    const ok = results.filter(r => r.ok);
+    if (!ok.length) return { ok: false, status: 'не определена', note: 'ни один метод не дал результата' };
+    const tol = 0.08;
+    let cluster = [];
+    for (const r of ok) {
+      const c = ok.filter(o => Math.abs(o.L - r.L) / r.L <= tol);
+      const sc = c.length * 10 + c.reduce((m, o) => m + o.conf, 0);
+      const cs = cluster.length * 10 + cluster.reduce((m, o) => m + o.conf, 0);
+      if (sc > cs) cluster = c;
+    }
+    const wsum = cluster.reduce((m, o) => m + Math.max(0.1, o.conf), 0);
+    const L = cluster.reduce((m, o) => m + o.L * Math.max(0.1, o.conf), 0) / wsum;
+    const agree = cluster.length, total = results.length;
+    let status, conf;
+    if (agree === 3) { status = 'методы согласуются'; conf = 'высокая'; }
+    else if (agree === 2) { status = total === 2 ? 'согласуются оба метода' : 'согласуются 2 из 3'; conf = 'средняя'; }
+    else { status = 'методы расходятся'; conf = 'низкая'; }
+    const elr = Lp > 0 ? (L - Lp) / Lp * 100 : null;
+    return { ok: true, L, agree, status, conf, elr, methods: cluster.map(c => c.method),
+      check: agree < 2 || (elr != null && Math.abs(elr) > 10) };
+  }
+
+  function anomalies(g, i0, idxToe, ctx, toeProm) {
+    const w1 = pulseEnd(g, i0), w2 = Math.floor(i0 + 0.9 * (idxToe - i0));
+    return positivePeaks(g, w1, w2, ctx.scan)
+      .filter(c => c.prom >= 0.35 * toeProm)
+      .map(c => ({ L: indexToDepth(refine(g, c.i), i0, ctx.V, ctx.fs), rel: c.prom / toeProm }));
+  }
+
+  // The design length narrows the search only when the search window is switched on;
+  // otherwise the toe is searched for between 1.5 and 30 m. Amplification is capped at the window's design length.
+  function searchRange(Lp, useWindow, w) {
+    const win = useWindow && Lp > 0 ? Lp : null;
+    return { xMin: win ? Math.max(1.5, win * (1 - w)) : 1.5, xMax: win ? win * (1 + w) : 30, cap: win || 30 };
+  }
+
+  // full automatic analysis of one pile (averaged trace + per-hit traces)
+  function analyze(avg, hits, opt) {
+    const fs = opt.fs, V = opt.V, Lp = opt.Lp > 0 ? opt.Lp : null;
+    const sr = searchRange(Lp, opt.useWindow, opt.window);
+    const ctx = {
+      fs, V,
+      xMin: sr.xMin,
+      xMax: sr.xMax,
+      gainCap: sr.cap,
+      scan: Math.round(0.0015 * fs),
+      minSep: Math.round(0.0003 * fs),
+      gainDelay: opt.gainDelay || 0,
+      ma: opt.ma,
+      fMax: opt.fMax || 3000,
+    };
+    const m1 = methodTime(avg.s, avg.i0, ctx);
+    const m2 = methodGain(avg.s, avg.i0, ctx);
+    const m3 = methodSpectrum(avg.s, avg.i0, ctx);
+    const perHit = hits.map(h => {
+      const a = methodTime(h.s, h.i0, ctx), b = methodGain(h.s, h.i0, ctx);
+      return { time: a.ok ? a.L : null, gain: b.ok ? b.L : null };
+    });
+    // a reflection that repeats on every hit is stronger evidence than a sharp peak on the average
+    if (hits.length > 1) {
+      for (const [m, key] of [[m1, 'time'], [m2, 'gain']]) {
+        if (!m.ok) continue;
+        m.hitAgree = perHit.filter(h => h[key] != null && Math.abs(h[key] - m.L) / m.L <= 0.05).length / hits.length;
+        m.conf = 0.5 * m.conf + 0.5 * m.hitAgree;
+        m.confLabel = confidenceLabel(m.conf);
+      }
+    }
+    // without amplification M2 repeats M1 and must not count as a second, independent confirmation
+    m2.dup = m1.ok && m2.ok && m2.ma < 0.5 && Math.abs(m2.L - m1.L) / m1.L < 0.01;
+    const final = combine(m2.dup ? [m1, m3] : [m1, m2, m3], Lp);
+    let anom = [];
+    if (final.ok && m2.ok) {
+      const toeIdx = depthToIndex(final.L, avg.i0, V, fs);
+      const g = m2.gained, p = positivePeaks(g, Math.round(toeIdx) - ctx.minSep, Math.round(toeIdx) + ctx.minSep, ctx.scan);
+      const toeProm = p.length ? Math.max(...p.map(c => c.prom)) : Math.abs(g[avg.i0]);
+      anom = anomalies(g, avg.i0, toeIdx, ctx, toeProm);
+    }
+    const vals = perHit.map(h => h.time).filter(v => v != null);
+    const spread = vals.length > 1 ? (Math.max(...vals) - Math.min(...vals)) : null;
+    const quality = [];
+    if (m2.ok && m2.ma === 0 && opt.ma == null) quality.push('в окне поиска есть колебания сильнее ударного импульса (помеха или плохой контакт датчика)');
+    if (final.ok && spread != null && spread / final.L > 0.06) quality.push(`большой разброс длины по ударам: ${spread.toFixed(2).replace('.', ',')} м`);
+    if (final.ok && hits.length && vals.length < hits.length) quality.push('отражение выделяется не на всех ударах');
+    if (final.ok) {
+      const levels = ['низкая', 'средняя', 'высокая'];
+      final.conf = levels[Math.max(0, levels.indexOf(final.conf) - quality.length)];
+      if (quality.length) final.check = true;
+    }
+    final.quality = quality;
+    return { methods: { time: m1, gain: m2, spectrum: m3 }, final, perHit, spread, anomalies: anom, window: [ctx.xMin, ctx.xMax] };
+  }
+
+  return { searchRange, parseWav, processChannel, findImpact, applyPolarity, average, applyGain, autoGain, spectrum, analyze,
+    depthToIndex, indexToDepth, onsetIndex, setScale, filtfilt, methodTime, methodGain, methodSpectrum };
+})();
+if (typeof module !== 'undefined') module.exports = DSP;
+</script>
+
+<script id="plot">
+// Canvas chart: line series, vertical markers, bands, points; wheel zoom and pan along X.
+const PlotLib = (() => {
+  'use strict';
+  const FONT = '11px "Segoe UI", system-ui, Arial, sans-serif';
+
+  function niceStep(range, n) {
+    const raw = range / n, p = Math.pow(10, Math.floor(Math.log10(raw))), m = raw / p;
+    return (m < 1.5 ? 1 : m < 3 ? 2 : m < 7 ? 5 : 10) * p;
+  }
+  function ticks(a, b, n) {
+    const st = niceStep(b - a || 1, n), out = [];
+    for (let v = Math.ceil(a / st) * st; v <= b + st * 1e-9; v += st) out.push(Math.abs(v) < st * 1e-9 ? 0 : v);
+    return { out, st };
+  }
+  function label(v, st) {
+    const d = Math.max(0, Math.min(8, -Math.floor(Math.log10(st) + 1e-9)));
+    return v.toFixed(d).replace('.', ',').replace(/^-0(,0*)?$/, '0');
+  }
+
+  function yRange(series, axis, x1, x2) {
+    let lo = Infinity, hi = -Infinity;
+    for (const s of series) {
+      if ((s.axis || 'y') !== axis || s.skipRange) continue;
+      for (let i = 0; i < s.x.length; i++) {
+        const x = s.x[i];
+        if (x < x1 || x > x2) continue;
+        const y = s.y[i];
+        if (y < lo) lo = y;
+        if (y > hi) hi = y;
+      }
+    }
+    if (!isFinite(lo)) return [-1, 1];
+    if (hi - lo < 1e-12) { lo -= 1; hi += 1; }
+    const pad = (hi - lo) * 0.07;
+    return [lo - pad, hi + pad];
+  }
+
+  function draw(ctx, W, H, d, view, hover) {
+    const hasY2 = d.series.some(s => s.axis === 'y2');
+    const R = { l: 72, r: W - (hasY2 ? 64 : 16), t: d.title ? 28 : 12, b: H - 40 };
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, W, H);
+    if (d.title) {
+      ctx.fillStyle = '#111'; ctx.font = '600 13px "Segoe UI", Arial, sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText(d.title, (R.l + R.r) / 2, 17);
+    }
+    const [x1, x2] = view;
+    const yr = d.yRange || yRange(d.series, 'y', x1, x2);
+    const yr2 = hasY2 ? yRange(d.series, 'y2', x1, x2) : null;
+    const X = x => R.l + (x - x1) / (x2 - x1) * (R.r - R.l);
+    const Y = (y, r = yr) => R.b - (y - r[0]) / (r[1] - r[0]) * (R.b - R.t);
+    ctx.font = FONT;
+
+    const tx = ticks(x1, x2, Math.max(3, Math.round((R.r - R.l) / 90)));
+    const ty = ticks(yr[0], yr[1], Math.max(3, Math.round((R.b - R.t) / 38)));
+    ctx.strokeStyle = '#e5e7eb'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const v of tx.out) { const px = Math.round(X(v)) + 0.5; ctx.moveTo(px, R.t); ctx.lineTo(px, R.b); }
+    for (const v of ty.out) { const py = Math.round(Y(v)) + 0.5; ctx.moveTo(R.l, py); ctx.lineTo(R.r, py); }
+    ctx.stroke();
+
+    for (const b of d.bands || []) {
+      const a = Math.max(R.l, X(b.x1)), c = Math.min(R.r, X(b.x2));
+      if (c > a) { ctx.fillStyle = b.color; ctx.fillRect(a, R.t, c - a, R.b - R.t); }
+    }
+
+    ctx.fillStyle = '#374151'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    for (const v of tx.out) ctx.fillText(label(v, tx.st), X(v), R.b + 5);
+    ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+    for (const v of ty.out) ctx.fillText(label(v, ty.st), R.l - 6, Y(v));
+    if (yr2) {
+      const t2 = ticks(yr2[0], yr2[1], Math.max(3, Math.round((R.b - R.t) / 38)));
+      ctx.textAlign = 'left';
+      for (const v of t2.out) ctx.fillText(label(v, t2.st), R.r + 6, Y(v, yr2));
+    }
+    ctx.strokeStyle = '#9ca3af';
+    ctx.strokeRect(R.l + 0.5, R.t + 0.5, R.r - R.l, R.b - R.t);
+
+    ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = '#111';
+    ctx.font = '12px "Segoe UI", Arial, sans-serif';
+    if (d.xLabel) ctx.fillText(d.xLabel, (R.l + R.r) / 2, H - 6);
+    if (d.yLabel) { ctx.save(); ctx.translate(14, (R.t + R.b) / 2); ctx.rotate(-Math.PI / 2); ctx.fillStyle = d.yColor || '#111'; ctx.fillText(d.yLabel, 0, 0); ctx.restore(); }
+    if (d.y2Label && yr2) { ctx.save(); ctx.translate(W - 10, (R.t + R.b) / 2); ctx.rotate(Math.PI / 2); ctx.fillStyle = d.y2Color || '#111'; ctx.fillText(d.y2Label, 0, 0); ctx.restore(); }
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(R.l, R.t, R.r - R.l, R.b - R.t); ctx.clip();
+    if (yr[0] < 0 && yr[1] > 0) {
+      ctx.strokeStyle = '#111'; ctx.lineWidth = 1; ctx.beginPath();
+      const py = Math.round(Y(0)) + 0.5; ctx.moveTo(R.l, py); ctx.lineTo(R.r, py); ctx.stroke();
+    }
+    for (const s of d.series) {
+      const r = s.axis === 'y2' ? yr2 : yr;
+      ctx.strokeStyle = s.color; ctx.lineWidth = s.width || 1.5; ctx.globalAlpha = s.alpha ?? 1;
+      ctx.setLineDash(s.dash || []);
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < s.x.length; i++) {
+        const x = s.x[i];
+        if (x < x1 && s.x[i + 1] < x1) continue;
+        if (x > x2 && s.x[i - 1] > x2) break;
+        const px = X(x), py = Y(s.y[i], r);
+        if (!started) { ctx.moveTo(px, py); started = true; } else ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1; ctx.setLineDash([]);
+
+    const rows = [];
+    const marks = [...(d.markers || [])].sort((a, b) => a.x - b.x);
+    for (const m of marks) {
+      const px = X(m.x);
+      if (px < R.l - 1 || px > R.r + 1) continue;
+      ctx.strokeStyle = m.color; ctx.lineWidth = m.width || 1.5; ctx.setLineDash(m.dash || []);
+      ctx.beginPath(); ctx.moveTo(Math.round(px) + 0.5, R.t); ctx.lineTo(Math.round(px) + 0.5, R.b); ctx.stroke();
+      ctx.setLineDash([]);
+      if (m.label) {
+        ctx.font = (m.bold ? '600 ' : '') + FONT;
+        const w = ctx.measureText(m.label).width + 8;
+        let lx = px + 3;
+        if (lx + w > R.r) lx = px - 3 - w;
+        let row = 0;
+        while (rows[row] != null && rows[row] > lx - 2) row++;
+        rows[row] = lx + w;
+        const ly = R.t + 3 + row * 17;
+        ctx.fillStyle = m.fill || 'rgba(255,255,255,.88)';
+        ctx.fillRect(lx, ly, w, 15);
+        ctx.fillStyle = m.textColor || m.color;
+        ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        ctx.fillText(m.label, lx + 4, ly + 8);
+      }
+    }
+    for (const p of d.points || []) {
+      const px = X(p.x), py = Y(p.y, p.axis === 'y2' ? yr2 : yr);
+      ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+      if (p.label) {
+        ctx.font = FONT; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+        const w = ctx.measureText(p.label).width + 8;
+        let lx = px + 7; if (lx + w > R.r) lx = px - 7 - w;
+        ctx.fillStyle = 'rgba(255,255,255,.9)'; ctx.fillRect(lx, py - 18, w, 15);
+        ctx.fillStyle = '#111'; ctx.fillText(p.label, lx + 4, py - 10);
+      }
+    }
+    if (hover != null && hover >= x1 && hover <= x2) {
+      ctx.strokeStyle = 'rgba(17,24,39,.35)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(Math.round(X(hover)) + 0.5, R.t); ctx.lineTo(Math.round(X(hover)) + 0.5, R.b); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.restore();
+    return { R, X, Y, yr, inv: px => x1 + (px - R.l) / (R.r - R.l) * (x2 - x1), invY: py => yr[0] + (R.b - py) / (R.b - R.t) * (yr[1] - yr[0]) };
+  }
+
+  class Plot {
+    constructor(canvas, opt = {}) {
+      this.cv = canvas; this.opt = opt;
+      this.d = { series: [], markers: [], bands: [], points: [] };
+      this.full = [0, 1]; this.view = null; this.hover = null; this.drag = null; this.geo = null;
+      this.w = 100; this.h = 100; this.dpr = 1;
+      new ResizeObserver(() => this.resize()).observe(canvas.parentElement);
+      canvas.addEventListener('wheel', e => this.onWheel(e), { passive: false });
+      canvas.addEventListener('mousedown', e => this.onDown(e));
+      window.addEventListener('mousemove', e => this.onMove(e));
+      window.addEventListener('mouseup', e => this.onUp(e));
+      canvas.addEventListener('dblclick', () => { this.view = null; this.draw(); });
+      canvas.addEventListener('contextmenu', e => {
+        if (!this.opt.onContext || !this.geo) return;
+        e.preventDefault();
+        this.opt.onContext(this.geo.inv(this.pos(e).x));
+      });
+      canvas.addEventListener('mouseleave', () => { if (!this.drag) { this.hover = null; this.draw(); this.opt.onHover && this.opt.onHover(null); } });
+    }
+    resize() {
+      const r = this.cv.parentElement.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      this.dpr = window.devicePixelRatio || 1;
+      this.w = r.width; this.h = r.height;
+      this.cv.width = Math.round(this.w * this.dpr); this.cv.height = Math.round(this.h * this.dpr);
+      this.cv.style.width = this.w + 'px'; this.cv.style.height = this.h + 'px';
+      this.draw();
+    }
+    set(d, keepView) {
+      this.d = Object.assign({ series: [], markers: [], bands: [], points: [] }, d);
+      this.full = d.xRange || [0, 1];
+      if (!keepView) this.view = null;
+      this.draw();
+    }
+    xr() { return this.view || this.full; }
+    draw() {
+      const ctx = this.cv.getContext('2d');
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.geo = draw(ctx, this.w, this.h, this.d, this.xr(), this.hover);
+    }
+    pos(e) { const r = this.cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+    inside(p) { const R = this.geo && this.geo.R; return R && p.x >= R.l && p.x <= R.r && p.y >= R.t && p.y <= R.b; }
+    onWheel(e) {
+      const p = this.pos(e);
+      if (!this.inside(p)) return;
+      e.preventDefault();
+      const [a, b] = this.xr(), c = this.geo.inv(p.x), k = e.deltaY > 0 ? 1.25 : 0.8;
+      const span = this.full[1] - this.full[0];
+      let na = c - (c - a) * k, nb = c + (b - c) * k;
+      if (nb - na > span * 3) return;
+      if (nb - na < span * 1e-3) return;
+      this.view = [na, nb]; this.draw();
+    }
+    onDown(e) {
+      if (e.button !== 0) return;
+      const p = this.pos(e);
+      if (!this.inside(p)) return;
+      this.drag = { type: 'pan', x0: p.x, v0: [...this.xr()], moved: false };
+      e.preventDefault();
+    }
+    onMove(e) {
+      if (!this.geo) return;
+      const p = this.pos(e);
+      if (this.drag && this.drag.type === 'pan') {
+        const dx = p.x - this.drag.x0;
+        if (Math.abs(dx) > 3) this.drag.moved = true;
+        if (this.drag.moved) {
+          const k = (this.drag.v0[1] - this.drag.v0[0]) / (this.geo.R.r - this.geo.R.l);
+          this.view = [this.drag.v0[0] - dx * k, this.drag.v0[1] - dx * k];
+          this.draw();
+        }
+        return;
+      }
+      if (e.target !== this.cv) return;
+      this.hover = this.inside(p) ? this.geo.inv(p.x) : null;
+      this.draw();
+      this.opt.onHover && this.opt.onHover(this.hover);
+    }
+    onUp(e) {
+      const d = this.drag;
+      this.drag = null;
+      if (!d) return;
+      const p = this.pos(e);
+      if (!d.moved && this.inside(p)) this.opt.onClick && this.opt.onClick(this.geo.inv(p.x), this.geo.invY(p.y), e);
+    }
+  }
+
+  function image(d, W, H, view) {
+    const c = document.createElement('canvas');
+    const k = 2;
+    c.width = W * k; c.height = H * k;
+    const ctx = c.getContext('2d');
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    draw(ctx, W, H, Object.assign({ series: [], markers: [], bands: [], points: [] }, d), view || d.xRange, null);
+    return c.toDataURL('image/png');
+  }
+
+  return { Plot, image };
+})();
+</script>
+
+<script id="app">
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const fmt = (v, d = 2) => v == null || !isFinite(v) ? '—' : v.toFixed(d).replace('.', ',');
+  const fmtSigned = (v, d = 1) => v == null || !isFinite(v) ? '—' : (v > 0 ? '+' : v < 0 ? '−' : '') + fmt(Math.abs(v), d);
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const num = el => { const v = parseFloat(String(el.value).replace(',', '.')); return isFinite(v) ? v : null; };
+
+  const C = { main: '#d62728', side: '#1f4fd8', hammer: '#2e7d32', time: '#7c3aed', gain: '#ea580c', spectrum: '#0891b2',
+    final: '#111827', t0: '#6b7280', anom: '#db2777', meas: '#64748b', measOn: '#d97706' };
+  const MNAME = { time: 'М1 · Временной', gain: 'М2 · По усиленному сигналу', spectrum: 'М3 · Спектральный' };
+  const MSHORT = { time: 'М1', gain: 'М2', spectrum: 'М3' };
+  const CHNAME = ['Основной', 'Боковой'];
+  const HIT_COLORS = ['#ff7f0e', '#2ca02c', '#9467bd', '#8c564b', '#e377c2', '#17becf', '#bcbd22', '#7f7f7f', '#f2b701', '#00a087'];
+  const hitColor = j => HIT_COLORS[j % HIT_COLORS.length];
+
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem('pileAnalyzer:' + k); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem('pileAnalyzer:' + k, JSON.stringify(v)); } catch (e) { /* storage unavailable */ } },
+  };
+
+  const state = {
+    obj: Object.assign({ name: '', V: 4000, vMode: 'v', Rmpa: null, cls: 25, Lp: null, useWindow: true, window: 50, ch: 'main', splitMin: 2 }, store.get('obj', {})),
+    proc: Object.assign({ integrate: true, hp: true, hpF: 100, lp: true, lpF: 2000, gainOn: true, ma: 20, maAuto: true, gainDelay: 0 }, store.get('proc', {})),
+    view: Object.assign({ scale: 'depth', spectrum: true, extended: true }, store.get('view', {})),
+    hits: [], piles: [], cur: -1, tab: 'signal', hlHit: null,
+    // measurement points {id, us}; measSel — ids of the pair the length is measured between (id 0 = strike)
+    meas: [], measSel: [null, null], measAuto: true, specMeas: [],
+  };
+
+  // amplification became on by default in settings version 2
+  if (!(state.proc.ver >= 2)) { state.proc.gainOn = true; state.proc.ver = 2; store.set('proc', state.proc); }
+
+  // ---------------- per-pile persistence ----------------
+  const pileKey = p => 'pile:' + (state.obj.name || p.object) + '|' + p.id + (p.gid || '');
+  function savePile(p) {
+    store.set(pileKey(p), { V: p.V, vMode: p.vMode, Rmpa: p.Rmpa, cls: p.cls, Lp: p.Lp, polarity: p.polarity, manualDt: p.manualDt, manualFrom: p.manualFrom, conclusion: p.conclusion,
+      layers: p.layers, excluded: p.hits.filter(h => !h.include).map(h => h.name) });
+  }
+  function restorePile(p, hits) {
+    const s = store.get(pileKey(p), null);
+    if (!s) return;
+    p.V = s.V ?? null; p.Lp = s.Lp ?? null; p.polarity = s.polarity || 'auto';
+    p.vMode = s.vMode ?? (s.V > 0 ? 'v' : null); p.Rmpa = s.Rmpa ?? null; p.cls = s.cls ?? null;
+    p.manualDt = s.manualDt ?? null; p.manualFrom = s.manualFrom ?? null; p.conclusion = s.conclusion ?? null;
+    p.layers = Array.isArray(s.layers) ? s.layers : [];
+    for (const h of hits) h.include = !(s.excluded || []).includes(h.name);
+  }
+  // known depths along the pile (section joints, soil boundaries…) — reflections there are expected, not defects
+  const LAYER_TYPES = {
+    joint: { name: 'стык секций', short: 'стык', color: '#0f766e' },
+    soil: { name: 'граница грунта', short: 'грунт', color: '#92400e' },
+    widen: { name: 'уширение', short: 'уширение', color: '#4338ca' },
+    other: { name: 'другое', short: 'отметка', color: '#475569' },
+  };
+  const pileLayers = p => (p.layers || []).filter(l => l.d > 0);
+  const layerOf = (p, L) => pileLayers(p).find(l => Math.abs(l.d - L) <= Math.max(0.3, 0.04 * l.d));
+  const layerText = l => `${LAYER_TYPES[l.type].name} ${fmt(l.d, 2)} м`;
+  const anomalyText = (p, x) => { const l = layerOf(p, x.L); return fmt(x.L, 2) + ' м' + (l ? ` (${LAYER_TYPES[l.type].name})` : ''); };
+
+  // ---------------- wave velocity from concrete strength / class ----------------
+  // ГОСТ Р 72171-2025, А.4: B20–B35 → 3600–4100 м/с, B35 и выше → 4100–4500 м/с (linear by class, 3500–4500 overall)
+  // concrete classes used for piles (B10…B60) and their mean compressive strength R̄, кгс/см² (ГОСТ 26633, табл. 6)
+  const CLASS_MEAN = [[10, 131.0], [12.5, 163.7], [15, 196.5], [20, 261.9], [22.5, 294.7], [25, 327.4], [27.5, 360.2],
+    [30, 392.9], [35, 458.4], [40, 523.9], [45, 589.4], [50, 654.8], [55, 720.3], [60, 785.8]];
+  const DEFAULT_CLASS = 25;
+  const CLASSES = CLASS_MEAN.map(c => c[0]);
+  const vClassRaw = B => B <= 35 ? Math.max(3500, 3600 + (B - 20) * 500 / 15) : Math.min(4500, 4100 + (B - 35) * 400 / 25);
+  const vFromClass = B => Math.round(vClassRaw(B) / 10) * 10;
+  // measured strength → V, interpolated between neighbouring classes as points (mean strength R̄, V of the class)
+  function vFromMpa(R) {
+    const pts = CLASS_MEAN.map(([B, kgf]) => ({ B, R: kgf * 0.0980665, V: vClassRaw(B) }));
+    const first = pts[0], last = pts[pts.length - 1], round = v => Math.round(v / 10) * 10;
+    if (R < first.R - 0.01) return { V: round(first.V), info: `ниже ${clsName(first.B)} (R̄ = ${fmt(first.R, 1)} МПа) → V = ${round(first.V)} м/с` };
+    if (R >= last.R - 0.01) return { V: round(last.V), info: `${clsName(last.B)} → V = ${round(last.V)} м/с` };
+    // 0,01 МПа tolerance: a value typed equal to a class mean (rounded) belongs to that class
+    const k = pts.findIndex(p => p.R > R + 0.01), a = pts[k - 1], b = pts[k];
+    const V = round(a.V + (b.V - a.V) * (R - a.R) / (b.R - a.R));
+    // the class is the standard one whose mean strength the measured value reaches (ГОСТ 26633, табл. 6)
+    return { V, info: `${clsName(a.B)} (R̄ = ${fmt(a.R, 1)} МПа) → V = ${V} м/с` };
+  }
+  const clsName = B => 'B' + String(B).replace('.', ',');
+  // {mode, V, R, cls} → effective V in m/s (null if not set) and a hint text
+  function velocityOf(src) {
+    if (src.vMode === 'mpa') {
+      if (!(src.Rmpa > 0)) return { V: null, info: '' };
+      return vFromMpa(src.Rmpa);
+    }
+    if (src.vMode === 'class') {
+      const V = vFromClass(validClass(src.cls));
+      return { V, info: `→ V = ${V} м/с` };
+    }
+    return { V: src.V > 0 ? src.V : null, info: '' };
+  }
+  const validClass = c => CLASSES.includes(+c) ? +c : DEFAULT_CLASS;
+  const classOptions = sel => CLASSES.map(b => `<option value="${b}"${validClass(sel) === b ? ' selected' : ''}>${clsName(b)}</option>`).join('');
+
+  const saveObj = () => {
+    store.set('obj', state.obj);
+    const o = state.obj;
+    if (o.name) store.set('objV:' + o.name, { V: o.V, Lp: o.Lp, vMode: o.vMode, Rmpa: o.Rmpa, cls: o.cls });
+  };
+
+  // ---------------- loading ----------------
+  function chSnr(c) {
+    const a = Float64Array.from(c).sort(), med = a[a.length >> 1];
+    const dev = Float64Array.from(c, x => Math.abs(x - med)).sort()[c.length >> 1];
+    let mx = 0;
+    for (const x of c) mx = Math.max(mx, Math.abs(x - med));
+    return mx / (1.4826 * dev + 1e-9);
+  }
+
+  function makeHit(file, rel, w) {
+    const parts = rel.split('/');
+    const folder = parts.length > 1 ? parts[parts.length - 2] : '';
+    const grand = parts.length > 2 ? parts[parts.length - 3] : '';
+    const m = w.meta;
+    const dm = file.name.match(/(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})_(\d{2})/);
+    return {
+      name: file.name, rel, fs: w.fs, ch: w.channels, meta: m,
+      object: m.OBJECT_NAME || grand, pile: m.PILE_NUM || folder || 'б/н',
+      hitNum: m.HIT_NUM || (file.name.match(/^(\d+)_/) || [])[1] || '',
+      date: dm ? `${dm[3]}.${dm[2]}.20${dm[1]}` : '', time: dm ? `${dm[4]}:${dm[5]}:${dm[6]}` : '',
+      ts: dm ? new Date(2000 + +dm[1], +dm[2] - 1, +dm[3], +dm[4], +dm[5], +dm[6]).getTime() : null,
+      comment: (m.COMMENT || '').trim(), include: true, snr: w.channels.map(chSnr),
+    };
+  }
+
+  async function loadFiles(items, replace) {
+    const wavs = items.filter(it => /\.wav$/i.test(it.file.name));
+    if (!wavs.length) { toast('В выбранном нет файлов .wav'); return; }
+    const hits = [], errors = [];
+    for (const it of wavs) {
+      try { hits.push(makeHit(it.file, it.rel, DSP.parseWav(await it.file.arrayBuffer()))); }
+      catch (e) { errors.push(it.file.name + ': ' + e.message); }
+    }
+    if (replace) { state.hits = []; state.piles = []; state.cur = -1; }
+    const objects = [...new Set(hits.map(h => h.object).filter(Boolean))];
+    if (replace && objects.length) {
+      state.obj.name = objects[0];
+      const saved = store.get('objV:' + state.obj.name, null);
+      if (saved) Object.assign(state.obj, { V: saved.V, Lp: saved.Lp, vMode: saved.vMode || 'v', Rmpa: saved.Rmpa ?? null, cls: saved.cls ?? DEFAULT_CLASS });
+    }
+    for (const h of hits) if (!state.hits.some(x => x.rel === h.rel)) state.hits.push(h);
+    buildPiles();
+    saveObj();
+    syncControls();
+    renderAll(true);
+    toast(`Загружено: ${hits.length} файл(ов), свай: ${state.piles.length}` + (errors.length ? `. Ошибки: ${errors.length} (${errors[0]})` : ''));
+  }
+
+  // One folder (pile number) may hold several piles recorded one after another: hits are split into
+  // separate piles wherever the pause between neighbouring hits exceeds the threshold.
+  function buildPiles() {
+    const coll = new Intl.Collator('ru', { numeric: true });
+    const byTime = (a, b) => (a.ts ?? Infinity) - (b.ts ?? Infinity) || coll.compare(a.hitNum, b.hitNum) || coll.compare(a.name, b.name);
+    const gapMs = state.obj.splitMin > 0 ? state.obj.splitMin * 60000 : Infinity;
+    const multiObj = new Set(state.hits.map(h => h.object)).size > 1;
+    const folders = new Map();
+    for (const h of state.hits) {
+      const k = h.object + '\u0001' + h.pile;
+      if (!folders.has(k)) folders.set(k, []);
+      folders.get(k).push(h);
+    }
+    const old = new Map(state.piles.map(p => [p.key, p]));
+    const hadAnalysis = state.piles.some(p => p.analysis);
+    const curKey = state.piles[state.cur] ? state.piles[state.cur].key : null;
+    const piles = [];
+    for (const [fk, list] of folders) {
+      list.sort(byTime);
+      const groups = [];
+      for (const h of list) {
+        const g = groups[groups.length - 1], prev = g && g[g.length - 1];
+        if (g && !(h.ts != null && prev.ts != null && h.ts - prev.ts > gapMs)) g.push(h); else groups.push([h]);
+      }
+      groups.forEach((hs, k) => {
+        const h0 = hs[0], split = groups.length > 1;
+        const gid = split ? '@' + (h0.ts ?? k) : '';
+        const key = fk + gid;
+        let p = old.get(key);
+        const same = p && p.hits.length === hs.length && p.hits.every((x, i) => x === hs[i]);
+        if (!p) {
+          p = { key, object: h0.object, id: h0.pile, gid, V: null, Lp: null, polarity: 'auto', manualDt: null, conclusion: null,
+            layers: [], view: 'avg', analysis: null };
+          restorePile(p, hs);
+        }
+        p.hits = hs;
+        p.label = (multiObj ? h0.object + ' / ' : '') + h0.pile + (split ? ` · гр. ${k + 1}` : '');
+        if (!same) { p.view = hs.length > 1 ? 'avg' : 0; if (p.analysis) runAnalysis(p); }
+        piles.push(p);
+      });
+    }
+    piles.sort((a, b) => coll.compare(a.object, b.object) || coll.compare(a.id, b.id) || (a.hits[0].ts ?? 0) - (b.hits[0].ts ?? 0));
+    state.piles = piles;
+    if (hadAnalysis) for (const p of piles) if (!p.analysis) runAnalysis(p);
+    state.cur = Math.max(0, piles.findIndex(p => p.key === curKey));
+    if (!piles.length) state.cur = -1;
+    if (piles[state.cur]) piles[state.cur].expanded = true;
+  }
+  const pileTimes = p => {
+    const t = p.hits.map(h => h.time).filter(Boolean);
+    if (!t.length) return p.hits[0].date;
+    const a = t[0].slice(0, 5), b = t[t.length - 1].slice(0, 5);
+    return `${p.hits[0].date} ${a}${b !== a ? '–' + b : ''}`;
+  };
+
+  async function entriesToItems(dtItems) {
+    const out = [];
+    async function walk(entry) {
+      if (entry.isFile) {
+        const file = await new Promise((res, rej) => entry.file(res, rej));
+        out.push({ file, rel: entry.fullPath.replace(/^\//, '') });
+      } else if (entry.isDirectory) {
+        const reader = entry.createReader();
+        let batch;
+        do {
+          batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          for (const e of batch) await walk(e);
+        } while (batch.length);
+      }
+    }
+    const entries = [...dtItems].map(it => it.webkitGetAsEntry && it.webkitGetAsEntry()).filter(Boolean);
+    for (const e of entries) await walk(e);
+    return out;
+  }
+
+  // ---------------- processing ----------------
+  const curPile = () => state.piles[state.cur] || null;
+  const pileV = p => p.V > 0 ? p.V : state.obj.V;
+  const pileLp = p => p.Lp > 0 ? p.Lp : (state.obj.Lp > 0 ? state.obj.Lp : null);
+  const procParams = () => ({ integrate: state.proc.integrate, hp: state.proc.hp, hpF: state.proc.hpF, lp: state.proc.lp, lpF: state.proc.lpF });
+
+  const CH_MODES = ['main', 'main+side', 'side', 'main+hammer'];
+  if (!CH_MODES.includes(state.obj.ch)) state.obj.ch = 'main';
+  const analysisChannel = p => state.obj.ch === 'side' && p.hits[0].ch.length > 1 ? 1 : 0;
+  const showSecond = p => (state.obj.ch === 'main+side' || state.obj.ch === 'main+hammer') && p.hits[0].ch.length > 1;
+
+  // the selected channel is much weaker than the other one — the record was probably made in another mode
+  function weakChannelHint(p) {
+    if (p.hits[0].ch.length < 2) return null;
+    const ch = analysisChannel(p), other = 1 - ch;
+    if (other === 1 && state.obj.ch === 'main+hammer') return null;
+    const both = p.hits.filter(h => h.snr.length > 1);
+    if (!both.length) return null;
+    const med = k => { const a = both.map(h => h.snr[k]).sort((x, y) => x - y); return a[a.length >> 1]; };
+    const k = med(other) / Math.max(1e-9, med(ch));
+    if (k < 5) return null;
+    return `Сигнал канала «${CHNAME[ch]}» в ${Math.round(k)} раз слабее, чем «${CHNAME[other]}». Возможно, запись сделана в режиме «${CHNAME[other]}» — смените режим датчиков вверху.`;
+  }
+
+  // The analysis always works on velocity, and the strike moment and polarity are always taken from velocity,
+  // so the zero and the method markers stay consistent when «Интегратор» is switched off for viewing.
+  function pileData(p, forAnalysis) {
+    const ch = analysisChannel(p), fs = p.hits[0].fs, pp = procParams();
+    const vel = Object.assign({}, pp, { integrate: true });
+    const traces = p.hits.map(h => {
+      // a pile may mix one- and two-channel records
+      const raw = h.ch[ch] || h.ch[0];
+      const r = DSP.processChannel(raw, h.fs, vel);
+      const imp = DSP.findImpact(r.v, r.onset, h.fs, p.polarity);
+      const s = forAnalysis || pp.integrate ? r.v : DSP.processChannel(raw, h.fs, pp).v;
+      return { s: DSP.applyPolarity(s, imp.pol), i0: imp.i0, pol: imp.pol, hit: h };
+    });
+    let inc = traces.filter(t => t.hit.include);
+    if (!inc.length) inc = traces;
+    return { ch, fs, traces, inc, avg: DSP.average(inc) };
+  }
+
+  function secondTrace(p, d, t) {
+    const other = 1 - d.ch, h = t.hit;
+    if (!h.ch[other]) return null;
+    const hammer = state.obj.ch === 'main+hammer' && other === 1;
+    const r = DSP.processChannel(h.ch[other], h.fs, hammer ? { integrate: false, hp: false, lp: state.proc.lp, lpF: state.proc.lpF } : procParams());
+    const imp = DSP.findImpact(r.v, r.onset, h.fs, 'auto');
+    return { s: DSP.applyPolarity(r.v, imp.pol), i0: t.i0 };
+  }
+
+  function runAnalysis(p) {
+    const d = pileData(p, true), V = pileV(p), Lp = pileLp(p);
+    const res = DSP.analyze(d.avg, d.inc, {
+      fs: d.fs, V, Lp, useWindow: state.obj.useWindow, window: state.obj.window / 100, gainDelay: state.proc.gainDelay,
+      ma: state.proc.maAuto ? null : state.proc.ma, fMax: state.proc.lp ? Math.min(4000, state.proc.lpF * 1.2) : 3000,
+    });
+    p.analysis = { res, V, Lp, ch: d.ch, n: d.inc.length };
+  }
+  const refreshAnalyses = () => { for (const p of state.piles) if (p.analysis) runAnalysis(p); };
+
+  function finalOf(p) {
+    const V = pileV(p), Lp = pileLp(p);
+    const auto = p.analysis && p.analysis.res.final.ok ? p.analysis.res.final.L : null;
+    let L = null, manual = false;
+    if (p.manualDt != null) { L = p.manualDt * 1e-6 * V / 2; manual = true; }
+    else L = auto;
+    if (L == null) return null;
+    // fromUs: start of the measured interval when the length was taken between two points, not from the strike
+    const fromUs = manual && p.manualFrom > 0 ? p.manualFrom : null;
+    return { L, manual, auto, fromUs, dt: 2 * L / V * 1e6, elr: Lp ? (L - Lp) / Lp * 100 : null };
+  }
+  function setManual(p, dt, fromUs = null) {
+    p.manualDt = dt; p.manualFrom = dt != null && fromUs > 0 ? fromUs : null;
+    savePile(p);
+  }
+
+  // a hand-set length that none of the methods supports: the report then shows no method lengths at all
+  function manualDisagrees(p) {
+    const f = finalOf(p), a = p.analysis;
+    if (!f || !f.manual || !a) return false;
+    return !['time', 'gain', 'spectrum'].some(k => { const m = a.res.methods[k]; return m.ok && Math.abs(m.L - f.L) / f.L <= 0.08; });
+  }
+
+  function pileStatus(p) {
+    const f = finalOf(p);
+    if (!p.analysis && !f) return 'none';
+    if (!f) return 'bad';
+    const r = p.analysis && p.analysis.res.final;
+    if (f.manual) return f.elr != null && Math.abs(f.elr) > 10 ? 'warn' : 'ok';
+    return r.check || r.conf === 'низкая' ? 'warn' : 'ok';
+  }
+
+  // ---------------- signal plot data ----------------
+  const xOf = (i, i0, fs, V, scale) => scale === 'depth' ? (i - i0) / fs * V / 2 : (i - i0) / fs * 1e6;
+  const idxOf = (x, i0, fs, V, scale) => scale === 'depth' ? i0 + 2 * x / V * fs : i0 + x * 1e-6 * fs;
+
+  function displayMa(p, s, i0, fs) {
+    if (!state.proc.maAuto) return state.proc.ma;
+    const m2 = p.analysis && p.analysis.res.methods.gain;
+    if (m2 && m2.ma != null) return m2.ma;
+    const V = pileV(p), sr = pileRange(p);
+    const w1 = Math.round(DSP.depthToIndex(sr.xMin, i0, V, fs));
+    const w2 = Math.round(DSP.depthToIndex(sr.xMax, i0, V, fs));
+    return DSP.autoGain(s, i0, Math.min(w1, s.length - 2), Math.min(w2, s.length - 1),
+      Math.round(2 * state.proc.gainDelay / V * fs), Math.round(DSP.depthToIndex(sr.cap, i0, V, fs)));
+  }
+  const pileRange = p => DSP.searchRange(pileLp(p), state.obj.useWindow, state.obj.window / 100);
+
+  function signalPlotData(p, opt) {
+    const d = pileData(p), V = pileV(p), fs = d.fs, Lp = pileLp(p), scale = opt.scale;
+    const single = p.view !== 'avg' && d.traces[p.view];
+    const mainT = single ? d.traces[p.view] : d.avg;
+    const i0 = mainT.i0;
+    let ma = null;
+    const capDepth = pileRange(p).cap;
+    const delayIdx = Math.round(2 * state.proc.gainDelay / V * fs);
+    const gain = (s, j0) => opt.gain ? DSP.applyGain(s, j0, ma, delayIdx, Math.round(DSP.depthToIndex(capDepth, j0, V, fs))) : s;
+    if (opt.gain) ma = displayMa(p, mainT.s, i0, fs);
+    const color = d.ch === 0 ? C.main : C.side;
+    const series = [];
+    const toXY = (s, j0) => {
+      const x = new Float64Array(s.length);
+      for (let i = 0; i < s.length; i++) x[i] = xOf(i, j0, fs, V, scale);
+      return x;
+    };
+    if (!single && d.inc.length > 1) {
+      for (const t of d.inc) {
+        const j = p.hits.indexOf(t.hit), hl = opt.interactive && state.hlHit != null;
+        const on = hl && state.hlHit === j;
+        series.push({ x: toXY(t.s, t.i0), y: gain(t.s, t.i0), color: hitColor(j), skipRange: true,
+          width: on ? 2.4 : 1.3, alpha: hl ? (on ? 1 : 0.2) : 0.75 });
+      }
+    }
+    const ys = gain(mainT.s, i0);
+    series.push({ x: toXY(ys, i0), y: ys, color, width: !single && d.inc.length > 1 ? 2.6 : 2,
+      alpha: opt.interactive && state.hlHit != null && !single ? 0.5 : 1 });
+    let y2Label = null, y2Color = null;
+    if (opt.second && showSecond(p)) {
+      const tr = (single ? [secondTrace(p, d, single)] : d.inc.map(t => secondTrace(p, d, t))).filter(Boolean);
+      if (tr[0]) {
+        const a = tr.length > 1 ? DSP.average(tr) : tr[0];
+        const hammer = state.obj.ch === 'main+hammer';
+        y2Color = hammer ? C.hammer : (d.ch === 0 ? C.side : C.main);
+        y2Label = (hammer ? 'Молоток' : CHNAME[1 - d.ch]) + (hammer || !state.proc.integrate ? ', м/с²' : ', мм/с');
+        const sh = i0 - a.i0;
+        const x = new Float64Array(a.s.length);
+        for (let i = 0; i < a.s.length; i++) x[i] = xOf(i + sh, i0, fs, V, scale);
+        series.unshift({ x, y: a.s, color: y2Color, width: 1.4, axis: 'y2' });
+      }
+    }
+    const markers = [{ x: 0, color: C.t0, dash: [5, 4], width: 1, label: 'удар' }];
+    const bands = [];
+    const conv = L => scale === 'depth' ? L : 2 * L / V * 1e6;
+    const a = p.analysis;
+    if (a) {
+      const r = a.res;
+      if (!opt.report) bands.push({ x1: conv(r.window[0]), x2: conv(r.window[1]), color: 'rgba(37,99,235,.06)' });
+      for (const k of ['time', 'gain', 'spectrum']) {
+        const m = r.methods[k];
+        if (m.ok && !(opt.report && manualDisagrees(p))) markers.push({ x: conv(m.L), color: C[k], dash: [4, 3], width: 1.3, label: `${MSHORT[k]} ${fmt(m.L, 2)}` });
+      }
+      for (const an of r.anomalies) if (!layerOf(p, an.L)) markers.push({ x: conv(an.L), color: C.anom, dash: [2, 3], width: 1.2, label: `А ${fmt(an.L, 1)}` });
+    }
+    const f = finalOf(p);
+    for (const l of pileLayers(p)) {
+      const t = LAYER_TYPES[l.type], hit = a && a.res.anomalies.some(an => layerOf(p, an.L) === l);
+      markers.push({ x: conv(l.d), color: t.color, dash: [7, 3], width: 1.4, label: `${t.short} ${fmt(l.d, 1)}${hit ? ' ✓' : ''}` });
+      // the toe reflection re-reflected at the joint arrives at L + joint depth
+      if (f && !f.fromUs && l.type === 'joint') markers.push({ x: conv(f.L + l.d), color: t.color, dash: [2, 4], width: 1.1, label: `L+стык ${fmt(f.L + l.d, 1)}` });
+    }
+    if (f && f.fromUs) {
+      // length measured between two points: the strike is not its zero, so no line at L — the interval is shaded instead
+      const us = v => scale === 'depth' ? v * 1e-6 * V / 2 : v;
+      bands.push({ x1: us(f.fromUs), x2: us(f.fromUs + f.dt), color: 'rgba(17,24,39,.10)' });
+      markers.push({ x: us(f.fromUs), color: C.final, width: 0.1, bold: true, fill: C.final, textColor: '#fff',
+        label: `Итог ${fmt(f.L, 2)} м (между точками)` });
+    } else if (f) markers.push({ x: conv(f.L), color: C.final, width: 2.2, bold: true,
+      fill: C.final, textColor: '#fff', label: `Итог${f.manual && !opt.report ? ' (вручную)' : ''} ${fmt(f.L, 2)} м` });
+    if (Lp && !opt.report) markers.push({ x: conv(Lp), color: '#9ca3af', dash: [1, 3], width: 1, label: `проект ${fmt(Lp, 1)}` });
+
+    const points = [];
+    if (opt.interactive) {
+      const pos = us => scale === 'depth' ? us * 1e-6 * V / 2 : us;
+      state.meas.forEach((m, k) => {
+        const idx = Math.round(idxOf(m.us, i0, fs, V, 'time'));
+        const y = ys[Math.max(0, Math.min(ys.length - 1, idx))];
+        const on = state.measSel.includes(m.id);
+        points.push({ x: pos(m.us), y, color: on ? C.measOn : C.meas,
+          label: `т.${k + 1}: ${scale === 'depth' ? fmt(pos(m.us), 2) + ' м' : Math.round(m.us) + ' мкс'}` });
+      });
+      const pair = measPair();
+      if (pair) bands.push({ x1: pos(Math.min(pair[0].us, pair[1].us)), x2: pos(Math.max(pair[0].us, pair[1].us)), color: 'rgba(245,158,11,.13)' });
+    }
+    const fEnd = f ? (f.fromUs ? (f.fromUs + f.dt) * 1e-6 * V / 2 : f.L) : 0;
+    const xmaxDepth = Math.max(Lp ? Lp * 1.6 : 0, fEnd * 1.35, Lp || f ? 0 : 20);
+    const xr = [conv(-1.2), conv(xmaxDepth)];
+    const unit = state.proc.integrate ? 'мм/с' : 'м/с²';
+    const title = (single ? `Удар ${single.hit.hitNum || p.view + 1}` : d.inc.length > 1 ? `Усреднённый сигнал (${d.inc.length} уд.)` : 'Сигнал')
+      + ` · ${CHNAME[d.ch]}` + (opt.gain ? ` · усиление Ma = ${fmt(ma, 1)}` : '');
+    return {
+      plot: { series, markers, bands, points, xRange: xr, xLabel: scale === 'depth' ? 'Длина, м' : 'Время, мкс',
+        yLabel: `${CHNAME[d.ch]}, ${unit}`, yColor: color, y2Label, y2Color },
+      title, i0, fs, V, ys, ma, d,
+    };
+  }
+
+  function spectrumPlotData(p, opt) {
+    const d = pileData(p), fs = d.fs, V = pileV(p);
+    const single = p.view !== 'avg' && d.traces[p.view];
+    // as in «Спектр»: spectrum of acceleration (aligned and averaged the same way as the velocity traces)
+    const accel = tr => {
+      const r = DSP.processChannel(tr.hit.ch[d.ch] || tr.hit.ch[0], fs, Object.assign(procParams(), { integrate: false }));
+      return { s: DSP.applyPolarity(r.v, tr.pol), i0: tr.i0 };
+    };
+    const t = single ? accel(single) : DSP.average(d.inc.map(accel));
+    const { mag, df } = DSP.spectrum(t.s, t.i0, fs, opt.extended ? 32768 : 2048);
+    const fTop = Math.min(5000, fs / 2), n = Math.floor(fTop / df);
+    let mx = 0;
+    for (let k = 1; k <= n; k++) mx = Math.max(mx, mag[k]);
+    const x = new Float64Array(n + 1), y = new Float64Array(n + 1);
+    for (let k = 0; k <= n; k++) { x[k] = k * df; y[k] = mx ? mag[k] / mx : 0; }
+    const markers = [];
+    const m3 = p.analysis && p.analysis.res.methods.spectrum;
+    if (m3 && m3.ok && !(opt.report && manualDisagrees(p))) {
+      m3.harmonics.forEach((f, k) => markers.push({ x: f, color: C.spectrum, dash: [3, 3], width: 1,
+        label: k === 0 ? `Δf = ${fmt(m3.dfHz, 0)} Гц → ${fmt(m3.L, 2)} м` : '' }));
+    }
+    const points = [];
+    if (opt.interactive) state.specMeas.forEach((f, k) => {
+      const kk = Math.round(f / df);
+      points.push({ x: f, y: mx ? (mag[Math.min(kk, mag.length - 1)] / mx) : 0, color: C.meas, label: `f${k + 1} = ${Math.round(f)} Гц` });
+    });
+    if (state.specMeas.length === 2 && opt.interactive) {
+      const dF = Math.abs(state.specMeas[1] - state.specMeas[0]);
+      if (dF > 0) markers.push({ x: Math.max(...state.specMeas), color: C.meas, width: 0.1, label: `Δf = ${Math.round(dF)} Гц → L = ${fmt(V / (2 * dF), 2)} м` });
+    }
+    return { series: [{ x, y, color: d.ch === 0 ? C.main : C.side, width: 1.6 }], markers, points,
+      xRange: [0, fTop], yRange: [0, 1.05], xLabel: 'Частота, Гц', yLabel: `${CHNAME[d.ch]}, м/с²`, yColor: d.ch === 0 ? C.main : C.side };
+  }
+
+  // ---------------- plots ----------------
+  let sigCtx = null;
+  const sigPlot = new PlotLib.Plot($('cvSignal'), {
+    onHover: x => {
+      const p = curPile();
+      if (x == null || !p || !sigCtx) { $('cursorInfo').textContent = ''; return; }
+      const V = sigCtx.V, us = state.view.scale === 'depth' ? 2 * x / V * 1e6 : x;
+      $('cursorInfo').textContent = `${fmt(us * 1e-6 * V / 2, 2)} м · ${Math.round(us)} мкс`;
+    },
+    onClick: x => {
+      const p = curPile();
+      if (!p || !sigCtx) return;
+      const us = state.view.scale === 'depth' ? 2 * x / sigCtx.V * 1e6 : x;
+      const idx = snapPeak(sigCtx.ys, Math.round(sigCtx.i0 + us * 1e-6 * sigCtx.fs), 4, null);
+      addMeas((idx - sigCtx.i0) / sigCtx.fs * 1e6);
+      renderSignal(true); renderResult();
+    },
+    onContext: x => {
+      if (!state.meas.length || !sigCtx) return;
+      const us = state.view.scale === 'depth' ? 2 * x / sigCtx.V * 1e6 : x;
+      removeMeas(nearestIndex(state.meas.map(m => m.us), us));
+      renderSignal(true); renderResult();
+    },
+  });
+  const specPlot = new PlotLib.Plot($('cvSpectrum'), {
+    onHover: f => {
+      const p = curPile();
+      $('cursorInfo').textContent = f == null || !p ? '' : `${Math.round(f)} Гц · V/2f = ${fmt(pileV(p) / (2 * f), 2)} м`;
+    },
+    onClick: f => {
+      if (state.specMeas.length >= 2) state.specMeas = [];
+      state.specMeas.push(f);
+      renderSpectrum(true);
+    },
+    onContext: f => {
+      if (!state.specMeas.length) return;
+      state.specMeas.splice(nearestIndex(state.specMeas, f), 1);
+      renderSpectrum(true);
+    },
+  });
+
+  let measSeq = 0;
+  // Until the pair is chosen by hand it follows the points: one point — from the strike, two or more — т.1 → т.2.
+  function autoMeasSel() {
+    const m = state.meas;
+    state.measSel = m.length === 0 ? [null, null] : m.length === 1 ? [0, m[0].id] : [m[0].id, m[1].id];
+  }
+  function addMeas(us) {
+    state.meas.push({ id: ++measSeq, us });
+    if (state.measAuto) autoMeasSel();
+  }
+  function removeMeas(k) {
+    const [gone] = state.meas.splice(k, 1);
+    if (state.measAuto || state.measSel.includes(gone.id)) { state.measAuto = true; autoMeasSel(); }
+  }
+  function measUs(id) { if (id === 0) return 0; const m = state.meas.find(x => x.id === id); return m ? m.us : null; }
+  function measPair() {
+    const [a, b] = state.measSel, ua = measUs(a), ub = measUs(b);
+    return a != null && b != null && a !== b && ua != null && ub != null ? [{ id: a, us: ua }, { id: b, us: ub }] : null;
+  }
+  const nearestIndex = (arr, x) => arr.reduce((best, v, i) => Math.abs(v - x) < Math.abs(arr[best] - x) ? i : best, 0);
+
+  function snapPeak(s, idx, rad, sign) {
+    idx = Math.max(1, Math.min(s.length - 2, idx));
+    let best = idx;
+    for (let i = Math.max(1, idx - rad); i <= Math.min(s.length - 2, idx + rad); i++) {
+      if (sign == null ? Math.abs(s[i]) > Math.abs(s[best]) : sign * s[i] > sign * s[best]) best = i;
+    }
+    return best;
+  }
+
+  // ---------------- rendering ----------------
+  function renderAll(resetView, keepView) {
+    renderPiles();
+    renderSignal(keepView && !resetView);
+    renderSpectrum(keepView && !resetView);
+    renderResult();
+    if (state.tab === 'table') renderTable();
+    const has = state.piles.length > 0;
+    $('btnAuto').disabled = !has; $('btnAutoAll').disabled = !has; $('btnExport').disabled = !has;
+    $('emptyHint').hidden = has;
+  }
+
+  function renderPiles() {
+    $('pileCount').textContent = state.piles.length ? `(${state.piles.length})` : '';
+    const html = state.piles.map((p, i) => {
+      const f = finalOf(p), st = pileStatus(p), cur = i === state.cur;
+      let s = `<div class="pile${cur ? ' sel' : ''}" data-i="${i}">
+        <button class="tog" data-tog="${i}" title="${p.expanded ? 'Свернуть' : 'Показать'} удары">${p.expanded ? '▾' : '▸'}</button>
+        <div class="pname">Свая ${esc(p.label)}</div>
+        ${f || p.analysis ? `<div class="pres st-${st}">${f ? fmt(f.L, 2) + ' м' : 'н/д'}</div>` : '<div class="pres"></div>'}
+        <button class="pdel" data-del="${i}" title="Убрать сваю из списка (файлы в папке не затрагиваются)">✕</button>
+        <div class="pmeta">${p.hits.length} уд.${p.hits[0].date ? ' · ' + pileTimes(p) : ''}${p.V > 0 ? ' · V ' + p.V : ''}</div></div>`;
+      if (p.expanded) {
+        const n = p.hits.filter(h => h.include).length;
+        // selection highlight is shown only for the pile on the plot
+        const sel = v => cur && p.view === v;
+        s += `<div class="hits${cur ? ' cur' : ''}" data-pi="${i}">
+          ${p.hits.length > 1 ? `<label class="chk avgrow${sel('avg') ? ' sel' : ''}" title="Показать усреднённый сигнал (толстая линия) и удары цветными линиями"><input type="checkbox" class="avgToggle"${p.view === 'avg' ? ' checked' : ''}> Усреднение (${n} из ${p.hits.length})</label>` : ''}
+          ${p.hits.map((h, j) => `<div class="hit${sel(j) ? ' sel' : ''}${h.include ? '' : ' off'}${cur && state.hlHit === j ? ' hl' : ''}" data-j="${j}" title="${esc(h.rel)}">
+            <input type="checkbox" data-inc="${j}"${h.include ? ' checked' : ''} title="Учитывать в усреднении и анализе">
+            ${p.hits.length > 1 ? `<span class="sw" style="background:${h.include ? hitColor(j) : '#d1d5db'}"></span>` : ''}
+            <span>Удар ${esc(h.hitNum || j + 1)}</span><span class="t">${esc(h.time)}</span></div>`).join('')}
+        </div>`;
+      }
+      return s;
+    }).join('');
+    $('pileList').innerHTML = html || '<div class="muted small" style="padding:10px">Сваи появятся после загрузки файлов.</div>';
+  }
+
+  function renderSignal(keepView) {
+    syncClearBtn();
+    const p = curPile();
+    if (!p) { sigCtx = null; sigPlot.set({ series: [], xRange: [0, 1], title: 'Сигнал' }); return; }
+    const r = signalPlotData(p, { scale: state.view.scale, gain: state.proc.gainOn, second: true, interactive: true });
+    sigCtx = r;
+    sigPlot.set(Object.assign({ title: r.title }, r.plot), keepView);
+    if (state.proc.gainOn && state.proc.maAuto) $('pMa').value = r.ma != null ? r.ma.toFixed(1) : '';
+    const h = p.view !== 'avg' ? p.hits[p.view] : p.hits[0];
+    $('stPath').textContent = p.view !== 'avg' ? h.rel : `${p.hits.length > 1 ? p.hits.length + ' файлов · ' : ''}${h.rel.split('/').slice(0, -1).join('/') || h.rel}`;
+    $('stComment').textContent = (h.comment ? 'Комментарий: ' + h.comment + ' · ' : '') + `${h.fs} Гц · ${h.ch[0].length} отсч.`;
+  }
+
+  function clearMeas() {
+    state.meas = []; state.measSel = [null, null]; state.measAuto = true; state.specMeas = [];
+    renderSignal(true); renderSpectrum(true); renderResult();
+  }
+  $('btnClearMeas').addEventListener('click', clearMeas);
+  const syncClearBtn = () => { $('btnClearMeas').disabled = !state.meas.length && !state.specMeas.length; };
+
+  function renderSpectrum(keepView) {
+    syncClearBtn();
+    $('boxSpectrum').hidden = !state.view.spectrum;
+    const p = curPile();
+    if (!state.view.spectrum) return;
+    if (!p) { specPlot.set({ series: [], xRange: [0, 5000], title: 'Спектр сигнала' }); return; }
+    specPlot.set(Object.assign({ title: 'Спектр сигнала' }, spectrumPlotData(p, { extended: state.view.extended, interactive: true })), keepView);
+  }
+
+  const confChip = c => `<span class="chip ${c === 'высокая' ? 'st-ok' : c === 'средняя' ? 'st-warn' : 'st-bad'}">${c}</span>`;
+
+  function autoConclusion(p) {
+    const f = finalOf(p), V = pileV(p), Lp = pileLp(p);
+    if (!f) return 'Отражение от нижнего конца сваи по результатам сейсмоакустического контроля не выделяется; длина сваи не определена. Рекомендуется повторить испытания другим ударным источником или применить иной метод контроля.';
+    let t = `По результатам сейсмоакустического контроля (ГОСТ Р 72171-2025) длина сваи составляет ${fmt(f.L, 2)} м при скорости продольной волны V = ${V} м/с`;
+    t += '.';
+    const all = p.analysis ? p.analysis.res.anomalies : [];
+    const known = all.filter(a => layerOf(p, a.L)), an = all.filter(a => !layerOf(p, a.L));
+    if (known.length) t += ` Отражения на глубине ${known.map(a => anomalyText(p, a)).join('; ')} соответствуют известным отметкам по длине сваи.`;
+    if (an.length) t += ` Выявлены акустические аномалии на глубине ${an.map(a => fmt(a.L, 2)).join('; ')} м, требующие дополнительного анализа.`;
+    else t += known.length ? ' Иных значимых акустических аномалий по стволу сваи не выявлено.' : ' Значимых акустических аномалий по стволу сваи не выявлено.';
+    if (f.elr != null && Math.abs(f.elr) > 10) t += ' Отклонение длины от проектной превышает 10 %; рекомендуется дополнительный анализ сигналов.';
+    return t;
+  }
+
+  function layersBox(p) {
+    const V = pileV(p), pair = measPair();
+    const pairL = pair ? Math.abs(pair[1].us - pair[0].us) * 1e-6 * V / 2 : null;
+    const rows = (p.layers || []).map((l, k) => `<div class="lrow">
+      <input type="number" id="rLd${k}" step="0.1" min="0" max="80" value="${l.d > 0 ? l.d : ''}" placeholder="глубина"> м
+      <select id="rLt${k}">${Object.entries(LAYER_TYPES).map(([v, t]) => `<option value="${v}"${l.type === v ? ' selected' : ''}>${t.name}</option>`).join('')}</select>
+      <button class="small" data-ldel="${k}" title="Удалить отметку">✕</button></div>`).join('');
+    return `<div class="box"><h4>Слои и стыки</h4>${rows || '<div class="muted small">Отметок нет.</div>'}
+      <div class="frow"><button class="small" id="rLayerAdd">+ отметка</button>
+        ${pairL ? `<button class="small" id="rLayerFromMeas" title="Глубина стыка = L между выбранными точками">+ стык на ${fmt(pairL, 2)} м</button>` : ''}
+        ${(p.layers || []).length && state.piles.length > 1 ? '<button class="small" id="rLayerAll" title="Заменить отметки у всех свай объекта на эти">на все сваи</button>' : ''}</div>
+      <div class="hint">Отражения на этих глубинах подписываются на графике и не считаются дефектами. Для стыка показывается и повторное отражение «L + стык».</div></div>`;
+  }
+
+  const finalControls = f => `<div class="frow">
+      <button class="small" data-step="-1" title="Перенести итог на предыдущий пик отражения">◀ пред. пик</button>
+      <button class="small" data-step="1" title="Перенести итог на следующий пик отражения">след. пик ▶</button>
+      <label class="f">L, м <input type="number" id="rFinalL" step="0.01" min="0.5" max="80" value="${f ? f.L.toFixed(2) : ''}" title="Ввести итоговую длину вручную"></label></div>`;
+
+  // moves the final mark to the neighbouring positive peak of the analysed (averaged velocity) signal
+  function stepFinal(p, dir) {
+    const d = pileData(p, true), s = d.avg.s, i0 = d.avg.i0, fs = d.fs;
+    const f = finalOf(p), cur = f ? f.dt : 0;
+    let start = i0 + 1;
+    while (start < s.length - 1 && s[start] > 0) start++;
+    const peaks = [];
+    for (let i = Math.max(start, 1); i < s.length - 1; i++) {
+      if (s[i] > 0 && s[i] > s[i - 1] && s[i] >= s[i + 1]) {
+        const dd = s[i - 1] - 2 * s[i] + s[i + 1];
+        const ir = dd < 0 ? i + Math.max(-0.5, Math.min(0.5, 0.5 * (s[i - 1] - s[i + 1]) / dd)) : i;
+        peaks.push((ir - i0) / fs * 1e6);
+      }
+    }
+    const next = dir > 0 ? peaks.find(t => t > cur + 5) : [...peaks].reverse().find(t => t < cur - 5);
+    if (next == null) { toast(dir > 0 ? 'Дальше пиков нет' : 'Раньше пиков нет'); return; }
+    setManual(p, next); renderAll(false, true);
+  }
+
+  function renderResult() {
+    const p = curPile(), body = $('resultBody');
+    $('resPile').textContent = p ? `· свая ${p.label}` : '';
+    if (!p) { body.innerHTML = '<div class="res muted">Загрузите файлы сигналов.</div>'; return; }
+    const a = p.analysis, f = finalOf(p), V = pileV(p), Lp = pileLp(p);
+    let h = `<div class="res">
+      <div class="params">
+        <select id="rVMode" title="Скорость волны для этой сваи">
+          <option value=""${!p.vMode ? ' selected' : ''}>как у объекта</option>
+          <option value="v"${p.vMode === 'v' ? ' selected' : ''}>V, м/с</option>
+          <option value="mpa"${p.vMode === 'mpa' ? ' selected' : ''}>R, МПа</option>
+          <option value="class"${p.vMode === 'class' ? ' selected' : ''}>Класс бетона</option></select>
+        ${!p.vMode ? `<span class="muted">${state.obj.V} м/с</span>`
+          : p.vMode === 'v' ? `<input type="number" id="rV" step="10" min="500" max="8000" placeholder="${state.obj.V}" value="${p.V > 0 ? p.V : ''}">`
+          : p.vMode === 'mpa' ? `<input type="number" id="rR" step="0.1" min="1" max="150" placeholder="МПа" value="${p.Rmpa > 0 ? p.Rmpa : ''}">`
+          : `<select id="rCls">${classOptions(p.cls || state.obj.cls)}</select>`}
+        ${p.vMode === 'mpa' || p.vMode === 'class' ? `<span class="hint" style="grid-column:1/3">${esc(velocityOf(p).info || 'введите прочность')} (ГОСТ Р 72171, А.4)</span>` : ''}
+        <span>L проектная сваи, м</span><input type="number" id="rLp" step="0.1" min="0" max="80" placeholder="${state.obj.Lp > 0 ? state.obj.Lp : '—'}" value="${p.Lp > 0 ? p.Lp : ''}">
+        <span class="hint" style="grid-column:1/3">Пустое поле — значение объекта. Анализ по каналу: ${CHNAME[analysisChannel(p)]}.</span>
+      </div>`;
+    const weak = weakChannelHint(p);
+    if (weak) h += `<div class="box warnbox">${esc(weak)}</div>`;
+    if (!a) {
+      h += `<button class="primary" id="rRun">▶ Автоматический анализ</button>`;
+    } else {
+      const r = a.res;
+      for (const k of ['time', 'gain', 'spectrum']) {
+        const m = r.methods[k], used = r.final.ok && r.final.methods.includes(k);
+        const det = !m.ok ? esc(m.reason) : k === 'spectrum'
+          ? `Δf = ${fmt(m.dfHz, 0)} Гц · пики: ${m.peaks.map(x => Math.round(x.f)).join(', ')} Гц`
+          : `Δt = ${Math.round(m.dtUs)} мкс` + (k === 'gain' ? ` · Ma = ${fmt(m.ma, 1)}` : '') + ` · амплитуда ${fmt(m.amp, 2)} от удара`
+            + (m.hitAgree != null ? ` · повторяется на ${Math.round(m.hitAgree * a.n)} из ${a.n} уд.` : '')
+            + (m.dup ? ' · усиление не потребовалось — совпадает с М1, отдельно не учитывается' : '');
+        h += `<div class="mcard${used ? ' used' : ''}"><span class="dot" style="background:${C[k]}"></span>
+          <span class="nm">${MNAME[k]}</span><span class="val">${m.ok ? fmt(m.L, 2) + ' м' : '—'}</span>
+          <span class="det">${det}${m.ok ? ' · ' + confChip(m.confLabel) : ''}${used ? ' · в итоге' : ''}
+          ${m.ok && !(f && Math.abs(f.L - m.L) < 0.005) ? ` <button class="small" data-take="${k}">взять за итог</button>` : ''}</span></div>`;
+      }
+    }
+    if (f) {
+      const st = pileStatus(p);
+      h += `<div class="final">
+        <div class="muted small">Итоговая длина сваи${f.manual ? ' (исправлено вручную)' : ''}</div>
+        <div class="big">${fmt(f.L, 2)} м</div>
+        <div class="row"><span>Δt = ${Math.round(f.dt)} мкс</span>
+          ${f.elr != null ? `<span class="chip st-${Math.abs(f.elr) > 10 ? 'warn' : 'ok'}">ELR ${fmtSigned(f.elr, 1)} %</span>` : ''}
+          ${a && !f.manual ? confChip(a.res.final.conf) : ''}<span class="chip st-${st}">${st === 'ok' ? 'норма' : 'проверить'}</span></div>
+        ${a && !f.manual ? `<div class="hint">${esc(a.res.final.status)}</div>` : ''}
+        ${f.manual ? `<div class="hint">Автоматически: ${f.auto != null ? fmt(f.auto, 2) + ' м' : 'не определено'} · <button class="small" id="rResetManual">Вернуть авто</button></div>` : ''}
+        ${finalControls(f)}
+      </div>`;
+    } else if (a) {
+      h += `<div class="final"><div class="big">не определена</div><div class="hint">Отражение не выделено. Выберите пик кнопками, введите длину или измерьте её по точкам на графике.</div>${finalControls(null)}</div>`;
+    }
+    if (state.meas.length) {
+      const opts = [{ id: 0, us: 0, name: 'удар' }, ...state.meas.map((m, k) => ({ id: m.id, us: m.us, name: 'т.' + (k + 1) }))];
+      const col = side => opts.map(o => `<div class="mopt${state.measSel[side] === o.id ? ' on' : ''}" data-side="${side}" data-id="${o.id}">
+        ${o.name}: ${fmt(o.us * 1e-6 * V / 2, 2)} м</div>`).join('');
+      const pair = measPair();
+      const dUs = pair ? Math.abs(pair[1].us - pair[0].us) : null;
+      h += `<div class="box"><h4>Измерение длины</h4>
+        <div class="mpair"><div><div class="muted small">Первая точка</div>${col(0)}</div><div><div class="muted small">Вторая точка</div>${col(1)}</div></div>
+        <div class="measL">${pair ? `L = ${fmt(dUs * 1e-6 * V / 2, 2)} м <span class="muted small">· Δt = ${Math.round(dUs)} мкс</span>` : '<span class="muted small">выберите две разные точки</span>'}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${pair ? `<button class="small" id="rAcceptMeas">Принять L = ${fmt(dUs * 1e-6 * V / 2, 2)} м как итог</button>` : ''}
+        <button class="small" id="rClearMeas">Очистить точки</button></div></div>`;
+    }
+    h += layersBox(p);
+    if (a) {
+      const r = a.res;
+      if (r.final.quality && r.final.quality.length) h += `<div class="box warnbox"><h4>Качество сигнала</h4><ul>${r.final.quality.map(q => `<li>${esc(q)}</li>`).join('')}</ul></div>`;
+      h += `<div class="box"><h4>Аномалии выше нижнего конца</h4>${r.anomalies.length
+        ? '<ul>' + r.anomalies.map(x => { const l = layerOf(p, x.L); return `<li>${fmt(x.L, 2)} м — ${fmt(x.rel * 100, 0)} % от отражения низа${l ? ` · <b style="color:${LAYER_TYPES[l.type].color}">${LAYER_TYPES[l.type].name}</b>` : ''}</li>`; }).join('') + '</ul>'
+        : '<span class="muted">не выявлены</span>'}<div class="hint">У нижнего конца (≈10 % длины) дефекты методом не выявляются.</div></div>`;
+      if (r.perHit.length > 1) {
+        const incHits = p.hits.filter(x => x.include);
+        h += `<div class="box"><h4>По ударам (М1 / М2), м</h4>${r.perHit.map((x, k) => `Удар ${esc(incHits[k] ? incHits[k].hitNum || k + 1 : k + 1)}: ${fmt(x.time, 2)} / ${fmt(x.gain, 2)}`).join('<br>')}
+          ${r.spread != null ? `<div class="hint">Разброс М1: ${fmt(r.spread, 2)} м</div>` : ''}</div>`;
+      }
+      h += `<button id="rRun">↻ Повторить автоанализ</button>`;
+    }
+    h += `<div class="box"><h4>Заключение по свае</h4>
+      <textarea id="rConcl" placeholder="Появится после анализа">${esc(p.conclusion ?? (f ? autoConclusion(p) : ''))}</textarea>
+      <div class="hint">Черновик, можно редактировать. ${p.conclusion != null ? '<button class="small" id="rConclReset">Сформировать заново</button>' : ''}</div></div>`;
+    h += '</div>';
+    // keep the field being typed into: re-rendering must not steal focus or the partially typed text
+    const ae = document.activeElement;
+    const keep = ae && body.contains(ae) && ae.id && 'value' in ae && ae.tagName !== 'BUTTON'
+      ? { id: ae.id, value: ae.value, s: ae.selectionStart, e: ae.selectionEnd } : null;
+    body.innerHTML = h;
+    if (keep) {
+      const el = $(keep.id);
+      if (el) {
+        el.value = keep.value; el.focus();
+        try { if (keep.s != null) el.setSelectionRange(keep.s, keep.e); } catch (err) { /* number inputs have no caret API */ }
+      }
+    }
+  }
+
+  function renderTable() {
+    const rows = state.piles.map((p, i) => {
+      const a = p.analysis, f = finalOf(p), st = pileStatus(p), m = a ? a.res.methods : null;
+      const mv = k => m && m[k].ok ? fmt(m[k].L, 2) : '—';
+      return `<tr data-i="${i}"><td>${esc(p.label)}</td><td class="l">${esc(p.hits[0].date ? pileTimes(p) : '—')}</td><td>${p.hits.filter(h => h.include).length}/${p.hits.length}</td>
+        <td class="l">${a ? CHNAME[a.ch] : '—'}</td><td>${pileV(p)}</td><td>${fmt(pileLp(p), 1)}</td>
+        <td>${mv('time')}</td><td>${mv('gain')}</td><td>${mv('spectrum')}</td>
+        <td><b>${f ? fmt(f.L, 2) : '—'}</b>${f && f.manual ? ' ✎' : ''}</td><td>${f ? fmtSigned(f.elr, 1) : '—'}</td>
+        <td class="l">${a && !f?.manual ? a.res.final.conf || '—' : f?.manual ? 'вручную' : '—'}</td>
+        <td class="l">${a && a.res.anomalies.length ? a.res.anomalies.map(x => fmt(x.L, 1) + (layerOf(p, x.L) ? ' (' + LAYER_TYPES[layerOf(p, x.L).type].short + ')' : '')).join('; ') : '—'}</td>
+        <td class="l"><span class="chip st-${st}">${{ ok: 'норма', warn: 'проверить', bad: 'не определена', none: 'не анализ.' }[st]}</span></td></tr>`;
+    }).join('');
+    $('sumTable').innerHTML = `<thead><tr><th>Свая</th><th class="l">Дата и время</th><th>Ударов</th><th>Канал</th><th>V, м/с</th><th>L проект, м</th>
+      <th>М1, м</th><th>М2, м</th><th>М3, м</th><th>Итог, м</th><th>ELR, %</th><th>Достоверность</th><th>Аномалии, м</th><th>Статус</th></tr></thead><tbody>${rows}</tbody>`;
+    drawHist();
+  }
+
+  function drawHist() {
+    const cv = $('cvHist'), box = cv.parentElement, r = box.getBoundingClientRect();
+    if (!r.width) return;
+    const dpr = window.devicePixelRatio || 1;
+    cv.width = r.width * dpr; cv.height = r.height * dpr; cv.style.width = r.width + 'px'; cv.style.height = r.height + 'px';
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, r.width, r.height);
+    const vals = state.piles.map(finalOf).filter(f => f && f.elr != null).map(f => f.elr);
+    ctx.font = '12px "Segoe UI", Arial'; ctx.fillStyle = '#111';
+    ctx.fillText('Гистограмма ELR, % (ГОСТ Р 72171, Б.3): сваи вне ±10 % — на дополнительный анализ', 12, 18);
+    if (!vals.length) { ctx.fillStyle = '#6b7280'; ctx.fillText('Нет данных: задайте проектную длину и выполните анализ.', 12, 44); return; }
+    const edges = []; for (let e = -30; e <= 30; e += 5) edges.push(e);
+    const counts = new Array(edges.length + 1).fill(0);
+    for (const v of vals) { let k = edges.findIndex(e => v < e); if (k < 0) k = edges.length; counts[k]++; }
+    const L = 40, Rr = r.width - 14, T = 30, B = r.height - 26, n = counts.length, bw = (Rr - L) / n, mx = Math.max(...counts);
+    ctx.strokeStyle = '#9ca3af'; ctx.strokeRect(L, T, Rr - L, B - T);
+    for (let k = 0; k < n; k++) {
+      const lo = k === 0 ? null : edges[k - 1], hi = k === edges.length ? null : edges[k];
+      const ok = lo != null && hi != null && lo >= -10 && hi <= 10;
+      const h = counts[k] / mx * (B - T - 6);
+      ctx.fillStyle = ok ? '#60a5fa' : '#f59e0b';
+      ctx.fillRect(L + k * bw + 2, B - h, bw - 4, h);
+      ctx.fillStyle = '#374151'; ctx.textAlign = 'center';
+      if (counts[k]) ctx.fillText(counts[k], L + k * bw + bw / 2, B - h - 4);
+      ctx.fillText(lo == null ? `<${hi}` : hi == null ? `>${lo}` : `${lo}…${hi}`, L + k * bw + bw / 2, B + 15);
+    }
+    ctx.textAlign = 'left';
+  }
+
+  // ---------------- controls ----------------
+  function syncControls() {
+    const o = state.obj, pr = state.proc, v = state.view, p = curPile();
+    $('objName').value = o.name || ''; $('objLp').value = o.Lp > 0 ? o.Lp : '';
+    syncVControls();
+    $('objWin').value = o.window; $('objCh').value = o.ch; $('objSplit').value = o.splitMin;
+    $('objWinOn').checked = o.useWindow; $('objWin').disabled = !o.useWindow;
+    $('pInt').checked = pr.integrate; $('pHp').checked = pr.hp; $('pHpF').value = pr.hpF; $('pLp').checked = pr.lp; $('pLpF').value = pr.lpF;
+    $('pGain').checked = pr.gainOn; $('pMaAuto').checked = pr.maAuto; $('pMa').value = pr.ma; $('pMa').disabled = pr.maAuto; $('pDelay').value = pr.gainDelay;
+    $('pPol').value = p ? p.polarity : 'auto'; $('pPol').disabled = !p;
+    $('vSpectrum').checked = v.spectrum; $('lblExtended').hidden = !v.spectrum; $('vExtended').checked = v.extended;
+    for (const b of $('segScale').children) b.classList.toggle('on', b.dataset.v === v.scale);
+  }
+
+  function syncVControls() {
+    const o = state.obj, inp = $('objV');
+    $('objVMode').value = o.vMode;
+    inp.hidden = o.vMode === 'class'; $('objCls').hidden = o.vMode !== 'class';
+    if (o.vMode === 'mpa') { inp.step = '0.1'; inp.min = '1'; inp.max = '150'; inp.style.width = '64px'; inp.placeholder = 'МПа'; }
+    else { inp.step = '10'; inp.min = '500'; inp.max = '8000'; inp.style.width = ''; inp.placeholder = ''; }
+    if (document.activeElement !== inp) inp.value = o.vMode === 'mpa' ? (o.Rmpa ?? '') : o.V;
+    if (!$('objCls').options.length || $('objCls').value != o.cls) $('objCls').innerHTML = classOptions(o.cls);
+    $('objVInfo').textContent = velocityOf(o).info;
+  }
+  // value typed into the V field means V, or strength in MPa, depending on the input mode
+  function readObjV() {
+    const o = state.obj, v = num($('objV'));
+    if (o.vMode === 'v' && v >= 500 && v <= 8000) o.V = v;
+    if (o.vMode === 'mpa') o.Rmpa = v > 0 ? v : null;
+    if (o.vMode === 'class') o.cls = +$('objCls').value;
+    const r = velocityOf(o);
+    if (r.V) o.V = r.V;
+    $('objVInfo').textContent = r.info;
+  }
+  $('objVMode').addEventListener('change', () => {
+    state.obj.vMode = $('objVMode').value;
+    syncVControls(); readObjV(); saveObj(); refreshAnalyses(); renderAll(false, true);
+  });
+  $('objCls').addEventListener('change', onObjChange);
+
+  function onObjChange() {
+    const o = state.obj;
+    o.name = $('objName').value.trim();
+    readObjV();
+    const Lp = num($('objLp')); o.Lp = Lp > 0 ? Lp : null;
+    const w = num($('objWin')); if (w >= 10 && w <= 90) o.window = w;
+    o.useWindow = $('objWinOn').checked; $('objWin').disabled = !o.useWindow;
+    o.ch = $('objCh').value;
+    const sp = num($('objSplit'));
+    if (sp != null && sp >= 0 && sp !== o.splitMin) { o.splitMin = sp; buildPiles(); }
+    saveObj(); refreshAnalyses(); renderAll(false, true);
+  }
+  function onProcChange() {
+    const pr = state.proc;
+    pr.integrate = $('pInt').checked; pr.hp = $('pHp').checked; pr.lp = $('pLp').checked;
+    const hpF = num($('pHpF')); if (hpF > 0) pr.hpF = hpF;
+    const lpF = num($('pLpF')); if (lpF > 0) pr.lpF = lpF;
+    pr.gainOn = $('pGain').checked; pr.maAuto = $('pMaAuto').checked;
+    const ma = num($('pMa')); if (ma != null && ma >= 0 && !pr.maAuto) pr.ma = ma;
+    const dl = num($('pDelay')); if (dl != null && dl >= 0) pr.gainDelay = dl;
+    $('pMa').disabled = pr.maAuto;
+    store.set('proc', pr); refreshAnalyses(); renderAll(false, true);
+  }
+
+  // number fields apply while typing or spinning with the wheel, without leaving the field
+  const debounce = (fn, ms) => { let t; return e => { clearTimeout(t); t = setTimeout(() => fn(e), ms); }; };
+  const LIVE_MS = 250;
+  for (const id of ['objName', 'objV', 'objLp', 'objWinOn', 'objWin', 'objCh', 'objSplit']) $(id).addEventListener('change', onObjChange);
+  for (const id of ['objV', 'objLp', 'objWin', 'objSplit']) $(id).addEventListener('input', debounce(onObjChange, LIVE_MS));
+  for (const id of ['pInt', 'pHp', 'pHpF', 'pLp', 'pLpF', 'pGain', 'pMa', 'pMaAuto', 'pDelay']) $(id).addEventListener('change', onProcChange);
+  for (const id of ['pHpF', 'pLpF', 'pMa', 'pDelay']) $(id).addEventListener('input', debounce(onProcChange, LIVE_MS));
+  $('pPol').addEventListener('change', () => {
+    const p = curPile(); if (!p) return;
+    p.polarity = $('pPol').value; setManual(p, null);
+    if (p.analysis) runAnalysis(p);
+    renderAll(false, true);
+  });
+  $('segScale').addEventListener('click', e => {
+    const v = e.target.dataset.v; if (!v) return;
+    state.view.scale = v; store.set('view', state.view); syncControls(); renderSignal(false);
+  });
+  for (const id of ['vSpectrum', 'vExtended']) $(id).addEventListener('change', () => {
+    state.view.spectrum = $('vSpectrum').checked; $('lblExtended').hidden = !state.view.spectrum; state.view.extended = $('vExtended').checked;
+    store.set('view', state.view); renderSignal(true); renderSpectrum(false);
+  });
+
+  $('pileList').addEventListener('click', e => {
+    const del = e.target.closest('[data-del]');
+    if (del) { removePile(+del.dataset.del); return; }
+    const tog = e.target.closest('[data-tog]');
+    if (tog) { const p = state.piles[+tog.dataset.tog]; p.expanded = !p.expanded; renderPiles(); return; }
+    const block = e.target.closest('.hits');
+    if (block) {
+      const pi = +block.dataset.pi, p = state.piles[pi];
+      const inc = e.target.closest('[data-inc]');
+      if (inc) {
+        const h = p.hits[+inc.dataset.inc];
+        h.include = inc.checked;
+        if (!p.hits.some(x => x.include)) { h.include = true; inc.checked = true; toast('Нужен хотя бы один удар'); }
+        savePile(p); if (p.analysis) runAnalysis(p);
+        if (pi === state.cur) renderAll(false, true); else renderPiles();
+        return;
+      }
+      const hit = e.target.closest('.hit');
+      const avg = e.target.classList.contains('avgToggle');
+      if (!hit && !avg) return;
+      p.view = hit ? +hit.dataset.j : e.target.checked ? 'avg' : 0;
+      if (pi !== state.cur) selectPile(pi); else renderAll(false, true);
+      return;
+    }
+    const row = e.target.closest('.pile');
+    if (row) selectPile(+row.dataset.i);
+  });
+
+  // drops the pile from the loaded set only; nothing is written to or deleted from the folder
+  function removePile(i) {
+    const p = state.piles[i];
+    if (!p) return;
+    const wasCur = i === state.cur;
+    state.hits = state.hits.filter(h => !p.hits.includes(h));
+    state.piles.splice(i, 1);
+    if (wasCur) { state.cur = Math.min(i, state.piles.length - 1); state.meas = []; state.measSel = [null, null]; state.measAuto = true; state.specMeas = []; }
+    else if (i < state.cur) state.cur--;
+    if (state.piles[state.cur]) state.piles[state.cur].expanded = true;
+    syncControls(); renderAll(wasCur);
+    toast(`Свая ${p.label} убрана из списка. Файлы в папке не затронуты.`);
+  }
+
+  const setHighlight = j => {
+    if (state.hlHit === j) return;
+    state.hlHit = j;
+    for (const el of $('pileList').querySelectorAll('.hits.cur .hit')) el.classList.toggle('hl', +el.dataset.j === j);
+    const p = curPile();
+    if (p && p.view === 'avg') renderSignal(true);
+  };
+  $('pileList').addEventListener('mouseover', e => {
+    const hit = e.target.closest('.hits.cur .hit');
+    setHighlight(hit ? +hit.dataset.j : null);
+  });
+  $('pileList').addEventListener('mouseleave', () => setHighlight(null));
+
+  function selectPile(i) {
+    if (i < 0 || i >= state.piles.length) return;
+    state.cur = i; state.meas = []; state.measSel = [null, null]; state.measAuto = true; state.specMeas = [];
+    state.piles[i].expanded = true;
+    syncControls(); renderAll(true);
+    const el = $('pileList').querySelector('.pile.sel');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+
+  $('resultBody').addEventListener('change', e => {
+    if (e.target.id === 'rConcl') { const p = curPile(); if (p) { p.conclusion = e.target.value; savePile(p); } return; }
+    applyResultField(e.target);
+  });
+  $('resultBody').addEventListener('input', debounce(e => applyResultField(e.target), LIVE_MS));
+
+  function applyResultField(el) {
+    const p = curPile(); if (!p) return;
+    const v = num(el);
+    if (el.id === 'rVMode') {
+      p.vMode = el.value || null;
+      if (p.vMode === 'class' && !p.cls) p.cls = state.obj.cls;
+      if (!p.vMode) p.V = null;
+      else if (p.vMode !== 'v') p.V = velocityOf(p).V;
+    }
+    else if (el.id === 'rV') p.V = v >= 500 && v <= 8000 ? v : null;
+    else if (el.id === 'rR') { p.Rmpa = v > 0 ? v : null; p.V = velocityOf(p).V; }
+    else if (el.id === 'rCls') { p.cls = +el.value; p.V = velocityOf(p).V; }
+    else if (el.id === 'rLp') p.Lp = v > 0 ? v : null;
+    else if (el.id === 'rFinalL') { if (!(v >= 0.5 && v <= 80)) return; setManual(p, 2 * v / pileV(p) * 1e6); }
+    else if (/^rLd\d+$/.test(el.id)) { const l = p.layers[+el.id.slice(3)]; if (!l) return; l.d = v > 0 ? v : null; }
+    else if (/^rLt\d+$/.test(el.id)) { const l = p.layers[+el.id.slice(3)]; if (!l) return; l.type = el.value; }
+    else return;
+    if (/^rL[dt]\d+$/.test(el.id)) { savePile(p); renderAll(false, true); return; }
+    savePile(p); if (p.analysis && el.id !== 'rFinalL') runAnalysis(p); renderAll(false, true);
+  }
+  $('resultBody').addEventListener('click', e => {
+    const p = curPile(); if (!p) return;
+    const opt = e.target.closest('.mopt');
+    if (opt) {
+      state.measSel[+opt.dataset.side] = +opt.dataset.id; state.measAuto = false;
+      renderSignal(true); renderResult(); return;
+    }
+    const take = e.target.closest('[data-take]');
+    if (take) {
+      const m = p.analysis && p.analysis.res.methods[take.dataset.take];
+      if (m && m.ok) { setManual(p, 2 * m.L / pileV(p) * 1e6); renderAll(false, true); }
+      return;
+    }
+    const step = e.target.closest('[data-step]');
+    if (step) { stepFinal(p, +step.dataset.step); return; }
+    const del = e.target.closest('[data-ldel]');
+    if (del) { p.layers.splice(+del.dataset.ldel, 1); savePile(p); renderAll(false, true); return; }
+    if (e.target.id === 'rLayerAdd') { p.layers.push({ d: null, type: 'joint' }); savePile(p); renderResult(); $('rLd' + (p.layers.length - 1)).focus(); return; }
+    if (e.target.id === 'rLayerFromMeas' && measPair()) {
+      const pr = measPair();
+      p.layers.push({ d: +(Math.abs(pr[1].us - pr[0].us) * 1e-6 * pileV(p) / 2).toFixed(2), type: 'joint' });
+      savePile(p); renderAll(false, true); return;
+    }
+    if (e.target.id === 'rLayerAll') {
+      const others = state.piles.filter(o => o !== p && o.object === p.object);
+      for (const o of others) { o.layers = p.layers.map(l => ({ ...l })); savePile(o); }
+      toast(`Отметки скопированы, свай: ${others.length}`); renderAll(false, true); return;
+    }
+    const id = e.target.id;
+    if (id === 'rRun') { runAnalysis(p); renderAll(false, true); }
+    else if (id === 'rResetManual') { setManual(p, null); renderAll(false, true); }
+    else if (id === 'rAcceptMeas' && measPair()) {
+      const pr = measPair();
+      setManual(p, Math.abs(pr[1].us - pr[0].us), Math.min(pr[0].us, pr[1].us)); renderAll(false, true);
+    }
+    else if (id === 'rConclReset') { p.conclusion = null; savePile(p); renderResult(); }
+    else if (id === 'rClearMeas') clearMeas();
+  });
+
+  $('btnAuto').addEventListener('click', () => {
+    const p = curPile(); if (!p) return;
+    runAnalysis(p); renderAll(false, true);
+    const f = finalOf(p);
+    toast(f ? `Свая ${p.label}: ${fmt(f.L, 2)} м (${p.analysis.res.final.status || 'вручную'})` : `Свая ${p.label}: длина не определена`);
+  });
+  const analyzeAll = () => {
+    for (const p of state.piles) runAnalysis(p);
+    renderAll(false, true);
+    const n = state.piles.filter(p => pileStatus(p) !== 'ok').length;
+    toast(`Проанализировано свай: ${state.piles.length}${n ? `, требуют проверки: ${n}` : ''}`);
+  };
+  $('btnAutoAll').addEventListener('click', () => { analyzeAll(); setTab('table'); });
+  $('btnAutoAll2').addEventListener('click', analyzeAll);
+
+  $('sumTable').addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-i]'); if (!tr) return;
+    setTab('signal'); selectPile(+tr.dataset.i);
+  });
+
+  function setTab(t) {
+    state.tab = t;
+    for (const b of document.querySelectorAll('.tab')) b.classList.toggle('active', b.dataset.tab === t);
+    $('tabSignal').hidden = t !== 'signal'; $('tabTable').hidden = t !== 'table';
+    if (t === 'table') renderTable();
+  }
+  for (const b of document.querySelectorAll('.tab')) b.addEventListener('click', () => setTab(b.dataset.tab));
+
+  $('btnOpenDir').addEventListener('click', () => $('inDir').click());
+  $('btnOpenFiles').addEventListener('click', () => $('inFiles').click());
+  $('inDir').addEventListener('change', e => { loadFiles([...e.target.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name })), true); e.target.value = ''; });
+  $('inFiles').addEventListener('change', e => { loadFiles([...e.target.files].map(f => ({ file: f, rel: f.name })), !state.piles.length); e.target.value = ''; });
+
+  let dragDepth = 0;
+  window.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragDepth++; $('dropHint').classList.add('on'); } });
+  window.addEventListener('dragleave', () => { dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $('dropHint').classList.remove('on'); });
+  window.addEventListener('dragover', e => e.preventDefault());
+  window.addEventListener('drop', async e => {
+    e.preventDefault(); dragDepth = 0; $('dropHint').classList.remove('on');
+    const files = [...e.dataTransfer.files];
+    let items = e.dataTransfer.items ? await entriesToItems(e.dataTransfer.items) : [];
+    if (!items.length) items = files.map(f => ({ file: f, rel: f.name }));
+    loadFiles(items, true);
+  });
+
+  $('btnHelp').addEventListener('click', () => $('helpDlg').showModal());
+  $('btnExport').addEventListener('click', e => { e.stopPropagation(); $('exportMenu').hidden = !$('exportMenu').hidden; });
+  document.addEventListener('click', () => { $('exportMenu').hidden = true; });
+  $('exportMenu').addEventListener('click', e => {
+    const k = e.target.dataset.exp; if (!k) return;
+    $('exportMenu').hidden = true;
+    if (k === 'pdf') exportPdf([curPile()].filter(Boolean));
+    else if (k === 'pdfall') exportPdf(state.piles.filter(p => finalOf(p) || p.analysis));
+    else if (k === 'docx') exportDocx([curPile()].filter(Boolean));
+    else if (k === 'docxall') exportDocx(state.piles.filter(p => finalOf(p) || p.analysis));
+    else if (k === 'xlsx') exportXlsx();
+    else if (k === 'txt') exportTxt();
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.target.matches('input, textarea, select')) return;
+    if (e.key === 'Escape') clearMeas();
+    if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); selectPile(state.cur + (e.key === 'ArrowUp' ? -1 : 1)); }
+  });
+
+  let toastTimer;
+  function toast(msg) {
+    const t = $('toast'); t.textContent = msg; t.classList.add('on');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 4000);
+  }
+
+  // ---------------- export ----------------
+  const safeName = s => String(s || '').replace(/[\\/:*?"<>|]+/g, '_').trim() || 'без_имени';
+  function download(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1500);
+  }
+
+  function procText() {
+    const pr = state.proc;
+    return [pr.integrate ? 'интегратор' : 'без интегратора', pr.hp ? `ФВЧ ${pr.hpF} Гц` : null, pr.lp ? `ФНЧ ${pr.lpF} Гц` : null].filter(Boolean).join(', ');
+  }
+
+  const SENSOR = ['беспроводной цифровой датчик виброускорения ДАЦ-2.2 (основной)', 'дополнительный датчик виброускорения ВД-1002.02 (боковой)'];
+
+  // content of one pile's protocol, shared by the PDF and Word reports
+  function reportData(p) {
+    const V = pileV(p), f = finalOf(p), a = p.analysis;
+    const ch = a ? a.ch : analysisChannel(p);
+    const sig = signalPlotData(p, { scale: 'depth', gain: false, second: false, interactive: false, report: true });
+    const gsig = signalPlotData(p, { scale: 'depth', gain: true, second: false, interactive: false, report: true });
+    const spec = spectrumPlotData(p, { extended: true, interactive: false, report: true });
+    const inc = p.hits.filter(h => h.include);
+    const showMethods = a && !manualDisagrees(p);
+    const equip = `Прибор диагностики свай «Спектр-4.3»; ${SENSOR[ch]}` + (state.obj.ch === 'main+hammer' ? '; молоток с датчиком силы МДС-1.1' : '');
+    return {
+      title: `Протокол сейсмоакустического контроля сваи № ${p.id}`,
+      sub: 'ГОСТ Р 72171-2025 «Сваи. Сейсмоакустические методы контроля сплошности бетона и длины свай»',
+      info: [
+        ['Объект', state.obj.name || p.object],
+        ['Свая', `№ ${p.id}`],
+        ['Дата испытания', p.hits[0].date ? pileTimes(p) : '—'],
+        ['Оборудование', equip],
+        ['Метод', 'Стандартный метод (возбуждение и приём вблизи оголовка), анализ во временной и частотной областях'],
+        ['Скорость волны V', `${V} м/с`],
+        ['Обработка', `${procText()}; усреднение ${inc.length} из ${p.hits.length} ударов${a && a.res.methods.gain.ok ? `; экспоненциальное усиление Ma = ${fmt(a.res.methods.gain.ma, 1)}·10⁻³` : ''}`],
+      ],
+      images: [
+        { cap: 'Рис. 1. Сигнал виброскорости оголовка (усреднённый), отметки длины', w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
+        { cap: 'Рис. 2. Сигнал виброскорости с экспоненциальным усилением', w: 820, h: 260, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title }), 820, 260) },
+        { cap: 'Рис. 3. Амплитудный спектр сигнала виброускорения', w: 820, h: 190, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектр сигнала', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 190) },
+      ],
+      methods: showMethods ? ['time', 'gain', 'spectrum'].map(k => {
+        const m = a.res.methods[k];
+        return [MNAME[k], m.ok ? fmt(m.L, 2) : '—', m.ok ? (k === 'spectrum' ? `Δf = ${fmt(m.dfHz, 0)} Гц` : `Δt = ${Math.round(m.dtUs)} мкс`) : m.reason, m.ok ? m.confLabel : '—'];
+      }) : null,
+      length: f ? fmt(f.L, 2) + ' м' : 'не определена',
+      lengthNote: f && f.elr != null ? `; ELR = ${fmtSigned(f.elr, 1)} %` : '',
+      result: [
+        ...(pileLayers(p).length ? [['Слои и стыки', pileLayers(p).map(layerText).join('; ')]] : []),
+        ['Акустические аномалии', a && a.res.anomalies.length ? a.res.anomalies.map(x => anomalyText(p, x)).join('; ') : 'не выявлены'],
+        ['Заключение', p.conclusion ?? autoConclusion(p)],
+      ],
+    };
+  }
+
+  function exportPdf(piles) {
+    if (!piles.length) { toast('Нет свай с результатом — сначала выполните анализ'); return; }
+    const pages = piles.map(p => {
+      const r = reportData(p);
+      const tr = rows => rows.map(([k, v], i) => `<tr><th${i === 0 ? ' style="width:32%"' : ''}>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
+      return `<section class="rpage">
+        <h1>${esc(r.title)}</h1>
+        <div class="sub">${esc(r.sub)}</div>
+        <table>${tr(r.info)}</table>
+        ${r.images.map(im => `<div class="cap">${esc(im.cap)}</div><img src="${im.url}">`).join('')}
+        ${r.methods ? `<table><tr><th>Метод определения длины</th><th>L, м</th><th>Параметр</th><th>Достоверность</th></tr>${r.methods.map(m => `<tr>${m.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : ''}
+        <table>
+          <tr><th style="width:32%">Длина сваи</th><td><b>${esc(r.length)}</b>${esc(r.lengthNote)}</td></tr>
+          ${r.result.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}
+        </table>
+        <div class="sign"><span>Исполнитель: ____________________</span><span>Дата: ______________</span></div>
+      </section>`;
+    });
+    $('report').innerHTML = pages.join('');
+    const imgs = [...$('report').querySelectorAll('img')];
+    Promise.all(imgs.map(i => i.complete ? null : new Promise(r => { i.onload = i.onerror = r; }))).then(() => {
+      toast('В окне печати выберите «Сохранить как PDF»');
+      window.print();
+    });
+  }
+
+  function crcTable() {
+    const t = new Uint32Array(256);
+    for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; }
+    return t;
+  }
+  const CRC = crcTable();
+  const crc32 = u8 => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = CRC[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+
+  function zip(files, type) {
+    const enc = new TextEncoder(), chunks = [], central = [];
+    let off = 0;
+    for (const f of files) {
+      const name = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+      const h = new DataView(new ArrayBuffer(30));
+      h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true); h.setUint16(8, 0, true);
+      h.setUint16(10, 0, true); h.setUint16(12, 0x21, true); h.setUint32(14, crc, true);
+      h.setUint32(18, data.length, true); h.setUint32(22, data.length, true); h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+      chunks.push(new Uint8Array(h.buffer), name, data);
+      const c = new DataView(new ArrayBuffer(46));
+      c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+      c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true); c.setUint32(16, crc, true);
+      c.setUint32(20, data.length, true); c.setUint32(24, data.length, true); c.setUint16(28, name.length, true);
+      c.setUint32(42, off, true);
+      central.push(new Uint8Array(c.buffer), name);
+      off += 30 + name.length + data.length;
+    }
+    const cdSize = central.reduce((m, a) => m + a.length, 0);
+    const e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+    e.setUint32(12, cdSize, true); e.setUint32(16, off, true);
+    return new Blob([...chunks, ...central, new Uint8Array(e.buffer)], { type });
+  }
+
+  // Word protocol: same content as the PDF report, one pile per page, figures embedded as PNG
+  function exportDocx(piles) {
+    if (!piles.length) { toast('Нет свай с результатом — сначала выполните анализ'); return; }
+    const x = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    const run = (t, o = {}) => `<w:r><w:rPr>${o.b ? '<w:b/>' : ''}${o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : ''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r>`;
+    const para = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.center ? '<w:jc w:val="center"/>' : ''}</w:pPr>${runs}</w:p>`;
+    const cell = (content, w, shade) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${shade ? '<w:shd w:val="clear" w:color="auto" w:fill="EEEEEE"/>' : ''}</w:tcPr>${content}</w:tc>`;
+    const cellP = (t, o) => para(run(t, Object.assign({ sz: 20 }, o)), { after: 0 });
+    const B = 'w:val="single" w:sz="4" w:space="0" w:color="555555"';
+    const table = (rows, widths) => `<w:tbl><w:tblPr><w:tblW w:w="${widths.reduce((m, v) => m + v, 0)}" w:type="dxa"/><w:tblBorders><w:top ${B}/><w:left ${B}/><w:bottom ${B}/><w:right ${B}/><w:insideH ${B}/><w:insideV ${B}/></w:tblBorders><w:tblCellMar><w:left w:w="80" w:type="dxa"/><w:right w:w="80" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${widths.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${rows.join('')}</w:tbl>`;
+    const kv = rows => table(rows.map(([k, v]) => `<w:tr>${cell(cellP(k, { b: true }), 3100, true)}${cell(cellP(v), 6538)}</w:tr>`), [3100, 6538]);
+    const media = [];
+    let docId = 1;
+    const image = im => {
+      const n = media.length + 1, rid = 'rIdImg' + n;
+      const b64 = im.url.split(',')[1], bin = atob(b64), u8 = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      media.push({ name: `word/media/image${n}.png`, data: u8, rid });
+      // 15 cm wide so that a pile's protocol fits one A4 page
+      const cx = 5400000, cy = Math.round(cx * im.h / im.w), id = docId++;
+      return `<w:p><w:pPr><w:spacing w:after="40"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="Рисунок ${id}"/>`
+        + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
+        + `<pic:nvPicPr><pic:cNvPr id="${id}" name="image${n}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
+        + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+    };
+    const body = piles.map((p, i) => {
+      const r = reportData(p);
+      let s = i ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : '';
+      s += para(run(r.title, { b: true, sz: 30 }), { center: true, after: 40 });
+      s += para(run(r.sub, { sz: 20 }), { center: true, after: 160 });
+      s += kv(r.info);
+      for (const im of r.images) s += para(run(im.cap, { b: true, sz: 20 }), { before: 80, after: 20, keep: true }) + image(im);
+      if (r.methods) {
+        const w = [3900, 1100, 2738, 1900];
+        s += table([
+          `<w:tr>${['Метод определения длины', 'L, м', 'Параметр', 'Достоверность'].map((t, k) => cell(cellP(t, { b: true }), w[k], true)).join('')}</w:tr>`,
+          ...r.methods.map(m => `<w:tr>${m.map((t, k) => cell(cellP(t), w[k])).join('')}</w:tr>`),
+        ], w);
+        s += para('', { after: 80 });
+      }
+      s += table([
+        `<w:tr>${cell(cellP('Длина сваи', { b: true }), 3100, true)}${cell(para(run(r.length, { b: true, sz: 20 }) + run(r.lengthNote, { sz: 20 }), { after: 0 }), 6538)}</w:tr>`,
+        ...r.result.map(([k, v]) => `<w:tr>${cell(cellP(k, { b: true }), 3100, true)}${cell(cellP(v), 6538)}</w:tr>`),
+      ], [3100, 6538]);
+      s += para(run('Исполнитель: ____________________          Дата: ______________'), { before: 200, after: 0 });
+      return s;
+    }).join('');
+    const doc = head + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
+      + `<w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="850" w:bottom="850" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+    const styles = head + '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="80"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>';
+    const files = [
+      { name: '[Content_Types].xml', data: head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
+      { name: '_rels/.rels', data: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+      { name: 'word/_rels/document.xml.rels', data: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+        + media.map(m => `<Relationship Id="${m.rid}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${m.name.slice(5)}"/>`).join('') + '</Relationships>' },
+      { name: 'word/document.xml', data: doc },
+      { name: 'word/styles.xml', data: styles },
+      ...media.map(m => ({ name: m.name, data: m.data })),
+    ];
+    const name = piles.length === 1 ? `Протокол_сваи_${safeName(piles[0].label)}_${safeName(state.obj.name)}.docx` : `Протоколы_${safeName(state.obj.name)}.docx`;
+    download(zip(files, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), name);
+    toast(`Сохранён Word-файл: ${name}`);
+  }
+
+  function xlsx(sheets) {
+    const x = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const col = i => { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
+    const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
+    const sheetXml = rows => head + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>'
+      + rows.map((r, ri) => `<row r="${ri + 1}">` + r.map((v, ci) => {
+        if (v == null || v === '') return '';
+        const ref = col(ci) + (ri + 1);
+        if (typeof v === 'number') return isFinite(v) ? `<c r="${ref}"><v>${v}</v></c>` : '';
+        return `<c r="${ref}" t="inlineStr"><is><t xml:space="preserve">${x(v)}</t></is></c>`;
+      }).join('') + '</row>').join('') + '</sheetData></worksheet>';
+    const names = sheets.map((s, i) => (s.name.replace(/[\\/?*[\]:]/g, ' ').slice(0, 31) || 'Лист' + (i + 1)));
+    const files = [
+      { name: '[Content_Types].xml', data: head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+        + sheets.map((s, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('') + '</Types>' },
+      { name: '_rels/.rels', data: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+      { name: 'xl/workbook.xml', data: head + '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+        + names.map((n, i) => `<sheet name="${x(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('') + '</sheets></workbook>' },
+      { name: 'xl/_rels/workbook.xml.rels', data: head + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + sheets.map((s, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('') + '</Relationships>' },
+      ...sheets.map((s, i) => ({ name: `xl/worksheets/sheet${i + 1}.xml`, data: sheetXml(s.rows) })),
+    ];
+    return zip(files, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  }
+
+  const r2 = (v, d) => v == null || !isFinite(v) ? null : +v.toFixed(d);
+
+  function signalRows(p) {
+    const r = signalPlotData(p, { scale: 'time', gain: false, second: false, interactive: false });
+    const g = state.proc.gainOn ? signalPlotData(p, { scale: 'time', gain: true, second: false, interactive: false }) : null;
+    const s = r.d.avg.s, i0 = r.d.avg.i0, V = pileV(p);
+    const rows = [];
+    for (let i = 0; i < s.length; i++) rows.push([r2((i - i0) / r.fs * 1e6, 2), r2((i - i0) / r.fs * V / 2, 4), s[i], g ? g.ys[i] : null]);
+    return { rows, gain: g ? g.ma : null };
+  }
+
+  function exportXlsx() {
+    const sum = [['Объект', state.obj.name], ['V объекта, м/с', state.obj.V], ['Обработка', procText()], [],
+      ['Свая', 'Дата и время', 'Ударов', 'Канал', 'V, м/с', 'L проект, м', 'М1, м', 'М2, м', 'М3, м', 'Итог, м', 'Δt, мкс', 'ELR, %', 'Достоверность', 'Аномалии, м', 'Статус', 'Заключение']];
+    for (const p of state.piles) {
+      const a = p.analysis, f = finalOf(p), m = a ? a.res.methods : null;
+      const mv = k => m && m[k].ok ? r2(m[k].L, 2) : null;
+      sum.push([p.label, p.hits[0].date ? pileTimes(p) : '', p.hits.filter(h => h.include).length, a ? CHNAME[a.ch] : '', pileV(p), pileLp(p), mv('time'), mv('gain'), mv('spectrum'),
+        f ? r2(f.L, 2) : null, f ? Math.round(f.dt) : null, f ? r2(f.elr, 1) : null,
+        f && f.manual ? 'вручную' : a ? a.res.final.conf || '' : '', a ? a.res.anomalies.map(x => anomalyText(p, x)).join('; ') : '',
+        { ok: 'норма', warn: 'проверить', bad: 'не определена', none: 'не анализировалась' }[pileStatus(p)], f || a ? (p.conclusion ?? autoConclusion(p)) : '']);
+    }
+    const sheets = [{ name: 'Сводная', rows: sum }];
+    const p = curPile();
+    if (p) {
+      const { rows, gain } = signalRows(p);
+      sheets.push({ name: 'Сигнал сваи ' + p.id, rows: [['Свая ' + p.label + ', усреднение ' + p.hits.filter(h => h.include).length + ' уд., ' + procText()],
+        ['t, мкс', 'L, м', 'v, мм/с', gain != null ? `с усилением Ma=${fmt(gain, 1)}` : ''], ...rows] });
+    }
+    download(xlsx(sheets), `Сваи_${safeName(state.obj.name)}.xlsx`);
+  }
+
+  function exportTxt() {
+    const p = curPile(); if (!p) return;
+    const { rows } = signalRows(p);
+    const c = v => v == null ? '' : String(v).replace('.', ',');
+    const f = finalOf(p);
+    const head = [`# Объект: ${state.obj.name}`, `# Свая: ${p.label}`, `# V, м/с: ${pileV(p)}`, `# Обработка: ${procText()}`,
+      `# Ударов в усреднении: ${p.hits.filter(h => h.include).length}`, `# Итоговая длина, м: ${f ? fmt(f.L, 2) : '—'}`, 't, мкс\tL, м\tv, мм/с'];
+    const body = rows.map(r => [c(r[0]), c(r[1]), c(r[2].toExponential(6))].join('\t'));
+    download(new Blob(['﻿' + head.concat(body).join('\r\n')], { type: 'text/plain;charset=utf-8' }), `Свая_${safeName(p.id)}_${safeName(state.obj.name)}.txt`);
+  }
+
+  window.addEventListener('resize', () => { if (state.tab === 'table') drawHist(); });
+  syncControls();
+  renderAll(true);
+})();
+</script>
+</body>
+</html>
