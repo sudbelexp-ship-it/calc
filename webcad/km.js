@@ -212,4 +212,4 @@ WC.reg("КМ-07",{title:"Проверка узла фермы из гнутос�
   R.chk("Сварные швы","(N+0.5*M/d_b)*(1.06+0.014*D/t)*sin(alpha)/(beta_f*k_f*gamma_c*R_{wf}*(2*d_b/sin(alpha)+d))","≤","one","","ф. (Л.6)");
  }});
 })(typeof window!=="undefined"?window:globalThis);
-WC.ALIAS.lf=()=>({r:"row",c:[{r:"t",s:"l",it:true},{r:"t",s:"/"},{r:"sub",b:{r:"t",s:"f",it:true},s:{r:"t",s:"ult"},sup:null}]});
+window.WC.ALIAS.lf=()=>({r:"row",c:[{r:"t",s:"l",it:true},{r:"t",s:"/"},{r:"sub",b:{r:"t",s:"f",it:true},s:{r:"t",s:"ult"},sup:null}]});

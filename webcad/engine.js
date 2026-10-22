@@ -89,7 +89,7 @@ function tokenize(s){
       if(s[j]==="e"&&/[-+0-9]/.test(s[j+1]||"")){ j++; if(/[-+]/.test(s[j]))j++; while(/[0-9]/.test(s[j]||""))j++; }
       T.push({t:"num",v:parseFloat(s.slice(i,j)),src:s.slice(i,j)}); i=j; continue; }
     if(/[A-Za-zА-Яа-яЁё]/.test(c)){ // идентификатор: буквы, затем ' , затем _sub , затем ^sup (^ только если сразу { )
-      let j=i; while(j<s.length&&/[A-Za-zА-Яа-яЁё]/.test(s[j]))j++;
+      let j=i; while(j<s.length&&/[A-Za-zА-Яа-яЁё]/.test(s[j]))j++; while(j<s.length&&/[0-9]/.test(s[j]))j++;
       const base=s.slice(i,j); let primes=""; while(s[j]==="'"){primes+="'";j++;}
       let sub=null;
       if(s[j]==="_"){ j++; if(s[j]==="{"){ let k=s.indexOf("}",j); sub=s.slice(j+1,k); j=k+1; } else { let k=j; while(k<s.length&&/[A-Za-z0-9А-Яа-яЁё]/.test(s[k]))k++; sub=s.slice(j,k); j=k; } }
