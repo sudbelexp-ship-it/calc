@@ -155,6 +155,7 @@ const ALIAS={
 };
 WC.ALIAS=ALIAS;
 function symNode(n){
+  if(ALIAS[n.key]) return ALIAS[n.key](n);
   if(ALIAS[n.base]){ const b=ALIAS[n.base](n); return n.sub!==null?{r:"sub",b,s:T_(n.sub),sup:null}:b; }
   const g=GREEK[n.base]; const pr=n.primes?n.primes.replace(/'/g,"′"):""; const base=g?T_(g+pr,false):T_(n.base+pr, true);
   const sub=n.sub!==null? T_(n.sub.split("").map(c=>GREEK[c]||c).join("").replace(/(alpha|beta|gamma|delta|phi|xi|eta|mu|nu|psi|sigma|tau|lambda|rho|eps)/g,m=>GREEK[m]),false):null;
