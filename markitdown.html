@@ -85,6 +85,18 @@ footer a,.info a{color:var(--accent)}
       </label>
       <label><input type="checkbox" id="ocrAll"> OCR для всех страниц PDF <small>(медленно, даже если есть текстовый слой)</small></label>
     </div>
+    <div class="opts">
+      <label>Режим
+        <select id="mode">
+          <option value="fast" selected>Быстрый (Tesseract, без формул)</option>
+          <option value="math">С формулами → LaTeX (нейросеть GLM-OCR)</option>
+        </select>
+      </label>
+      <label id="pagesRow" hidden>Страницы PDF
+        <input type="text" id="pages" placeholder="все, либо 1-3,5" size="14" style="font:inherit;font-size:14px;color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px">
+      </label>
+    </div>
+    <div class="note" id="mathNote" hidden>Режим формул работает на видеокарте вашего устройства (WebGPU): при первом запуске скачивается модель ~650 МБ, далее она берётся из кэша браузера. Один лист занимает 20–60 с. Формулы выходят в LaTeX ($…$), но нейросеть иногда искажает слова — сверяйте с оригиналом.</div>
   </section>
 
   <div id="results" style="display:flex;flex-direction:column;gap:16px"></div>
@@ -97,7 +109,8 @@ footer a,.info a{color:var(--accent)}
     <b>Как это работает</b>
     <ul>
       <li>Текст из PDF извлекается с сохранением абзацев и заголовков; страницы без текстового слоя (сканы) автоматически отправляются на OCR.</li>
-      <li>Word → заголовки, списки, таблицы и ссылки; рисунки в документе распознаются OCR и вставляются цитатой.</li>
+      <li>Word → заголовки, списки, таблицы и ссылки; формулы Word (OMML) переводятся в LaTeX без потерь; рисунки в документе распознаются OCR и вставляются цитатой.</li>
+      <li>Формулы в PDF и на сканах (СП, ГОСТ) обычный OCR не читает. Режим «С формулами» распознаёт страницу нейросетью и выдаёт текст с формулами в LaTeX.</li>
       <li>Excel и CSV → таблицы Markdown по листам; PowerPoint → заголовки слайдов, текст, таблицы и заметки докладчика.</li>
       <li>В оригинальном MarkItDown OCR работает только через облачную LLM или Azure; здесь он локальный (Tesseract), ничего не отправляется на серверы. Модули и языковые данные OCR один раз скачиваются из интернета.</li>
     </ul>
@@ -159,6 +172,221 @@ async function ocrImage(src, ctx){
   return (data.text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
+/* ---------- GLM-OCR (WebGPU): текст + формулы в LaTeX ---------- */
+const GLM_ID = 'onnx-community/GLM-OCR-ONNX';
+const GLM_PX = 2200000;
+let glm = null, glmLoading = null, glmDl = null;
+
+async function gpuSupport(){
+  if (!navigator.gpu) return 'В этом браузере нет WebGPU. Нужен свежий Chrome или Edge.';
+  try {
+    const a = await navigator.gpu.requestAdapter();
+    if (!a) return 'WebGPU не нашёл видеокарту.';
+    if (!a.features.has('shader-f16')) return 'Видеокарта не поддерживает shader-f16.';
+  } catch (e) { return 'WebGPU недоступен: ' + e.message; }
+  return '';
+}
+
+async function getGlm(){
+  if (glm) return glm;
+  if (!glmLoading) glmLoading = (async () => {
+    const bad = await gpuSupport();
+    if (bad) throw new Error(bad);
+    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+    const cb = e => { if (e.status === 'progress_total' && glmDl) glmDl(e.progress); };
+    const [processor, model] = await Promise.all([
+      TX.AutoProcessor.from_pretrained(GLM_ID, {progress_callback: cb}),
+      TX.AutoModelForImageTextToText.from_pretrained(GLM_ID, {
+        device: 'webgpu', dtype: 'q4f16', progress_callback: cb,
+        use_external_data_format: {'vision_encoder_q4f16.onnx': 1, 'embed_tokens_q4f16.onnx': 1, 'decoder_model_merged_q4f16.onnx': 1}
+      })
+    ]);
+    glm = {TX, processor, model};
+    return glm;
+  })().catch(e => { glmLoading = null; throw e; });
+  return glmLoading;
+}
+
+function loopCut(g){
+  for (const L of [12, 24, 48]) {
+    if (g.length < 3 * L) continue;
+    let same = true;
+    for (let i = 1; i <= L && same; i++) if (g[g.length - i] !== g[g.length - L - i] || g[g.length - i] !== g[g.length - 2 * L - i]) same = false;
+    if (same) return g.length - 2 * L;
+  }
+  return -1;
+}
+
+function fixUnits(t){
+  const cyr = (t.match(/[А-Яа-яЁё]/g) || []).length;
+  if (cyr < 20) return t;
+  const map = {kH: 'кН', kr: 'кг', cm: 'см', mm: 'мм', m: 'м'};
+  return t.replace(/\\mathrm\{([A-Za-z]+)\}/g, (all, u) => map[u] ? '\\mathrm{' + map[u] + '}' : all);
+}
+
+async function glmRecognize(canvas, ctx){
+  ctx.status('Загрузка модели…');
+  glmDl = p => ctx.status('Загрузка модели GLM-OCR: ' + Math.round(p) + '%');
+  const {TX, processor, model} = await getGlm();
+  glmDl = null;
+  const c2 = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
+  const image = new TX.RawImage(new Uint8ClampedArray(c2.data), canvas.width, canvas.height, 4);
+  const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: 'Text Recognition:'}]}], {add_generation_prompt: true});
+  const inputs = await processor(prompt, image);
+  const pl = inputs.input_ids.dims.at(-1);
+  const stopper = new TX.InterruptableStoppingCriteria();
+  const gen = []; let n = 0, cut = -1;
+  const streamer = new TX.TextStreamer(processor.tokenizer, {
+    skip_prompt: true, skip_special_tokens: true, callback_function: () => {},
+    token_callback_function: ids => {
+      n++; for (const id of ids) gen.push(Number(id));
+      if (n % 8 === 0) ctx.status((ctx.stage || 'GLM-OCR') + ': ' + n + ' токенов');
+      if (n % 16 === 0) { cut = loopCut(gen); if (cut !== -1) stopper.interrupt(); }
+    }
+  });
+  const out = await model.generate({...inputs, max_new_tokens: 4096, do_sample: false, streamer, stopping_criteria: stopper});
+  const end = cut === -1 ? out.dims.at(-1) : pl + cut;
+  const text = processor.batch_decode(out.slice(null, [pl, end]), {skip_special_tokens: true})[0];
+  return fixUnits(text.replace(/^<think>[\s\S]*?<\/think>/, '').trim());
+}
+
+function fitCanvas(src, w, h, maxPx){
+  const k = Math.min(1, Math.sqrt(maxPx / (w * h)));
+  const cv = document.createElement('canvas');
+  cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+  const c = cv.getContext('2d');
+  c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+  c.drawImage(src, 0, 0, cv.width, cv.height);
+  return cv;
+}
+
+async function glmImage(blob, ctx){
+  const bmp = await createImageBitmap(blob);
+  const cv = fitCanvas(bmp, bmp.width, bmp.height, GLM_PX);
+  bmp.close && bmp.close();
+  return glmRecognize(cv, ctx);
+}
+
+function parsePages(spec, count){
+  const s = (spec || '').trim();
+  const out = new Set();
+  if (!s) { for (let i = 1; i <= count; i++) out.add(i); return out; }
+  for (const part of s.split(',')) {
+    const m = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/);
+    if (!m) throw new Error('Не понял список страниц «' + s + '». Пример: 1-3,5');
+    const a = +m[1], b = m[2] ? +m[2] : a;
+    for (let p = Math.max(1, a); p <= Math.min(count, b); p++) out.add(p);
+  }
+  if (!out.size) throw new Error('В документе ' + count + ' стр.; указанных страниц нет.');
+  return out;
+}
+
+/* ---------- формулы Word (OMML) → LaTeX ---------- */
+const NS_M = 'http://schemas.openxmlformats.org/officeDocument/2006/math';
+const NS_W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+const SYM = {
+  'α':'\\alpha','β':'\\beta','γ':'\\gamma','δ':'\\delta','ε':'\\varepsilon','ϵ':'\\epsilon','ζ':'\\zeta','η':'\\eta','θ':'\\theta','ϑ':'\\vartheta','ι':'\\iota','κ':'\\kappa','λ':'\\lambda','μ':'\\mu','ν':'\\nu','ξ':'\\xi','π':'\\pi','ρ':'\\rho','σ':'\\sigma','ς':'\\varsigma','τ':'\\tau','υ':'\\upsilon','φ':'\\varphi','ϕ':'\\phi','χ':'\\chi','ψ':'\\psi','ω':'\\omega',
+  'Γ':'\\Gamma','Δ':'\\Delta','Θ':'\\Theta','Λ':'\\Lambda','Ξ':'\\Xi','Π':'\\Pi','Σ':'\\Sigma','Φ':'\\Phi','Ψ':'\\Psi','Ω':'\\Omega',
+  '×':'\\times','·':'\\cdot','⋅':'\\cdot','∙':'\\cdot','÷':'\\div','±':'\\pm','∓':'\\mp','≤':'\\leq','⩽':'\\leq','≥':'\\geq','⩾':'\\geq','≠':'\\neq','≈':'\\approx','≡':'\\equiv','∼':'\\sim','∝':'\\propto','∞':'\\infty','∂':'\\partial','∇':'\\nabla','∈':'\\in','∉':'\\notin','⊂':'\\subset','∪':'\\cup','∩':'\\cap','∠':'\\angle','⊥':'\\perp','∥':'\\parallel','→':'\\rightarrow','←':'\\leftarrow','⇒':'\\Rightarrow','⇔':'\\Leftrightarrow','°':'^{\\circ}','′':"'",'−':'-','–':'-','…':'\\ldots','⋯':'\\cdots','∑':'\\sum','∏':'\\prod','∫':'\\int','∬':'\\iint','∮':'\\oint','√':'\\sqrt{}','∀':'\\forall','∃':'\\exists','ℓ':'\\ell','%':'\\%','#':'\\#','&':'\\&','{':'\\{','}':'\\}','<':'<','>':'>'
+};
+const mKids = (el, name) => Array.from(el.childNodes).filter(n => n.nodeType === 1 && n.namespaceURI === NS_M && n.localName === name);
+const mKid = (el, name) => mKids(el, name)[0] || null;
+const mProp = (el, pr, name) => { const p = mKid(el, pr); const k = p && mKid(p, name); return k ? k.getAttributeNS(NS_M, 'val') : null; };
+
+function ommlRun(r){
+  let s = '';
+  for (const t of mKids(r, 't')) s += t.textContent;
+  if (!s) return '';
+  const rpr = mKid(r, 'rPr');
+  const sty = rpr && mKid(rpr, 'sty') ? mKid(rpr, 'sty').getAttributeNS(NS_M, 'val') : '';
+  const lit = rpr && mKid(rpr, 'lit') ? true : false;
+  if (/[А-Яа-яЁё]/.test(s)) return '\\text{' + s.replace(/[{}\\]/g, '') + '}';
+  const conv = Array.from(s).map(c => SYM[c] !== undefined ? SYM[c] + (/^\\[a-zA-Z]+$/.test(SYM[c]) ? ' ' : '') : c).join('');
+  if ((sty === 'p' || lit) && /^[A-Za-z]{2,}$/.test(s)) return '\\mathrm{' + s + '}';
+  if (sty === 'p' && /^[A-Za-z]$/.test(s)) return '\\mathrm{' + s + '}';
+  return conv;
+}
+
+function ommlKids(el){ return Array.from(el.childNodes).filter(n => n.nodeType === 1).map(omml).join(''); }
+const grp = (el, name) => { const k = mKid(el, name); return k ? '{' + ommlKids(k) + '}' : '{}'; };
+
+function omml(n){
+  if (n.namespaceURI !== NS_M) return '';
+  switch (n.localName) {
+    case 'r': return ommlRun(n);
+    case 'f': {
+      const ty = mProp(n, 'fPr', 'type');
+      if (ty === 'lin') return '{' + ommlKids(mKid(n, 'num')) + '}/{' + ommlKids(mKid(n, 'den')) + '}';
+      if (ty === 'noBar') return '\\binom' + grp(n, 'num') + grp(n, 'den');
+      return '\\frac' + grp(n, 'num') + grp(n, 'den');
+    }
+    case 'sSup': return grp(n, 'e') + '^' + grp(n, 'sup');
+    case 'sSub': return grp(n, 'e') + '_' + grp(n, 'sub');
+    case 'sSubSup': return grp(n, 'e') + '_' + grp(n, 'sub') + '^' + grp(n, 'sup');
+    case 'sPre': return '{}_' + grp(n, 'sub') + '^' + grp(n, 'sup') + grp(n, 'e');
+    case 'rad': {
+      const hide = mProp(n, 'radPr', 'degHide');
+      const deg = mKid(n, 'deg');
+      const d = deg ? ommlKids(deg).trim() : '';
+      return '\\sqrt' + (d && hide !== '1' && hide !== 'on' ? '[' + d + ']' : '') + grp(n, 'e');
+    }
+    case 'd': {
+      const beg = mProp(n, 'dPr', 'begChr'), end = mProp(n, 'dPr', 'endChr'), sep = mProp(n, 'dPr', 'sepChr');
+      const f = (c, d) => c === null ? d : (c === '' ? '.' : ({'{':'\\{','}':'\\}','|':'|','‖':'\\|','⟨':'\\langle','⟩':'\\rangle','⌊':'\\lfloor','⌋':'\\rfloor','⌈':'\\lceil','⌉':'\\rceil'}[c] || c));
+      const items = mKids(n, 'e').map(ommlKids);
+      return '\\left' + f(beg, '(') + items.join(sep === null ? '|' : (sep || ',')) + '\\right' + f(end, ')');
+    }
+    case 'nary': {
+      const chr = mProp(n, 'naryPr', 'chr');
+      const op = chr === null ? '\\int' : (SYM[chr] || chr);
+      const sub = mKid(n, 'sub'), sup = mKid(n, 'sup');
+      return op + (sub && ommlKids(sub) ? '_{' + ommlKids(sub) + '}' : '') + (sup && ommlKids(sup) ? '^{' + ommlKids(sup) + '}' : '') + ' ' + grp(n, 'e');
+    }
+    case 'func': {
+      const name = ommlKids(mKid(n, 'fName')).trim();
+      const std = /^(sin|cos|tan|tg|ctg|cot|sec|csc|arcsin|arccos|arctan|sinh|cosh|tanh|ln|log|lg|exp|lim|max|min|det)$/.test(name);
+      return (std ? '\\' + (name === 'tg' ? 'tan' : name === 'ctg' ? 'cot' : name) : '\\mathrm{' + name + '}') + ' ' + grp(n, 'e');
+    }
+    case 'limLow': return grp(n, 'e') + '_' + grp(n, 'lim');
+    case 'limUpp': return grp(n, 'e') + '^' + grp(n, 'lim');
+    case 'acc': {
+      const chr = mProp(n, 'accPr', 'chr');
+      const cmd = {'̇':'dot','̈':'ddot','̂':'hat','̃':'tilde','̅':'overline','̄':'bar','⃗':'vec','→':'vec'}[chr] || 'hat';
+      return '\\' + cmd + grp(n, 'e');
+    }
+    case 'bar': return (mProp(n, 'barPr', 'pos') === 'bot' ? '\\underline' : '\\overline') + grp(n, 'e');
+    case 'eqArr': return '\\begin{aligned}' + mKids(n, 'e').map(ommlKids).join(' \\\\ ') + '\\end{aligned}';
+    case 'm': return '\\begin{matrix}' + mKids(n, 'mr').map(r => mKids(r, 'e').map(ommlKids).join(' & ')).join(' \\\\ ') + '\\end{matrix}';
+    case 'oMathPara': case 'oMath': return ommlKids(n);
+    case 'rPr': case 'ctrlPr': case 'fPr': case 'dPr': case 'naryPr': case 'radPr': case 'accPr': case 'barPr': case 'sSubSupPr': case 'sSupPr': case 'sSubPr': case 'funcPr': case 'eqArrPr': case 'mPr': case 'limLowPr': case 'limUppPr': case 'groupChrPr': case 'boxPr': case 'phantPr': case 'borderBoxPr': return '';
+    default: return ommlKids(n);
+  }
+}
+
+async function ommlPrepare(buf){
+  const zip = await JSZip.loadAsync(buf);
+  const f = zip.file('word/document.xml');
+  if (!f) return {buf, maths: []};
+  const xml = await f.async('string');
+  if (xml.indexOf('<m:oMath') === -1) return {buf, maths: []};
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  const maths = [];
+  const nodes = Array.from(doc.getElementsByTagNameNS(NS_M, 'oMathPara')).concat(
+    Array.from(doc.getElementsByTagNameNS(NS_M, 'oMath')).filter(m => !(m.parentNode.namespaceURI === NS_M && m.parentNode.localName === 'oMathPara')));
+  for (const m of nodes) {
+    const latex = omml(m).replace(/\s+/g, ' ').trim();
+    const display = m.localName === 'oMathPara';
+    const id = maths.length;
+    maths.push({latex, display});
+    const r = doc.createElementNS(NS_W, 'w:r'), t = doc.createElementNS(NS_W, 'w:t');
+    t.textContent = 'XMATHX' + id + 'XENDX';
+    r.appendChild(t);
+    m.parentNode.replaceChild(r, m);
+  }
+  zip.file('word/document.xml', new XMLSerializer().serializeToString(doc));
+  return {buf: await zip.generateAsync({type: 'arraybuffer'}), maths};
+}
+
 /* ---------- конвертеры ---------- */
 const td = new TurndownService({headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced', emDelimiter: '*'});
 if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
@@ -178,7 +406,9 @@ async function convHtml(html){
 
 async function convDocx(buf, ctx){
   let n = 0;
-  const res = await mammoth.convert({arrayBuffer: buf}, {
+  const prep = await ommlPrepare(buf);
+  if (prep.maths.length) ctx.formulas = prep.maths.length;
+  const res = await mammoth.convert({arrayBuffer: prep.buf}, {
     convertImage: mammoth.images.imgElement(async image => {
       n++;
       const attrs = {src: '', alt: 'Изображение ' + n};
@@ -186,14 +416,20 @@ async function convDocx(buf, ctx){
         try {
           const b64 = await image.read('base64');
           ctx.status('OCR рисунка ' + n + '…');
-          const txt = await ocrImage('data:' + image.contentType + ';base64,' + b64, ctx);
+          const src = 'data:' + image.contentType + ';base64,' + b64;
+          const txt = ctx.math ? await glmImage(await (await fetch(src)).blob(), ctx) : await ocrImage(src, ctx);
           if (txt) attrs['data-ocr'] = txt;
-        } catch (e) { /* формат рисунка не поддерживается OCR (например, EMF) */ }
+        } catch (e) { if (ctx.math && /WebGPU|видеокарт|shader-f16/.test(e.message)) throw e; /* формат рисунка не поддерживается OCR (например, EMF) */ }
       }
       return attrs;
     })
   });
-  return td.turndown(res.value).trim();
+  let md = td.turndown(res.value).trim();
+  md = md.replace(/XMATHX(\d+)XENDX/g, (all, i) => {
+    const m = prep.maths[+i];
+    return m ? (m.display ? '\n\n$$\n' + m.latex + '\n$$\n\n' : '$' + m.latex + '$') : '';
+  });
+  return md.replace(/\n{3,}/g, '\n\n');
 }
 
 async function convXlsx(buf, ext){
@@ -297,10 +533,25 @@ async function convPdf(buf, ctx){
   const pdf = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
   const pages = [];
   let ocrPages = 0;
+  const mathSet = ctx.math ? parsePages(ctx.pages, pdf.numPages) : null;
   for (let i = 1; i <= pdf.numPages; i++) {
     ctx.status('Страница ' + i + ' из ' + pdf.numPages);
     ctx.progress((i - 1) / pdf.numPages);
     const page = await pdf.getPage(i);
+    if (mathSet && mathSet.has(i)) {
+      const v1 = page.getViewport({scale: 1});
+      const sc = Math.min(3, Math.max(1.5, Math.sqrt(GLM_PX / (v1.width * v1.height))));
+      const vp = page.getViewport({scale: sc});
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+      const c = cv.getContext('2d', {willReadFrequently: true});
+      c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
+      await page.render({canvasContext: c, viewport: vp}).promise;
+      ctx.stage = 'Стр. ' + i + '/' + pdf.numPages;
+      pages.push(await glmRecognize(cv, ctx));
+      ocrPages++;
+      continue;
+    }
     const tc = await page.getTextContent();
     let text = pageToMarkdown(tc.items);
     const scan = text.replace(/\s/g, '').length < 20;
@@ -324,6 +575,7 @@ async function convPdf(buf, ctx){
 
 async function convImage(file, ctx){
   if (!ctx.ocr) { ctx.warn = 'Для изображений нужен OCR — включите опцию выше.'; return ''; }
+  if (ctx.math) { ctx.ocrPages = 1; return glmImage(file, ctx); }
   const url = URL.createObjectURL(file);
   try {
     ctx.status('Распознавание текста…');
@@ -370,7 +622,8 @@ async function handle(file){
   results.appendChild(card);
   const badge = card.querySelector('.badge'), bar = card.querySelector('.bar i');
   const ctx = {
-    ocr: $('ocr').checked, ocrAll: $('ocrAll').checked,
+    math: $('mode').value === 'math', pages: $('pages').value,
+    ocr: $('ocr').checked || $('mode').value === 'math', ocrAll: $('ocrAll').checked,
     status: s => { badge.textContent = s; },
     progress: p => { bar.style.width = Math.round(p * 100) + '%'; },
     onProgress: null
@@ -380,7 +633,7 @@ async function handle(file){
     const md = await convert(file, ctx);
     bar.parentNode.remove();
     badge.className = 'badge ok';
-    badge.textContent = ctx.ocrPages ? 'Готово · OCR: ' + ctx.ocrPages + ' стр./изобр.' : 'Готово';
+    badge.textContent = (ctx.ocrPages ? 'Готово · ' + (ctx.math ? 'GLM-OCR' : 'OCR') + ': ' + ctx.ocrPages + ' стр./изобр.' : 'Готово') + (ctx.formulas ? ' · формул Word: ' + ctx.formulas : '');
     if (ctx.warn) { const n = document.createElement('div'); n.className = 'note'; n.textContent = ctx.warn; card.appendChild(n); }
     const ta = document.createElement('textarea');
     ta.value = md; ta.spellcheck = false;
@@ -420,6 +673,14 @@ fileInp.onchange = () => { addFiles(Array.from(fileInp.files)); fileInp.value = 
 ['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
 ['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
 drop.addEventListener('drop', e => addFiles(Array.from(e.dataTransfer.files)));
+$('mode').onchange = async () => {
+  const math = $('mode').value === 'math';
+  $('pagesRow').hidden = !math; $('mathNote').hidden = !math;
+  if (math) {
+    const bad = await gpuSupport();
+    if (bad) { $('mode').value = 'fast'; $('pagesRow').hidden = true; $('mathNote').textContent = bad + ' Режим формул недоступен на этом устройстве.'; $('mathNote').hidden = false; }
+  }
+};
 $('dlAll').onclick = () => download('converted.md', done.map(d => '# ' + d.name + '\n\n' + d.ta.value).join('\n\n---\n\n'));
 $('clear').onclick = () => { results.innerHTML = ''; done.length = 0; bulk.hidden = true; };
 })();
