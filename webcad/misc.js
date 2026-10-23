@@ -143,9 +143,19 @@ WC.reg("ПР-ед",{title:"Конвертер единиц измерения",n
   base=1e3; fill(null);
  }});
 
-WC.reg("ПР-сорт",{title:"Сортаменты металлопроката",norm:"Двутавры с уклоном полок по ГОСТ 8239-89",
- pre:["Пока включён только сортамент двутавров ГОСТ 8239-89 (значения требуют сверки). Исправленные сортаменты И. Б. Звездина (webcad) будут добавлены после получения файлов."],
- groups:[{name:"Сортамент",f:[F.s("g","Сортамент",[["8239","Двутавры ГОСТ 8239-89"]],"8239")]}],
- run(v,R){ R.tbl(["№","$h$, см","$I_x$, см⁴","$W_x$, см³","$S_x$, см³","$s$, см"],Object.entries(WC.GOST8239).map(([k,p])=>[k,p[4],p[0],p[1],p[2],p[3]]),{cap:"Двутавры стальные горячекатаные ГОСТ 8239-89"});
-  R.res("Сортамент двутавров ГОСТ 8239-89"); }});
+WC.reg("ПР-сорт",{title:"Сортаменты металлопроката",norm:"ГОСТ 8239-89, 26020-83, СТО АСЧМ 20-93, ГОСТ 8240-97, 8509-93, 8510-86, 30245-2003",tool:true,
+ mount(root){
+  const S=WC.SORT, C=WC.SORTCOL, ids=Object.keys(S), lab={"8509":"Номер","8510":"Номер","30245s":"Профиль","30245r":"Профиль"};
+  root.innerHTML=`<div class="tw"><label class="cl">Сортамент <select data-i="sel">${ids.map(k=>`<option value="${k}">${S[k].name}</option>`).join("")}</select></label>
+   <label class="cl" style="margin-left:14px">Поиск <input type="text" data-i="q" placeholder="например 20Ш1 или 100x50" style="padding:6px;font:inherit"></label></div>
+   <p class="note2">Значения подлежат вашей сверке с бумажными ГОСТ (в разделе «Не проверено»). Список внесённых исправлений распознавания — <a href="webcad/sort-corrections.txt" target="_blank">sort-corrections.txt</a>.</p>
+   <div class="tw" style="max-height:70vh;overflow:auto"><table class="tt st"><thead></thead><tbody></tbody></table></div>`;
+  const sel=root.querySelector("[data-i=sel]"), q=root.querySelector("[data-i=q]"), th=root.querySelector("thead"), tb=root.querySelector("tbody");
+  const f=x=>x===null||x===undefined?"—":String(x).replace(".",",");
+  const draw=()=>{ const d=S[sel.value], cols=d.cols;
+    th.innerHTML="<tr><th>"+(lab[sel.value]||"Номер")+"</th>"+cols.map(c=>{const m=C[c]||[c,""];return `<th>${m[0]}${m[1]?`<br><small>${m[1]}</small>`:""}</th>`;}).join("")+"</tr>";
+    const t=q.value.trim().toLowerCase().replace(/[хx×]/g,"x").replace(",",".");
+    tb.innerHTML=d.rows.filter(r=>!t||String(r[0]).toLowerCase().replace(/[хx×]/g,"x").includes(t)).map(r=>"<tr><th>"+r[0]+"</th>"+r.slice(1).map(x=>`<td>${f(x)}</td>`).join("")+"</tr>").join(""); };
+  sel.addEventListener("change",draw); q.addEventListener("input",draw); draw();
+ }});
 })(typeof window!=="undefined"?window:globalThis);
