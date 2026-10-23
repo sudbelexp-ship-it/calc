@@ -272,6 +272,18 @@ const CSS=`
 .ar .df label{display:flex;gap:6px;align-items:center;font-size:13.5px}
 .ar .acts2{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .ar .small{font-size:12.5px;color:var(--muted)}
+
+@media print{
+ body:has(.ar) #calcCard{display:block!important} body:has(.ar) .ttl code,body:has(.ar) .stamp{display:inline-flex}
+ body:has(.ar) #resCard{display:none!important}
+ .ar{--card:#fff;--text:#000;--muted:#333;--faint:#555;--line:#999;--sunk:#fff;--accent:#000;--accent-soft:#eee;--ok:#0a5c2e;--bad:#9b1c1c;--warn:#7a4a00;--ok-soft:#fff;--bad-soft:#fff;--warn-soft:#fff;color:#000}
+ .ar .tabs,.ar .acts2,.ar .ib,.ar dialog,.ar #ar_dRep,.ar #ar_add,.ar #ar_clr{display:none!important}
+ .ar .acc{break-inside:avoid-page;border-color:#999} .ar .acc>summary{background:#eee!important;color:#000}
+ .ar .acc>summary::before{display:none}
+ .ar input,.ar select{border:0!important;background:none!important;padding:0!important;appearance:none;-webkit-appearance:none;color:#000}
+ .ar .chart{max-width:100%} .ar .msg{break-inside:avoid}
+ .ar .scalbar,.ar .pbar,.ar .scalbar i,.ar .sw,.ar svg *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
 `;
 
 function defaultState(){
@@ -628,6 +640,9 @@ function mount(root){
   // шапка отчёта
   const store=(()=>{ try{ return {get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}}; }catch(e){ return {get:(k,d)=>d,set:()=>{}}; } })();
   const meta=store.get("wc_meta",{}); root.querySelectorAll("[data-m]").forEach(el=>{ if(el.tagName==="INPUT"){ el.value=meta[el.dataset.m]||""; el.addEventListener("change",()=>{ const m=store.get("wc_meta",{}); m[el.dataset.m]=el.value; store.set("wc_meta",m); }); } });
+  let wasOpen=null;
+  window.addEventListener("beforeprint",()=>{ const d=[...root.querySelectorAll("details.acc")]; wasOpen=d.map(x=>x.open); d.forEach(x=>x.open=true); });
+  window.addEventListener("afterprint",()=>{ if(wasOpen){ [...root.querySelectorAll("details.acc")].forEach((x,i)=>x.open=wasOpen[i]); wasOpen=null; } });
   $("print").addEventListener("click",()=>print());
   $("word").addEventListener("click",async ()=>{
     const b=$("word"); const c=lastCalc; if(!c||c.err){ alert("Сначала заполните исходные данные"); return; }
@@ -639,7 +654,7 @@ function mount(root){
       document.body.appendChild(a); a.click(); setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},1000);
     }catch(e){ alert("Ошибка формирования Word: "+e.message); console.error(e); }
     b.disabled=false; b.textContent="Скачать отчёт Word"; });
-  drawClim(); drawLayers(); recalc(); drawClim();
+  drawClim(); drawLayers(); recalc();
   root.__ar={S,calc:()=>lastCalc,recalc,drawLayers};
 }
 
