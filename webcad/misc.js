@@ -67,16 +67,38 @@ WC.reg("АР-01",{title:"Теплотехнический расчёт огра�
  }});
 
 /* ===================== Прочее ===================== */
-WC.reg("ПР-интерп",{title:"Линейная интерполяция",norm:"Плоская (2D) и двойная (3D) линейная интерполяция",pre:[],
- groups:[{name:"Плоская задача",f:[F.n("x1","X1","X_1","",5),F.n("y1","Y1","Y_1","",2),F.n("x2","X2","X_2","",8),F.n("y2","Y2","Y_2","",10),F.n("x","X","X","",6.5)]},
-  {name:"Пространственная задача",f:[F.c("use3","Решать также двойную интерполяцию",false),F.n("X1","X1","XX_1","",2,{showIf:v=>v.use3}),F.n("X2","X2","XX_2","",10,{showIf:v=>v.use3}),
-   F.n("Y1","Y1","YY_1","",5,{showIf:v=>v.use3}),F.n("Y2","Y2","YY_2","",20,{showIf:v=>v.use3}),F.n("z11","Z(X1, Y1)","Z_{11}","",0.1,{showIf:v=>v.use3}),F.n("z21","Z(X2, Y1)","Z_{21}","",0.5,{showIf:v=>v.use3}),
-   F.n("z12","Z(X1, Y2)","Z_{12}","",1.2,{showIf:v=>v.use3}),F.n("z22","Z(X2, Y2)","Z_{22}","",2.1,{showIf:v=>v.use3}),F.n("X","X","XX","",5,{showIf:v=>v.use3}),F.n("Y","Y","YY","",10,{showIf:v=>v.use3})]}],
- run(v,R){ R.eq("Y","Y_1+(Y_2-Y_1)*(X-X_1)/(X_2-X_1)","");
-  if(v.x<Math.min(v.x1,v.x2)||v.x>Math.max(v.x1,v.x2)) R.note("X вне диапазона [X1; X2] — выполнена экстраполяция.");
-  R.res(`Y = ${WC.fmtd(R.S.Y,4)}`);
-  if(v.use3){ const S=R.S; S.Za=S.Z_11+(S.Z_21-S.Z_11)*(S.XX-S.XX_1)/(S.XX_2-S.XX_1); S.Zb=S.Z_12+(S.Z_22-S.Z_12)*(S.XX-S.XX_1)/(S.XX_2-S.XX_1);
-    R.h("Двойная интерполяция"); R.val("Z_a",S.Za,"","при Y1"); R.val("Z_b",S.Zb,"","при Y2"); R.eq("Z","Z_a+(Z_b-Z_a)*(YY-YY_1)/(YY_2-YY_1)",""); R.res(`Z = ${WC.fmtd(S.Z,4)}`); }
+/* Табличные «инструменты»: свой интерфейс, результат сразу при вводе */
+const num=x=>{x=parseFloat(String(x).replace(",","."));return x;};
+const nf=(y,d)=>{ if(!isFinite(y)) return "—"; const r=+y.toPrecision(d||10); return String(r).replace(".",","); };
+const inp=(id,val,cls)=>`<input type="text" inputmode="decimal" data-i="${id}" value="${val}" class="${cls||""}">`;
+WC.reg("ПР-интерп",{title:"Линейная интерполяция",norm:"Плоская и двойная линейная интерполяция — результат пересчитывается сразу при вводе",tool:true,
+ mount(root){
+  root.innerHTML=`<h3 class="th">Плоская задача</h3>
+  <div class="tw"><table class="tt"><thead><tr><th></th><th>X</th><th>Y</th></tr></thead><tbody>
+   <tr><th>Точка 1</th><td>${inp("x1",5)}</td><td>${inp("y1",2)}</td></tr>
+   <tr><th>Точка 2</th><td>${inp("x2",8)}</td><td>${inp("y2",10)}</td></tr>
+   <tr class="q"><th>Искомая</th><td>${inp("x",6.5)}</td><td><output data-o="y"></output></td></tr></tbody></table></div>
+  <p class="note2" data-o="n2"></p>
+  <h3 class="th">Пространственная задача Z(X, Y)</h3>
+  <div class="tw"><table class="tt"><thead><tr><th>Y \\ X</th><th>${inp("X1",2,"h")}</th><th>${inp("X2",10,"h")}</th></tr></thead><tbody>
+   <tr><th>${inp("Y1",5,"h")}</th><td>${inp("z11",0.1)}</td><td>${inp("z21",0.5)}</td></tr>
+   <tr><th>${inp("Y2",20,"h")}</th><td>${inp("z12",1.2)}</td><td>${inp("z22",2.1)}</td></tr></tbody></table></div>
+  <div class="tw"><table class="tt"><thead><tr><th></th><th>X</th><th>Y</th><th>Z</th></tr></thead><tbody>
+   <tr class="q"><th>Искомая</th><td>${inp("X",5)}</td><td>${inp("Y",10)}</td><td><output data-o="Z"></output></td></tr></tbody></table></div>
+  <p class="note2" data-o="n3"></p>`;
+  const g=k=>num(root.querySelector(`[data-i="${k}"]`).value), o=k=>root.querySelector(`[data-o="${k}"]`);
+  const lin=(a,fa,b,fb,x)=>fa+(fb-fa)*(x-a)/(b-a);
+  const calc=()=>{
+   const y=lin(g("x1"),g("y1"),g("x2"),g("y2"),g("x")); o("y").textContent=nf(y);
+   const ex=g("x")<Math.min(g("x1"),g("x2"))||g("x")>Math.max(g("x1"),g("x2"));
+   o("n2").textContent=ex&&isFinite(y)?"X вне диапазона точек 1–2 — выполнена экстраполяция.":"";
+   const X1=g("X1"),X2=g("X2"),Y1=g("Y1"),Y2=g("Y2"),X=g("X"),Y=g("Y");
+   const za=lin(X1,g("z11"),X2,g("z21"),X), zb=lin(X1,g("z12"),X2,g("z22"),X), z=lin(Y1,za,Y2,zb,Y);
+   o("Z").textContent=nf(z);
+   const ex3=X<Math.min(X1,X2)||X>Math.max(X1,X2)||Y<Math.min(Y1,Y2)||Y>Math.max(Y1,Y2);
+   o("n3").textContent=isFinite(z)?`Z(X; Y1) = ${nf(za,6)};  Z(X; Y2) = ${nf(zb,6)}${ex3?". Точка вне сетки — выполнена экстраполяция.":""}`:"";
+  };
+  root.addEventListener("input",calc); calc();
  }});
 Object.assign(WC.ALIAS,{Dt:()=>({r:"t",s:"Δt",it:true}),XX:()=>({r:"t",s:"X",it:true}),YY:()=>({r:"t",s:"Y",it:true}),XX_1:()=>({r:"sub",b:{r:"t",s:"X",it:true},s:{r:"t",s:"1"},sup:null}),XX_2:()=>({r:"sub",b:{r:"t",s:"X",it:true},s:{r:"t",s:"2"},sup:null}),
   YY_1:()=>({r:"sub",b:{r:"t",s:"Y",it:true},s:{r:"t",s:"1"},sup:null}),YY_2:()=>({r:"sub",b:{r:"t",s:"Y",it:true},s:{r:"t",s:"2"},sup:null})});
@@ -108,14 +130,18 @@ const UNITS={
  S:{n:"Статический момент",u:{"мм³":1e-9,"см³":1e-6,"дм³":1e-3,"м³":1}},
  I:{n:"Момент инерции",u:{"мм⁴":1e-12,"см⁴":1e-8,"дм⁴":1e-4,"м⁴":1}},
 };
-const unitFields=[]; Object.entries(UNITS).forEach(([k,o])=>{ const opts=Object.keys(o.u).map(x=>[x,x]);
-  unitFields.push(F.s("from_"+k,"Исходные единицы",opts,opts[0][0],{showIf:v=>v.cat===k}),F.s("to_"+k,"Преобразованные единицы",opts,opts[Math.min(1,opts.length-1)][0],{showIf:v=>v.cat===k})); });
-WC.reg("ПР-ед",{title:"Конвертер единиц измерения",norm:"Преобразование широко употребимых единиц (g = 9,80665 м/с²)",pre:[],
- groups:[{name:"Величина",f:[F.s("cat","Физическая величина",Object.entries(UNITS).map(([k,o])=>[k,o.n]),"m"),F.n("x","Значение","x","",1),...unitFields]}],
- run(v,R){ const U=UNITS[v.cat].u, a=v["from_"+v.cat], b=v["to_"+v.cat], y=v.x*U[a]/U[b];
-  R.tbl(["Исходное","Результат"],[[`${WC.fmt(v.x)} ${a}`,`${WC.fmt(y)} ${b}`]]);
-  R.tbl(["Единица","Значение"],Object.keys(U).map(k=>[k,WC.fmt(v.x*U[a]/U[k])]),{cap:"Во всех единицах"});
-  R.res(`${WC.fmt(v.x)} ${a} = ${WC.fmt(y)} ${b}`); }});
+WC.reg("ПР-ед",{title:"Конвертер единиц измерения",norm:"Введите значение в любой строке — остальные пересчитаются сразу (g = 9,80665 м/с²)",tool:true,
+ mount(root){
+  root.innerHTML=`<div class="tw"><label class="cl">Физическая величина <select data-i="cat">${Object.entries(UNITS).map(([k,o])=>`<option value="${k}">${o.n}</option>`).join("")}</select></label></div><div class="tw"><table class="tt cv"><thead><tr><th>Единица</th><th>Значение</th></tr></thead><tbody data-o="rows"></tbody></table></div>`;
+  const sel=root.querySelector("select"), body=root.querySelector("[data-o=rows]"); let base=1;
+  const draw=()=>{ const U=UNITS[sel.value].u; body.innerHTML=Object.keys(U).map(k=>`<tr><th>${k}</th><td><input type="text" inputmode="decimal" data-u="${k}"></td></tr>`).join(""); fill(null); };
+  const fill=skip=>{ const U=UNITS[sel.value].u; body.querySelectorAll("input").forEach(i=>{ if(i.dataset.u!==skip) i.value=nf(base/U[i.dataset.u]); }); };
+  sel.addEventListener("change",()=>{ base=UNITS[sel.value].u[Object.keys(UNITS[sel.value].u)[0]]; draw(); });
+  body.addEventListener("input",e=>{ const i=e.target; const x=num(i.value); const U=UNITS[sel.value].u; if(isFinite(x)){ base=x*U[i.dataset.u]; fill(i.dataset.u);} });
+  base=UNITS.m.u["Н·м"]; draw();
+  // стартовое значение: 1 кН·м
+  base=1e3; fill(null);
+ }});
 
 WC.reg("ПР-сорт",{title:"Сортаменты металлопроката",norm:"Двутавры с уклоном полок по ГОСТ 8239-89",
  pre:["Пока включён только сортамент двутавров ГОСТ 8239-89 (значения требуют сверки). Исправленные сортаменты И. Б. Звездина (webcad) будут добавлены после получения файлов."],
