@@ -1,0 +1,428 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Документы в Markdown — БИЛДИНФОТЕХ</title>
+<meta name="description" content="Конвертер документов в Markdown в духе Microsoft MarkItDown: PDF, Word, Excel, PowerPoint, HTML, CSV, изображения. Встроенный OCR для сканов. Всё работает в браузере.">
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#667085; --faint:#98a2b3; --line:#e4e7ec; --sunk:#f2f4f7;
+  --accent:#3b4ccb; --accent-soft:#eceefc; --ok:#137a4b; --ok-soft:#e3f5ec; --bad:#b42318; --bad-soft:#fdeceb;
+  --warn:#9a5a00; --warn-soft:#fff3dc;
+  --mono:ui-monospace,"SFMono-Regular","JetBrains Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root{
+  --bg:#12151c; --card:#1b1f2a; --text:#e8eaf0; --muted:#9aa3b5; --faint:#6b7488; --line:#2a3040; --sunk:#161a23;
+  --accent:#8c97ff; --accent-soft:#252a45; --ok:#5fd39b; --ok-soft:#173326; --bad:#ff8a80; --bad-soft:#3a1d1b; --warn:#f0b35a; --warn-soft:#33270f; color-scheme:dark}}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:960px;margin:0 auto;padding:24px 16px 48px}
+header{margin-bottom:18px}
+header .brand{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header .brand a{color:inherit;text-decoration:none}
+h1{margin:4px 0 0;font-size:clamp(22px,4vw,30px);line-height:1.2}
+header p{margin:6px 0 0;color:var(--muted);font-size:14px;max-width:720px}
+main{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;min-width:0}
+.drop{display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;padding:28px 16px;border:2px dashed var(--line);border-radius:12px;background:var(--sunk);cursor:pointer;transition:border-color .15s,background .15s}
+.drop:hover,.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.drop b{font-size:16px}
+.drop span{color:var(--muted);font-size:13px}
+.opts{display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;margin-top:14px}
+.opts label{display:flex;align-items:center;gap:8px;font-size:14px}
+.opts small{color:var(--muted)}
+input[type=checkbox]{width:18px;height:18px;accent-color:var(--accent)}
+select{font:inherit;font-size:14px;color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+select:focus-visible{outline:2px solid var(--accent);border-color:var(--accent)}
+.btn{font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:10px;padding:10px 18px;cursor:pointer}
+.btn.sec{background:var(--accent-soft);color:var(--accent)}
+.btn.sm{padding:5px 12px;font-size:13px;border-radius:8px}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn:disabled{opacity:.6;cursor:progress}
+.acts{display:flex;flex-wrap:wrap;gap:8px}
+.fhead{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin-bottom:10px}
+.fhead h2{margin:0;font-size:16px;line-height:1.3;overflow-wrap:anywhere;flex:1 1 220px}
+.badge{font-size:12px;padding:2px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}
+.badge.ok{background:var(--ok-soft);color:var(--ok)}
+.badge.bad{background:var(--bad-soft);color:var(--bad)}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:8px 0}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .2s}
+textarea{display:block;width:100%;min-height:260px;max-height:70vh;resize:vertical;font:13px/1.5 var(--mono);color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:12px}
+textarea:focus-visible{outline:2px solid var(--accent);border-color:var(--accent)}
+.note{font-size:13.5px;color:var(--warn);background:var(--warn-soft);padding:8px 10px;border-radius:8px;margin:8px 0}
+.info{font-size:13.5px;color:var(--muted)}
+.info ul{margin:6px 0 0;padding-left:20px}
+footer{border-top:1px solid var(--line);margin-top:24px;padding:20px 0 0;color:var(--muted);font-size:14px}
+footer a,.info a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand"><a href="index.html">← БИЛДИНФОТЕХ · калькуляторы</a></div>
+  <h1>Документы в Markdown</h1>
+  <p>Конвертер в духе <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener" style="color:var(--accent)">Microsoft MarkItDown</a>: PDF, Word, Excel, PowerPoint, HTML, CSV и изображения превращаются в чистый Markdown. Сканы и фото распознаются встроенным OCR (русский + английский). Файлы не покидают ваш браузер.</p>
+</header>
+
+<main>
+  <section class="card">
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файлы для конвертации">
+      <b>Перетащите файлы сюда или нажмите для выбора</b>
+      <span>PDF · DOCX · PPTX · XLSX/XLS · CSV · HTML · TXT/JSON/XML · JPG/PNG/WEBP/BMP</span>
+    </div>
+    <input type="file" id="file" multiple hidden accept=".pdf,.docx,.pptx,.xlsx,.xls,.csv,.tsv,.html,.htm,.txt,.md,.json,.xml,.jpg,.jpeg,.png,.webp,.bmp,.gif,.tif,.tiff">
+    <div class="opts">
+      <label><input type="checkbox" id="ocr" checked> OCR для сканов и изображений</label>
+      <label>Язык OCR
+        <select id="lang">
+          <option value="rus+eng" selected>Русский + английский</option>
+          <option value="rus">Русский</option>
+          <option value="eng">Английский</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="ocrAll"> OCR для всех страниц PDF <small>(медленно, даже если есть текстовый слой)</small></label>
+    </div>
+  </section>
+
+  <div id="results" style="display:flex;flex-direction:column;gap:16px"></div>
+  <div class="acts" id="bulk" hidden>
+    <button class="btn sec" id="dlAll" type="button">Скачать всё одним .md</button>
+    <button class="btn sec" id="clear" type="button">Очистить</button>
+  </div>
+
+  <section class="card info">
+    <b>Как это работает</b>
+    <ul>
+      <li>Текст из PDF извлекается с сохранением абзацев и заголовков; страницы без текстового слоя (сканы) автоматически отправляются на OCR.</li>
+      <li>Word → заголовки, списки, таблицы и ссылки; рисунки в документе распознаются OCR и вставляются цитатой.</li>
+      <li>Excel и CSV → таблицы Markdown по листам; PowerPoint → заголовки слайдов, текст, таблицы и заметки докладчика.</li>
+      <li>В оригинальном MarkItDown OCR работает только через облачную LLM или Azure; здесь он локальный (Tesseract), ничего не отправляется на серверы. Модули и языковые данные OCR один раз скачиваются из интернета.</li>
+    </ul>
+  </section>
+</main>
+
+<footer>Результат конвертации носит справочный характер; сканы проверяйте глазами. Главная: <a href="index.html">c.bit-exp.ru</a>.</footer>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/lib/turndown.browser.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
+const done = []; // {name, md}
+
+/* ---------- утилиты ---------- */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const cell = v => String(v == null ? '' : v).replace(/\r?\n/g, '<br>').replace(/\|/g, '\\|').trim();
+function mdTable(rows){
+  rows = rows.filter(r => r.some(c => String(c == null ? '' : c).trim() !== ''));
+  if (!rows.length) return '';
+  const w = Math.max(...rows.map(r => r.length));
+  const norm = r => Array.from({length: w}, (_, i) => cell(r[i]));
+  const head = norm(rows[0]);
+  const lines = ['| ' + head.join(' | ') + ' |', '| ' + head.map(() => '---').join(' | ') + ' |'];
+  for (let i = 1; i < rows.length; i++) lines.push('| ' + norm(rows[i]).join(' | ') + ' |');
+  return lines.join('\n');
+}
+function decodeText(buf){
+  try { return new TextDecoder('utf-8', {fatal: true}).decode(buf).replace(/^﻿/, ''); }
+  catch (e) { return new TextDecoder('windows-1251').decode(buf); }
+}
+function extOf(name){ const m = /\.([^.]+)$/.exec(name); return m ? m[1].toLowerCase() : ''; }
+
+/* ---------- OCR ---------- */
+let ocrWorker = null, ocrLang = null, ocrCb = null;
+async function getOcr(lang){
+  if (ocrWorker && ocrLang === lang) return ocrWorker;
+  if (ocrWorker) { await ocrWorker.terminate(); ocrWorker = null; }
+  ocrWorker = await Tesseract.createWorker(lang, 1, {
+    logger: m => { if (ocrCb) ocrCb(m); }
+  });
+  ocrLang = lang;
+  return ocrWorker;
+}
+async function ocrImage(src, ctx){
+  const w = await getOcr($('lang').value);
+  ocrCb = m => { if (m.status === 'recognizing text' && ctx.onProgress) ctx.onProgress(m.progress); };
+  const { data } = await w.recognize(src);
+  ocrCb = null;
+  return (data.text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/* ---------- конвертеры ---------- */
+const td = new TurndownService({headingStyle: 'atx', bulletListMarker: '-', codeBlockStyle: 'fenced', emDelimiter: '*'});
+if (window.turndownPluginGfm) td.use(turndownPluginGfm.gfm);
+td.addRule('ocrimg', {
+  filter: 'img',
+  replacement: (c, node) => {
+    const ocr = node.getAttribute('data-ocr');
+    const alt = node.getAttribute('alt') || 'Изображение';
+    if (ocr) return '\n\n*[' + alt + ', распознано OCR]*\n\n' + ocr.split('\n').map(l => '> ' + l).join('\n') + '\n\n';
+    return '\n\n*[' + alt + ']*\n\n';
+  }
+});
+
+async function convHtml(html){
+  return td.turndown(html).trim();
+}
+
+async function convDocx(buf, ctx){
+  let n = 0;
+  const res = await mammoth.convert({arrayBuffer: buf}, {
+    convertImage: mammoth.images.imgElement(async image => {
+      n++;
+      const attrs = {src: '', alt: 'Изображение ' + n};
+      if (ctx.ocr) {
+        try {
+          const b64 = await image.read('base64');
+          ctx.status('OCR рисунка ' + n + '…');
+          const txt = await ocrImage('data:' + image.contentType + ';base64,' + b64, ctx);
+          if (txt) attrs['data-ocr'] = txt;
+        } catch (e) { /* формат рисунка не поддерживается OCR (например, EMF) */ }
+      }
+      return attrs;
+    })
+  });
+  return td.turndown(res.value).trim();
+}
+
+async function convXlsx(buf, ext){
+  const wb = ext === 'csv' || ext === 'tsv'
+    ? XLSX.read(decodeText(buf), {type: 'string', FS: ext === 'tsv' ? '\t' : undefined})
+    : XLSX.read(buf, {type: 'array'});
+  const parts = [];
+  for (const name of wb.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(wb.Sheets[name], {header: 1, raw: false, defval: ''});
+    const t = mdTable(rows);
+    if (ext === 'csv' || ext === 'tsv') parts.push(t);
+    else parts.push('## ' + name + '\n\n' + (t || '*Пустой лист*'));
+  }
+  return parts.join('\n\n').trim();
+}
+
+async function convPptx(buf){
+  const zip = await JSZip.loadAsync(buf);
+  const A = 'http://schemas.openxmlformats.org/drawingml/2006/main';
+  const num = p => +(/(\d+)\.xml$/.exec(p) || [0, 0])[1];
+  const slides = Object.keys(zip.files).filter(p => /^ppt\/slides\/slide\d+\.xml$/.test(p)).sort((a, b) => num(a) - num(b));
+  const parse = async p => new DOMParser().parseFromString(await zip.file(p).async('string'), 'application/xml');
+  const paras = root => Array.from(root.getElementsByTagNameNS(A, 'p')).map(p =>
+    Array.from(p.getElementsByTagNameNS(A, 't')).map(t => t.textContent).join('')).filter(s => s.trim());
+  const out = [];
+  for (const sp of slides) {
+    const n = num(sp), doc = await parse(sp), body = [];
+    let title = '';
+    for (const shape of Array.from(doc.getElementsByTagName('p:sp'))) {
+      const ph = shape.getElementsByTagName('p:ph')[0];
+      const type = ph ? ph.getAttribute('type') : '';
+      const txt = paras(shape);
+      if (!txt.length) continue;
+      if (!title && (type === 'title' || type === 'ctrTitle')) title = txt.join(' ');
+      else body.push(txt.map(s => '- ' + s).join('\n'));
+    }
+    for (const tbl of Array.from(doc.getElementsByTagNameNS(A, 'tbl'))) {
+      const rows = Array.from(tbl.getElementsByTagNameNS(A, 'tr')).map(tr =>
+        Array.from(tr.getElementsByTagNameNS(A, 'tc')).map(tc => paras(tc).join(' ')));
+      body.push(mdTable(rows));
+    }
+    let s = '<!-- Слайд ' + n + ' -->\n\n# ' + (title || 'Слайд ' + n);
+    if (body.length) s += '\n\n' + body.join('\n\n');
+    const np = 'ppt/notesSlides/notesSlide' + n + '.xml';
+    if (zip.file(np)) {
+      const nt = paras(await parse(np)).filter(x => !/^\d+$/.test(x.trim()));
+      if (nt.length) s += '\n\n### Заметки\n\n' + nt.join('\n\n');
+    }
+    out.push(s);
+  }
+  return out.join('\n\n').trim();
+}
+
+let pdfReady = false;
+async function initPdf(){
+  if (pdfReady) return;
+  const r = await fetch('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
+  const blob = new Blob([await r.text()], {type: 'text/javascript'});
+  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  pdfReady = true;
+}
+
+function pageToMarkdown(items){
+  const lines = [];
+  for (const it of items) {
+    if (!it.str) continue;
+    const y = it.transform[5], h = Math.abs(it.transform[3]) || it.height || 10;
+    let ln = lines.length ? lines[lines.length - 1] : null;
+    if (ln && Math.abs(ln.y - y) < Math.max(2, ln.h * 0.5)) {
+      ln.parts.push(it); ln.h = Math.max(ln.h, h);
+    } else lines.push({y, h, parts: [it]});
+  }
+  const built = lines.map(l => {
+    l.parts.sort((a, b) => a.transform[4] - b.transform[4]);
+    let s = '', prevEnd = null;
+    for (const p of l.parts) {
+      if (prevEnd !== null && p.transform[4] - prevEnd > l.h * 0.15 && !/\s$/.test(s) && !/^\s/.test(p.str)) s += ' ';
+      s += p.str; prevEnd = p.transform[4] + (p.width || 0);
+    }
+    return {text: s.replace(/\s+/g, ' ').trim(), y: l.y, h: l.h};
+  }).filter(l => l.text);
+  if (!built.length) return '';
+  const wt = {};
+  for (const l of built) { const k = Math.round(l.h); wt[k] = (wt[k] || 0) + l.text.length; }
+  const med = +Object.keys(wt).sort((a, b) => wt[b] - wt[a])[0] || 10;
+  let out = '', prev = null;
+  for (const l of built) {
+    const head = l.h > med * 1.25 && l.text.length < 140;
+    const gap = prev ? Math.abs(prev.y - l.y) : 0;
+    const newPara = !prev || gap > Math.max(prev.h, l.h) * 1.7 || head || prev.head;
+    if (!prev) out = (head ? '## ' : '') + l.text;
+    else if (newPara) out += '\n\n' + (head ? '## ' : '') + l.text;
+    else out += (/-$/.test(prev.text) ? '' : ' ') + l.text;
+    l.head = head; prev = l;
+  }
+  return out;
+}
+
+async function convPdf(buf, ctx){
+  await initPdf();
+  const pdf = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
+  const pages = [];
+  let ocrPages = 0;
+  for (let i = 1; i <= pdf.numPages; i++) {
+    ctx.status('Страница ' + i + ' из ' + pdf.numPages);
+    ctx.progress((i - 1) / pdf.numPages);
+    const page = await pdf.getPage(i);
+    const tc = await page.getTextContent();
+    let text = pageToMarkdown(tc.items);
+    const scan = text.replace(/\s/g, '').length < 20;
+    if (ctx.ocr && (scan || ctx.ocrAll)) {
+      const vp = page.getViewport({scale: 2.5});
+      const cv = document.createElement('canvas');
+      cv.width = vp.width; cv.height = vp.height;
+      await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
+      ctx.status('OCR страницы ' + i + ' из ' + pdf.numPages);
+      ctx.onProgress = p => ctx.progress((i - 1 + p) / pdf.numPages);
+      const ot = await ocrImage(cv, ctx);
+      ctx.onProgress = null;
+      if (ot) { text = ot; ocrPages++; }
+    }
+    pages.push(text);
+  }
+  ctx.ocrPages = ocrPages;
+  if (!pages.some(Boolean) && !ctx.ocr) ctx.warn = 'В PDF нет текстового слоя (скан). Включите OCR и повторите.';
+  return pages.map((t, i) => pages.length > 1 ? '<!-- Страница ' + (i + 1) + ' -->\n\n' + t : t).join('\n\n').trim();
+}
+
+async function convImage(file, ctx){
+  if (!ctx.ocr) { ctx.warn = 'Для изображений нужен OCR — включите опцию выше.'; return ''; }
+  const url = URL.createObjectURL(file);
+  try {
+    ctx.status('Распознавание текста…');
+    ctx.onProgress = p => ctx.progress(p);
+    const t = await ocrImage(url, ctx);
+    ctx.onProgress = null;
+    ctx.ocrPages = 1;
+    if (!t) ctx.warn = 'Текст на изображении не найден.';
+    return t;
+  } finally { URL.revokeObjectURL(url); }
+}
+
+async function convert(file, ctx){
+  const ext = extOf(file.name);
+  if (ext === 'pdf') return convPdf(await file.arrayBuffer(), ctx);
+  if (ext === 'docx') return convDocx(await file.arrayBuffer(), ctx);
+  if (ext === 'pptx') return convPptx(await file.arrayBuffer());
+  if (['xlsx', 'xls', 'csv', 'tsv'].includes(ext)) return convXlsx(await file.arrayBuffer(), ext);
+  if (ext === 'html' || ext === 'htm') return convHtml(decodeText(await file.arrayBuffer()));
+  if (['jpg', 'jpeg', 'png', 'webp', 'bmp', 'gif', 'tif', 'tiff'].includes(ext)) return convImage(file, ctx);
+  if (ext === 'json') {
+    const t = decodeText(await file.arrayBuffer());
+    let pretty = t; try { pretty = JSON.stringify(JSON.parse(t), null, 2); } catch (e) {}
+    return '```json\n' + pretty + '\n```';
+  }
+  if (ext === 'xml') return '```xml\n' + decodeText(await file.arrayBuffer()).trim() + '\n```';
+  if (ext === 'txt' || ext === 'md') return decodeText(await file.arrayBuffer()).trim();
+  if (ext === 'doc' || ext === 'ppt') throw new Error('Старый формат .' + ext + ' не поддерживается — пересохраните как .docx/.pptx.');
+  throw new Error('Формат .' + (ext || '?') + ' не поддерживается.');
+}
+
+/* ---------- интерфейс ---------- */
+function download(name, text){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], {type: 'text/markdown;charset=utf-8'}));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+async function handle(file){
+  const card = document.createElement('section');
+  card.className = 'card';
+  card.innerHTML = '<div class="fhead"><h2>' + esc(file.name) + '</h2><span class="badge">В очереди…</span></div><div class="bar"><i></i></div>';
+  results.appendChild(card);
+  const badge = card.querySelector('.badge'), bar = card.querySelector('.bar i');
+  const ctx = {
+    ocr: $('ocr').checked, ocrAll: $('ocrAll').checked,
+    status: s => { badge.textContent = s; },
+    progress: p => { bar.style.width = Math.round(p * 100) + '%'; },
+    onProgress: null
+  };
+  ctx.status('Конвертация…');
+  try {
+    const md = await convert(file, ctx);
+    bar.parentNode.remove();
+    badge.className = 'badge ok';
+    badge.textContent = ctx.ocrPages ? 'Готово · OCR: ' + ctx.ocrPages + ' стр./изобр.' : 'Готово';
+    if (ctx.warn) { const n = document.createElement('div'); n.className = 'note'; n.textContent = ctx.warn; card.appendChild(n); }
+    const ta = document.createElement('textarea');
+    ta.value = md; ta.spellcheck = false;
+    ta.setAttribute('aria-label', 'Markdown для ' + file.name);
+    const acts = document.createElement('div');
+    acts.className = 'acts'; acts.style.marginTop = '10px';
+    acts.innerHTML = '<button class="btn sm" type="button">Копировать</button><button class="btn sm sec" type="button">Скачать .md</button>';
+    const [bc, bd] = acts.querySelectorAll('button');
+    bc.onclick = async () => {
+      try { await navigator.clipboard.writeText(ta.value); } catch (e) { ta.select(); document.execCommand('copy'); }
+      bc.textContent = 'Скопировано'; setTimeout(() => bc.textContent = 'Копировать', 1500);
+    };
+    bd.onclick = () => download(file.name.replace(/\.[^.]+$/, '') + '.md', ta.value);
+    card.append(ta, acts);
+    const rec = {name: file.name, ta};
+    done.push(rec);
+    bulk.hidden = false;
+  } catch (e) {
+    console.error(e);
+    bar.parentNode.remove();
+    badge.className = 'badge bad';
+    badge.textContent = 'Ошибка';
+    const n = document.createElement('div'); n.className = 'note';
+    n.textContent = e && e.message ? e.message : String(e);
+    card.appendChild(n);
+  }
+}
+
+let queue = Promise.resolve();
+function addFiles(files){
+  for (const f of files) queue = queue.then(() => handle(f));
+}
+
+drop.onclick = () => fileInp.click();
+drop.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInp.click(); } };
+fileInp.onchange = () => { addFiles(Array.from(fileInp.files)); fileInp.value = ''; };
+['dragenter', 'dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+drop.addEventListener('drop', e => addFiles(Array.from(e.dataTransfer.files)));
+$('dlAll').onclick = () => download('converted.md', done.map(d => '# ' + d.name + '\n\n' + d.ta.value).join('\n\n---\n\n'));
+$('clear').onclick = () => { results.innerHTML = ''; done.length = 0; bulk.hidden = true; };
+})();
+</script>
+</body>
+</html>
