@@ -233,7 +233,10 @@ Report.prototype = {
     this.checks.push({name, ref:ref||"", act:lv, lim:rv, k, ok, unit, info:o.info});
     return ok;
   },
-  tbl(head, rows, o={}){ this.items.push({k:"tbl",head,rows,cap:o.cap}); return this; },
+  tbl(head, rows, o={}){ this.items.push({k:"tbl",head,rows,cap:o.cap,w:o.w,left:o.left}); return this; },
+  kv(rows){ this.items.push({k:"kv",rows}); return this; },                       // таблица «параметр — значение»
+  img(key,cap){ this.items.push({k:"img",key,cap}); return this; },                // рисунок из meta.imgs[key]
+  msg(kind,title,text){ this.items.push({k:"msg",kind,title,text}); return this; }, // цветной вывод ok|mid|bad
   res(s){ this.results.push(s); return this; },  // итоговая формулировка (для расчётов-подборов)
 };
 WC.Report = Report;
@@ -281,6 +284,8 @@ WC.reportHtml = function(R){
     else if(it.k==="note") out+=`<div class="note">${WC.inline(it.s)}</div>`;
     else if(it.k==="eq") out+=`<div class="req"><div class="m">${eqHtml(it)}</div><div class="ref">${esc(it.ref||"")}</div></div>`;
     else if(it.k==="chk") out+=`<div class="req ${it.ok?"":"bad"}"><div class="m">${sideHtml(it.L)} <b class="op">${it.op}</b> ${sideHtml(it.R)}${it.unit?" "+esc(it.unit):""}</div><div class="ref">${esc(it.ref||"")}</div></div>`;
+    else if(it.k==="kv") out+=`<div class="tw"><table class="rtab">${it.rows.map(r=>`<tr><td>${WC.inline(String(r[0]))}</td><td>${WC.inline(String(r[1]))}</td></tr>`).join("")}</table></div>`;
+    else if(it.k==="msg") out+=`<div class="note"><b>${WC.inline(it.title)}</b> ${WC.inline(it.text||"")}</div>`;
     else if(it.k==="tbl") out+=`<div class="tw"><table class="rtab">${it.cap?`<caption>${esc(it.cap)}</caption>`:""}<thead><tr>${it.head.map(c=>`<th>${WC.inline(String(c))}</th>`).join("")}</tr></thead><tbody>${it.rows.map(r=>`<tr>${r.map(c=>`<td>${typeof c==="number"?esc(WC.fmt(c)):WC.inline(String(c))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   });
   return out;
@@ -290,7 +295,7 @@ WC.reportHtml = function(R){
 WC.docx = async function(def, v, R, meta){
   const D=G.docx; if(!D) throw new Error("Библиотека docx не загружена");
   const {Document,Packer,Paragraph,TextRun,Table,TableRow,TableCell,WidthType,AlignmentType,BorderStyle,ShadingType,Header,Footer,PageNumber,
-    TabStopType,VerticalAlign,TableLayoutType,MathRun,MathFraction,MathSubScript,MathSuperScript,MathSubSuperScript,MathRadical,MathRoundBrackets}=D;
+    TabStopType,VerticalAlign,TableLayoutType,ImageRun,MathRun,MathFraction,MathSubScript,MathSuperScript,MathSubSuperScript,MathRadical,MathRoundBrackets}=D;
   const FONT="Times New Roman", ACC="1F3A93", GREY="6B7280", LINE="C9CED6", OK="1A7F4B", BAD="B42318", WARN="9A5A00";
   const verified = meta.verified;
   const T=(t,o={})=>new TextRun({text:t,font:FONT,size:o.size||24,bold:o.b,italics:o.i,color:o.c});
@@ -320,9 +325,9 @@ WC.docx = async function(def, v, R, meta){
     margins:{top:50,bottom:50,left:90,right:90},verticalAlign:o.va||VerticalAlign.CENTER,columnSpan:o.span});
   const FULL=9638;
   const tbl=(widths,rows,o={})=>new Table({width:{size:widths.reduce((a,b)=>a+b,0),type:WidthType.DXA},layout:TableLayoutType.FIXED,columnWidths:widths,borders:o.borders,rows});
-  const EQrow=(nodes,ref,tail)=>tbl([8200,1438],[new TableRow({cantSplit:true,children:[
-     cell(new Paragraph({children:[M(nodes),...(tail?[T(" "+tail)]:[])],alignment:AlignmentType.CENTER,spacing:{before:30,after:30}}),{w:8200,borders:noB}),
-     cell(P(ref||"",{size:20,c:GREY,al:AlignmentType.RIGHT,after:0}),{w:1438,borders:noB})]})],{borders:noB});
+  const EQrow=(nodes,ref,tail)=>tbl([7500,2138],[new TableRow({cantSplit:true,children:[
+     cell(new Paragraph({children:[M(nodes),...(tail?[T(" "+tail)]:[])],alignment:AlignmentType.CENTER,spacing:{before:30,after:30}}),{w:7500,borders:noB}),
+     cell(P(ref||"",{size:20,c:GREY,al:AlignmentType.RIGHT,after:0}),{w:2138,borders:noB})]})],{borders:noB});
   const H1=(n,t)=>new Paragraph({children:[T(`${n}  ${t}`,{b:true,size:26,c:ACC})],spacing:{before:260,after:120},keepNext:true,border:{bottom:{style:BorderStyle.SINGLE,size:6,color:ACC,space:2}}});
   const H2=(n,t)=>new Paragraph({children:[T(`${n}  ${t}`,{b:true,size:24})],spacing:{before:160,after:60},keepNext:true});
   const date=new Date().toLocaleDateString("ru-RU");
@@ -351,12 +356,13 @@ WC.docx = async function(def, v, R, meta){
     cell(info?[P(R.results.slice(1).join("; ")||"",{size:20,after:0})]:[P("Определяющая проверка",{size:18,c:GREY,after:0}),P(R.worst.name+(R.worst.ref?", "+R.worst.ref:""),{size:21,after:0}),
       P(R.ok?`Запас ${WC.fmtd((1-k)*100,1)} %`:`Перегрузка ${WC.fmtd((k-1)*100,1)} %`,{size:20,c:GREY,after:0})],{w:3438,fill:resFill})]})]));
   // 1. нормы
-  let sec=1;
-  body.push(H1(sec++,"Нормативная база и допущения"));
+  let sec=1; const lean=!!def.lean;
+  if(lean){ body.push(P([T("Нормативная база: "+def.norm,{size:20,c:GREY})],{after:40})); }
+  else{ body.push(H1(sec++,"Нормативная база и допущения"));
   body.push(P(def.norm,{ind:567}));
-  (def.pre||[]).forEach(s=>body.push(P(runs(s),{ind:567,after:60})));
+  (def.pre||[]).forEach(s=>body.push(P(runs(s),{ind:567,after:60}))); }
   // 2. исходные данные
-  body.push(H1(sec++,"Исходные данные"));
+  if(!lean){ body.push(H1(sec++,"Исходные данные"));
   const W4=[4200,1300,2338,1800];
   const hdr=new TableRow({tableHeader:true,children:["Параметр","Обозн.","Значение","Ед. изм."].map((x,i)=>cell(P([T(x,{b:true,size:20,c:"FFFFFF"})],{after:0}),{w:W4[i],fill:ACC}))});
   const rows=[hdr];
@@ -376,22 +382,30 @@ WC.docx = async function(def, v, R, meta){
     const w=Math.floor(FULL/fd.cols.length); const ws=fd.cols.map(()=>w);
     body.push(tbl(ws,[new TableRow({tableHeader:true,children:fd.cols.map((c,i)=>cell(P([T(c.h,{b:true,size:20,c:"FFFFFF"})],{after:0,al:AlignmentType.CENTER}),{w:ws[i],fill:ACC}))}),
       ...R2.map(r=>new TableRow({children:fd.cols.map((c,i)=>{ let x=r[c.id]; if(c.t==="s") x=(c.opts.find(o=>o[0]===x)||[0,x])[1]; else if(typeof x==="number") x=WC.fmt(x); return cell(String(x??""),{w:ws[i],size:20,al:AlignmentType.CENTER}); })}))])); } }));
+  }
   // 3. расчёт
-  body.push(H1(sec,"Расчёт")); let sub=0; const secR=sec++;
+  if(!lean) body.push(H1(sec,"Расчёт")); let sub=0; const secR=sec++;
   R.items.forEach(it=>{
-    if(it.k==="h"){ sub++; body.push(H2(`${secR}.${sub}`,it.s)); }
+    if(it.k==="h"){ sub++; body.push(lean?H1(sub,it.s):H2(`${secR}.${sub}`,it.s)); }
+    else if(it.k==="kv"){ const wk=[3600,FULL-3600];
+      body.push(tbl(wk,it.rows.map(r=>new TableRow({cantSplit:true,children:[cell(P(runs(String(r[0]),{size:20,c:GREY}),{after:0}),{w:wk[0],fill:"F3F5F9"}),cell(P(runs(String(r[1]),{size:21}),{after:0}),{w:wk[1]})]})))); body.push(P("",{after:60})); }
+    else if(it.k==="img"){ const im=meta.imgs&&meta.imgs[it.key]; if(im){ const W=Math.round(FULL/20*96/72*0.97), H=Math.round(W*im.h/im.w);
+        body.push(new Paragraph({children:[new ImageRun({type:"png",data:im.data,transformation:{width:W,height:H}})],alignment:AlignmentType.CENTER,spacing:{before:60,after:40},keepNext:!!it.cap}));
+        if(it.cap) body.push(P([T(it.cap,{size:18,c:GREY})],{after:80,al:AlignmentType.CENTER})); } }
+    else if(it.k==="msg"){ const C={ok:[OK,"E9F6EF"],mid:[WARN,"FFF6E0"],bad:[BAD,"FDECEB"]}[it.kind]||[ACC,"EEF1FA"]; const bar={style:BorderStyle.SINGLE,size:24,color:C[0]};
+      body.push(tbl([FULL],[new TableRow({cantSplit:true,children:[cell([P(runs(it.title,{b:true,size:22,c:C[0]}),{after:20}),...(it.text?[P(runs(it.text,{size:21}),{after:0})]:[])],{w:FULL,fill:C[1],borders:{top:none,bottom:none,right:none,left:bar}})]})])); body.push(P("",{after:60})); }
     else if(it.k==="t") body.push(P(runs(it.s),{ind:567,after:60}));
     else if(it.k==="note") body.push(P(runs("Примечание. "+it.s,{c:WARN,size:22}),{ind:567,after:60}));
     else if(it.k==="eq") body.push(EQrow(eqNodes(it),it.ref,it.unit));
     else if(it.k==="chk") body.push(EQrow([...sideNodes(it.L),T_(" "+it.op+" "),...sideNodes(it.R)],it.ref,it.unit));
-    else if(it.k==="tbl"){ const w=Math.floor(FULL/it.head.length), ws=it.head.map(()=>w);
+    else if(it.k==="tbl"){ const sw=it.w?it.w.reduce((a,b)=>a+b,0):0, w=Math.floor(FULL/it.head.length), ws=it.w?it.w.map(x=>Math.round(FULL*x/sw)):it.head.map(()=>w);
       if(it.cap) body.push(P([T(it.cap,{size:20,c:GREY})],{after:40}));
       body.push(tbl(ws,[new TableRow({tableHeader:true,children:it.head.map((c,i)=>cell(P(runs(String(c),{b:true,size:20}),{al:AlignmentType.CENTER,after:0}),{w:ws[i],fill:"F3F5F9"}))}),
-        ...it.rows.map(r=>new TableRow({children:r.map((c,i)=>cell(typeof c==="number"?WC.fmt(c):String(c),{w:ws[i],size:20,al:AlignmentType.CENTER}))}))])); body.push(P("",{after:60})); }
+        ...it.rows.map(r=>new TableRow({cantSplit:true,children:r.map((c,i)=>cell(typeof c==="number"?WC.fmt(c):String(c),{w:ws[i],size:20,al:(it.left||[]).includes(i)?AlignmentType.LEFT:AlignmentType.CENTER}))}))])); body.push(P("",{after:60})); }
   });
   // 4. сводка проверок
   const cks=R.checks.filter(c=>!c.info);
-  if(cks.length){
+  if(cks.length&&!lean){
     body.push(H1(sec++,"Сводка проверок"));
     const W7=[450,3550,1500,1150,1150,900,938];
     body.push(tbl(W7,[new TableRow({tableHeader:true,children:["№","Проверка","Норма","Расчётное","Предельное","Kисп","Итог"].map((x,i)=>cell(P([T(x,{b:true,size:20,c:"FFFFFF"})],{after:0,al:AlignmentType.CENTER}),{w:W7[i],fill:ACC}))}),
@@ -401,8 +415,8 @@ WC.docx = async function(def, v, R, meta){
         cell(P([T(c.ok?"✓ ОК":"✗ НЕТ",{b:true,size:20,c:c.ok?OK:BAD})],{al:AlignmentType.CENTER,after:0}),{w:W7[6],fill:c.ok?"E9F6EF":"FDECEB"})]}))]));
   }
   // 5. вывод
-  body.push(H1(sec++,"Вывод"));
-  const concl = WC.conclusion(R);
+  if(!lean) body.push(H1(sec++,"Вывод"));
+  const concl = lean?[]:WC.conclusion(R);
   concl.forEach((s,i)=>body.push(P(runs(s),{ind:567,after:60,keepNext:i===concl.length-1})));
   body.push(new Paragraph({children:[],keepNext:true,spacing:{after:240}}));
   body.push(tbl([2000,3000,2000,2638],[new TableRow({children:[cell("Выполнил",{w:2000,borders:noB,c:GREY}),cell(meta.author?`${meta.author}  ________`:"________________",{w:3000,borders:noB}),
