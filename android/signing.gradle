@@ -1,22 +1,22 @@
 // Подпись релизных APK. Ключ один на все планшеты, иначе обновления не встанут поверх.
 // Берётся из переменных окружения (в GitHub Actions — из секретов). Без них APK подписывается отладочным ключом.
+def ks = System.getenv('KEYSTORE_FILE')
+def hasKey = ks && file(ks).exists()
 android {
     signingConfigs {
-        release {
-            def ks = System.getenv('KEYSTORE_FILE')
-            if (ks && file(ks).exists()) {
+        if (hasKey) {
+            release {
                 storeFile file(ks)
                 storePassword System.getenv('KEYSTORE_PASSWORD')
                 keyAlias System.getenv('KEY_ALIAS')
                 keyPassword System.getenv('KEY_PASSWORD')
-            } else {
-                def dbg = signingConfigs.debug
-                storeFile dbg.storeFile; storePassword dbg.storePassword
-                keyAlias dbg.keyAlias; keyPassword dbg.keyPassword
             }
         }
     }
     buildTypes {
-        release { signingConfig signingConfigs.release; minifyEnabled false }
+        release {
+            signingConfig hasKey ? signingConfigs.release : signingConfigs.debug
+            minifyEnabled false
+        }
     }
 }
