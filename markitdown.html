@@ -178,6 +178,7 @@ const GLM_PX = 2200000;
 let glm = null, glmLoading = null, glmDl = null;
 
 async function gpuSupport(){
+  if (!window.isSecureContext) return 'Страница открыта по http, а WebGPU работает только по https. Откройте https://' + location.host + (location.pathname || '/') + ' (если не открывается — сертификат ещё выпускается).';
   if (!navigator.gpu) return 'В этом браузере нет WebGPU. Нужен свежий Chrome или Edge.';
   try {
     const a = await navigator.gpu.requestAdapter();
