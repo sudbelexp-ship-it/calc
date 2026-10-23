@@ -261,6 +261,7 @@ const CSS=`
 .ar .dh{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-bottom:1px solid var(--line);font-weight:700;font-size:16px}
 .ar .db{padding:12px 16px;display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:16px;max-height:70vh;overflow:auto}
 @media(max-width:720px){.ar .db{grid-template-columns:1fr}}
+.ar .sr{padding:10px 16px 0} .ar .sr input{width:100%;box-sizing:border-box;font-size:14.5px;padding:8px 10px}
 .ar .tree details{margin-left:14px} .ar .tree>details{margin-left:0}
 .ar .tree summary{cursor:pointer;padding:3px 0;font-size:14px}
 .ar .tree .it{padding:3px 6px;cursor:pointer;border-radius:5px;font-size:13.5px;display:block;width:100%;text-align:left;background:none;border:0;font:inherit;font-size:13.5px;color:var(--text)}
@@ -432,11 +433,25 @@ function mount(root){
   }
   function pickMaterial(replaceIdx){
     dlg.innerHTML=`<div class="dh"><span>⚙ Выбор материала</span><button type="button" class="ib" data-x>✕</button></div>
-      <div class="db"><div class="tree">${treeHtml()}</div><div class="prop" id="ar_prop">${propHtml(null)}</div></div>
+      <div class="sr"><input type="search" id="ar_q" placeholder="Поиск материала: введите несколько букв, например «пенопл», «кирпич 1800», «минвата»" autocomplete="off"></div>
+      <div class="db"><div class="tree" id="ar_tree">${treeHtml()}</div><div class="prop" id="ar_prop">${propHtml(null)}</div></div>
       <div class="df"><label>${replaceIdx===null?"Вставить после:":"Заменить слой:"}<select id="ar_after">${replaceIdx===null?`<option value="0">0. Внутри</option>`+S.lay.map((L,i)=>`<option value="${i+1}">${i+1}. ${esc(L.name.slice(0,60))}</option>`).join(""):`<option>${replaceIdx+1}. ${esc(S.lay[replaceIdx].name.slice(0,60))}</option>`}</select></label>
       <span class="small">Клик по материалу — добавить слой.</span><button type="button" class="btn sec sm" data-x style="margin-left:auto">Отмена</button></div>`;
     const after=dlg.querySelector("#ar_after"); if(replaceIdx===null) after.value=String(S.lay.length);
     const prop=dlg.querySelector("#ar_prop"), show=id=>{ const m=id.startsWith("air")?{air:true,name:AIRN[+id.slice(3)]}:MATBY[id]; prop.innerHTML=propHtml(m); };
+    const tree=dlg.querySelector("#ar_tree"), q=dlg.querySelector("#ar_q"), full=tree.innerHTML;
+    const norm=t=>String(t).toLowerCase().replace(/ё/g,"е");
+    const idx=MAT.map(m=>({id:m.id,t:norm([m.name,m.dens,m.sg,m.g].join(" ")),m})).concat(AIRN.map((n,k)=>({id:"air"+k,t:norm("воздушная прослойка "+n),m:{name:n,air:true}})));
+    const search=()=>{ const toks=norm(q.value).split(/\s+/).filter(Boolean);
+      if(!toks.length){ tree.innerHTML=full; return; }
+      const res=idx.filter(x=>toks.every(k=>x.t.includes(k))).slice(0,60);
+      tree.innerHTML=res.length?res.map(x=>`<button type="button" class="it" data-m="${x.id}">${esc(x.m.name)}${x.m.air?"":` <span class="small">· ${esc(x.m.g)}</span>`}</button>`).join(""):`<p class="small">Ничего не найдено. Можно добавить «Свой материал» и ввести λ и μ вручную.</p>`; };
+    q.addEventListener("input",search);
+    q.addEventListener("keydown",e=>{ const first=tree.querySelector(".it[data-m]");
+      if(e.key==="Enter"){ e.preventDefault(); if(q.value.trim()&&first) first.click(); }
+      else if(e.key==="ArrowDown"&&first){ e.preventDefault(); first.focus(); } });
+    tree.addEventListener("keydown",e=>{ if(e.key!=="ArrowDown"&&e.key!=="ArrowUp") return; const b=[...tree.querySelectorAll(".it[data-m]")], i=b.indexOf(document.activeElement); if(i<0) return; e.preventDefault();
+      if(e.key==="ArrowUp"&&i===0){ q.focus(); return; } const n=b[i+(e.key==="ArrowDown"?1:-1)]; if(n) n.focus(); });
     dlg.onmouseover=e=>{ const b=e.target.closest("[data-m]"); if(b&&b.dataset.m!=="custom") show(b.dataset.m); };
     dlg.onfocusin=dlg.onmouseover;
     dlg.onclick=e=>{ if(e.target.closest("[data-x]")||e.target===dlg){ dlg.close(); return; }
@@ -446,7 +461,7 @@ function mount(root){
       else L=fromMat(MATBY[id],100);
       if(replaceIdx===null){ const pos=+after.value; S.lay.splice(pos,0,L); } else { L.d=S.lay[replaceIdx].d; S.lay[replaceIdx]=L; }
       dlg.close(); drawLayers(); recalc(); if(id==="custom") editLayer(replaceIdx===null?+after.value:replaceIdx); };
-    dlg.showModal();
+    dlg.showModal(); q.focus();
   }
   function editLayer(i){
     const L=S.lay[i]; const n=x=>x!=null&&isFinite(x)?String(x).replace(".",","):"";
