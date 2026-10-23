@@ -191,7 +191,7 @@ function disp(n,mode,S){
           const L=lastLeaf(n.a), Rr=firstLeaf(n.b);
           dot = (L==="num"&&Rr==="num") || Rr==="num";
         }
-        return row(D(n.a), dot?T_("·"):T_(""), D(n.b));
+        return row(D(n.a), dot?T_("\u2009·\u2009"):T_(""), D(n.b));
       }
       return row(D(n.a),T_(n.op==="-"?" − ":" + "),D(n.b));
     }
@@ -276,7 +276,7 @@ function eqHtml(it){
   return parts.join(" = ");
 }
 function sideHtml(s){ const p=[]; if(s.sym)p.push(h(s.sym)); if(s.num)p.push(h(s.num)); p.push(h(s.v)); return p.join(" = "); }
-WC.reportHtml = function(R){
+WC.reportHtml = function(R,imgs){
   let out="", hn=0;
   R.items.forEach(it=>{
     if(it.k==="h"){ hn++; out+=`<h4>${esc(it.s)}</h4>`; }
@@ -284,8 +284,9 @@ WC.reportHtml = function(R){
     else if(it.k==="note") out+=`<div class="note">${WC.inline(it.s)}</div>`;
     else if(it.k==="eq") out+=`<div class="req"><div class="m">${eqHtml(it)}</div><div class="ref">${esc(it.ref||"")}</div></div>`;
     else if(it.k==="chk") out+=`<div class="req ${it.ok?"":"bad"}"><div class="m">${sideHtml(it.L)} <b class="op">${it.op}</b> ${sideHtml(it.R)}${it.unit?" "+esc(it.unit):""}</div><div class="ref">${esc(it.ref||"")}</div></div>`;
-    else if(it.k==="kv") out+=`<div class="tw"><table class="rtab">${it.rows.map(r=>`<tr><td>${WC.inline(String(r[0]))}</td><td>${WC.inline(String(r[1]))}</td></tr>`).join("")}</table></div>`;
-    else if(it.k==="msg") out+=`<div class="note"><b>${WC.inline(it.title)}</b> ${WC.inline(it.text||"")}</div>`;
+    else if(it.k==="kv") out+=`<div class="tw"><table class="rtab kvt">${it.rows.map(r=>`<tr><td>${WC.inline(String(r[0]))}</td><td>${WC.inline(String(r[1]))}</td></tr>`).join("")}</table></div>`;
+    else if(it.k==="msg") out+=`<div class="rmsg ${it.kind}"><b>${WC.inline(it.title)}</b>${it.text?"<div>"+WC.inline(it.text)+"</div>":""}</div>`;
+    else if(it.k==="img"){ if(imgs&&imgs[it.key]) out+=`<figure class="rfig">${imgs[it.key]}${it.cap?`<figcaption>${esc(it.cap)}</figcaption>`:""}</figure>`; }
     else if(it.k==="tbl") out+=`<div class="tw"><table class="rtab">${it.cap?`<caption>${esc(it.cap)}</caption>`:""}<thead><tr>${it.head.map(c=>`<th>${WC.inline(String(c))}</th>`).join("")}</tr></thead><tbody>${it.rows.map(r=>`<tr>${r.map(c=>`<td>${typeof c==="number"?esc(WC.fmt(c)):WC.inline(String(c))}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
   });
   return out;

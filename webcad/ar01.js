@@ -217,7 +217,7 @@ const CSS=`
 .ar table.kv td:nth-child(2){font-family:var(--serif);text-align:right;white-space:nowrap;font-weight:700}
 .ar table.kv td:nth-child(3){color:var(--muted);white-space:nowrap}
 .ar table.kv input{width:90px;text-align:right;font-family:var(--mono);padding:3px 6px}
-.ar .mon{display:grid;grid-template-columns:1fr 1fr;gap:0 24px}
+.ar table.mon2 th,.ar table.mon2 td{padding:3px 4px;text-align:center;white-space:nowrap} .ar table.mon2 td:first-child,.ar table.mon2 th:first-child{text-align:left;font-weight:600} .ar table.mon2 input{width:46px;padding:2px 3px;text-align:center}
 @media(max-width:720px){.ar .mon{grid-template-columns:1fr}}
 .ar table.mt{border-collapse:collapse;width:100%;font-size:13px}
 .ar table.mt th,.ar table.mt td{padding:3px 6px;border-bottom:1px solid var(--line);text-align:right}
@@ -273,7 +273,20 @@ const CSS=`
 .ar .acts2{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
 .ar .small{font-size:12.5px;color:var(--muted)}
 
+.ar.prn{display:none}
+.prn .rep{font-size:13px} .prn h4{font-size:15px;margin:16px 0 6px;color:var(--accent);border-bottom:1.5px solid var(--accent);padding-bottom:2px;break-after:avoid}
+.prn .rfig svg{width:100%;height:auto;display:block} .prn .rfig figcaption{font-size:11.5px;color:var(--muted);text-align:center;margin:2px 0 6px}
+.prn .kvt td:first-child{background:var(--sunk);color:var(--muted);width:32%;text-align:left} .prn .kvt td{text-align:left}
+.prn .rmsg{border-left:4px solid var(--ok);background:var(--ok-soft);padding:6px 10px;margin:8px 0;break-inside:avoid;font-size:13px}
+.prn .rmsg.mid{border-color:var(--warn);background:var(--warn-soft)} .prn .rmsg.bad{border-color:var(--bad);background:var(--bad-soft)}
+.prn .rmsg b{display:block} .prn .rmsg.ok b{color:var(--ok)} .prn .rmsg.mid b{color:var(--warn)} .prn .rmsg.bad b{color:var(--bad)}
+.prn .ph{display:flex;justify-content:space-between;gap:12px;border:1px solid var(--line);padding:8px 10px;margin-bottom:8px;break-inside:avoid}
+.prn .ph .t{font-weight:700;font-size:16px} .prn .ph small{color:var(--muted);display:block}
+.prn .pres{display:flex;gap:16px;align-items:center;border:1px solid var(--line);padding:8px 10px;margin-bottom:8px;break-inside:avoid;background:var(--ok-soft)}
+.prn .pres.bad{background:var(--bad-soft)} .prn .pres b{font-size:16px}
+.prn .req,.prn .rtab tr{break-inside:avoid} .prn .req{padding:2px 0} .prn .req .m{line-height:1.8;font-size:14.5px} .prn .rep p.rt{margin:3px 0} .prn .rtab{min-width:0;width:100%}
 @media print{
+ .ar:not(.prn){display:none!important} .ar.prn{display:block!important}
  body:has(.ar) #calcCard{display:block!important} body:has(.ar) .ttl code,body:has(.ar) .stamp{display:inline-flex}
  body:has(.ar) #resCard{display:none!important}
  .ar{--card:#fff;--text:#000;--muted:#333;--faint:#555;--line:#999;--sunk:#fff;--accent:#000;--accent-soft:#eee;--ok:#0a5c2e;--bad:#9b1c1c;--warn:#7a4a00;--ok-soft:#fff;--bad-soft:#fff;--warn-soft:#fff;color:#000}
@@ -302,7 +315,7 @@ function mount(root){
   if(!document.getElementById("ar01css")){ const st=document.createElement("style"); st.id="ar01css"; st.textContent=CSS; document.head.appendChild(st); }
   const S=defaultState(); let lastCalc=null, tab=0;
   const regs=[...new Set(CL.map(c=>c.r))].sort((a,b)=>a.localeCompare(b,"ru"));
-  root.innerHTML=`<div class="ar">
+  root.innerHTML=`<div class="ar prn" id="ar_prn"></div><div class="ar">
   <div class="scal"><div><b>Тепловая защита</b><div class="scalbar" id="ar_scal"></div></div><div><b>Защита от переувлажнения</b><div class="pbar" id="ar_pbar"></div></div></div>
 
   <details class="acc" id="ar_dClim"><summary>Район строительства <span class="sub" id="ar_sClim"></span></summary><div class="accb">
@@ -356,12 +369,12 @@ function mount(root){
       ["Относительная влажность воздуха наиболее холодного месяца","rh",C.rh,"%",0]];
     let h=man?`<p class="small">Данных по пункту нет в СП 131.13330.2025 — введите параметры из своего источника (значения сохраняются до закрытия страницы).</p>`:"";
     h+=`<table class="kv">${rows.map(r=>`<tr><td>${r[0]}</td><td>${inp(r[1],r[2],r[4])}</td><td>${r[3]}</td></tr>`).join("")}<tr><td>Градусо-сутки отопительного периода (ГСОП)</td><td id="ar_gsop"></td><td>°C·сут</td></tr></table>`;
-    h+=`<p class="small" style="margin:12px 0 4px"><b>Средние месячные и годовая температура воздуха T, °C и парциальное давление водяного пара E, гПа</b> (СП 131.13330.2025, табл. 7.1 и 11.1)</p><div class="mon">`;
-    for(const half of [0,1]){ h+=`<table class="mt"><tr><th>Месяц</th><th>T, °C</th><th>E, гПа</th></tr>`;
-      for(let k=0;k<6;k++){ const i=half*6+k; h+=`<tr><td>${MON[i]}</td><td>${man?`<input type="text" data-t="${i}" value="${isFinite(C.T[i])?String(C.T[i]).replace(".",","):""}">`:fr(C.T[i],1)}</td><td>${man?`<input type="text" data-e="${i}" value="${isFinite(C.E[i])?String(C.E[i]).replace(".",","):""}">`:fr(C.E[i],1)}</td></tr>`; }
-      if(half) h+=`<tr><td><b>Год</b></td><td>${man?`<input type="text" data-t="12" value="${isFinite(C.T[12])?String(C.T[12]).replace(".",","):""}">`:fr(C.T[12],1)}</td><td>${man?`<input type="text" data-e="12" value="${isFinite(C.E[12])?String(C.E[12]).replace(".",","):""}">`:fr(C.E[12],1)}</td></tr>`;
-      h+=`</table>`; }
-    h+=`</div>`;
+    h+=`<p class="small" style="margin:12px 0 4px"><b>Температура воздуха T, °C и парциальное давление водяного пара E, гПа</b> — средние месячные и годовые (СП 131.13330.2025, табл. 7.1 и 11.1)</p>`;
+    const cell=(arr,i,key,w)=>man?`<input type="text" data-${key}="${i}" value="${isFinite(arr[i])?String(arr[i]).replace(".",","):""}">`:fr(arr[i],1);
+    const sh=["Янв","Фев","Мар","Апр","Май","Июн","Июл","Авг","Сен","Окт","Ноя","Дек","Год"];
+    h+=`<div class="tw"><table class="mt mon2"><tr><th></th>${sh.map(x=>`<th>${x}</th>`).join("")}</tr>
+      <tr><td>T, °C</td>${sh.map((_,i)=>`<td>${cell(C.T,i,"t")}</td>`).join("")}</tr>
+      <tr><td>E, гПа</td>${sh.map((_,i)=>`<td>${cell(C.E,i,"e")}</td>`).join("")}</tr></table></div>`;
     $("clim").innerHTML=h;
   }
   $("clim").addEventListener("input",e=>{ const C=CL[S.ci]; if(!C.manual) return; const d=e.target.dataset, v=pf(e.target.value);
@@ -641,7 +654,15 @@ function mount(root){
   const store=(()=>{ try{ return {get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}}; }catch(e){ return {get:(k,d)=>d,set:()=>{}}; } })();
   const meta=store.get("wc_meta",{}); root.querySelectorAll("[data-m]").forEach(el=>{ if(el.tagName==="INPUT"){ el.value=meta[el.dataset.m]||""; el.addEventListener("change",()=>{ const m=store.get("wc_meta",{}); m[el.dataset.m]=el.value; store.set("wc_meta",m); }); } });
   let wasOpen=null;
-  window.addEventListener("beforeprint",()=>{ const d=[...root.querySelectorAll("details.acc")]; wasOpen=d.map(x=>x.open); d.forEach(x=>x.open=true); });
+  const buildPrn=()=>{ const c=lastCalc, box=$("prn"); if(!box) return; if(!c||c.err){ box.innerHTML=""; return; }
+    const R=WC.run("АР-01",Object.assign({},S)), m=store.get("wc_meta",{}), def=WC.CALC["АР-01"], ver=(window.WC_VERIFIED||[]).includes("АР-01");
+    const imgs={therm:chartSvg(c,"d")}; if(c.moist&&c.moist.ok) imgs.moist=moistSvg(c);
+    const info=R.k===null;
+    box.innerHTML=`<div class="ph"><div><small>ПОВЕРОЧНЫЙ РАСЧЁТ</small><b>${esc(m.org||"БИЛДИНФОТЕХ")}</b></div><div><small>Объект</small>${esc(m.obj||"—")}</div><div><small>Элемент</small>${esc(m.el||"—")}</div><div><small>Дата</small>${new Date().toLocaleDateString("ru-RU")}</div></div>
+      <div class="pres ${R.ok?"":"bad"}"><b>${R.ok?"✓ Требования выполняются":"✗ Требования НЕ выполняются"}</b>${R.worst?`<span>Kисп = ${WC.fmtd(R.k,3)} — ${esc(R.worst.name)}${R.worst.ref?", "+esc(R.worst.ref):""}</span>`:""}</div>
+      <div class="rep">${WC.reportHtml(R,imgs)}</div>
+      <div class="ph" style="margin-top:24px"><div>Выполнил ${esc(m.author||"")} ________________</div><div>Проверил ${esc(m.checker||"")} ________________</div></div>`; };
+  window.addEventListener("beforeprint",buildPrn);
   window.addEventListener("afterprint",()=>{ if(wasOpen){ [...root.querySelectorAll("details.acc")].forEach((x,i)=>x.open=wasOpen[i]); wasOpen=null; } });
   $("print").addEventListener("click",()=>print());
   $("word").addEventListener("click",async ()=>{
