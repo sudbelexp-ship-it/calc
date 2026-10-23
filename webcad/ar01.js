@@ -19,7 +19,7 @@ const MDAYS=[31,28,31,30,31,30,31,31,30,31,30,31];
 /* ---------- каталог материалов ---------- */
 const AIRN=["Воздушная прослойка замкнутая: вертикальная или горизонтальная (поток тепла снизу вверх), t > 0 °C","Воздушная прослойка замкнутая: вертикальная или горизонтальная (поток снизу вверх), t < 0 °C","Воздушная прослойка замкнутая: горизонтальная, поток тепла сверху вниз, t > 0 °C","Воздушная прослойка замкнутая: горизонтальная, поток тепла сверху вниз, t < 0 °C"];
 const MAT=(G.WC_MAT||[]).map(r=>{ const m=String(r[4]).match(/\d+/g)||[]; const rho=m.length?(m.length>1?(+m[0]+ +m[1])/2:+m[0]):NaN;
-  return {id:String(r[0]),g:r[1],sg:r[2],name:r[3],dens:r[4],rho,c0:r[5],l0:r[6],wA:r[7],wB:r[8],lA:r[9],lB:r[10],sA:r[11],sB:r[12],mu:r[13],dw:r[14]}; });
+  return {id:String(r[0]),g:r[1],sg:r[2],name:r[3],dens:r[4],rho,c0:r[5],l0:r[6],wA:r[7],wB:r[8],lA:r[9],lB:r[10],sA:r[11],sB:r[12],mu:r[13]===null?NaN:r[13],dw:r[14]}; });
 const MATBY={}; MAT.forEach(m=>MATBY[m.id]=m);
 const airR=(d,col)=>{ const T=G.WC_AIR||[]; if(!T.length) return NaN; if(d<=T[0][0]) return T[0][col]; for(let i=1;i<T.length;i++){ if(d<=T[i][0]){ const a=T[i-1],b=T[i]; return a[col]+(b[col]-a[col])*(d-a[0])/(b[0]-a[0]); } } return T[T.length-1][col]; };
 
@@ -143,9 +143,9 @@ function moisture(o,v){
     else if(cand.length===1) plane=cand[0];
     else { for(let i=0;i<lay.length-1;i++){ const warmHi=tAt(tno,bd[i].a), warmLo=tAt(tno,bd[i].b), colHi=tAt(tno,bd[i+1].a), colLo=tAt(tno,bd[i+1].b);
         if(tm[i]<Math.min(warmHi,warmLo)&&tm[i+1]>Math.max(colHi,colLo)){ plane={i,frac:1}; break; } } }
-    if(!plane) plane={i:lay.length-1,frac:1};
+    if(!plane){ plane={i:lay.length-1,frac:1}; M.outer=true; }
     M.tm=tm;
-  } else plane={i:lay.length-1,frac:1};
+  } else { plane={i:lay.length-1,frac:1}; M.outer=true; }
   M.plane=plane;
   const pl=lay[plane.i];
   const Rx=bd[plane.i].a+(bd[plane.i].b-bd[plane.i].a)*plane.frac;                 // термическое сопр. от внутр. воздуха до плоскости
@@ -160,7 +160,7 @@ function moisture(o,v){
   M.per={z,t:tper,E:Ep};
   M.E=(Ep[0]*z[0]+Ep[1]*z[1]+Ep[2]*z[2])/12;
   M.en=o.C.E[12]*100;
-  M.Rp1=M.E>M.en&&Rpn>0?(ev-M.E)*Rpn/(M.E-M.en):0;
+  M.Rp1raw=(ev-M.E)*Rpn/(M.E-M.en); M.Rp1=M.E>M.en&&Rpn>0?M.Rp1raw:0;
   // за период с отрицательными температурами
   M.z0=z0; M.tno=tno; M.eno=eno;
   M.Rp2=0; M.note2=null;
@@ -175,6 +175,14 @@ function moisture(o,v){
     }
   }
   M.Rtr=Math.max(M.Rp1,M.Rp2);
+  { let k0=0; for(let i=1;i<12;i++) if(T[i]<T[k0]) k0=i;
+    M.cx=neg.length?{t:tno,e:eno}:{t:T[k0],e:E[k0]};
+    M.rows=lay.map((l,i)=>{ const ta=tAt(tno,bd[i].a), tb=tAt(tno,bd[i].b); let Xi=NaN;
+      if(M.tm&&Math.abs(ta-tb)>1e-9) Xi=l.d*1000*(ta-M.tm[i])/(ta-tb);
+      const inPl=i===plane.i&&!M.outer;
+      return {name:l.L.name,d:l.d*1000,mu:l.L.air?NaN:(isFinite(l.mu)?l.mu:NaN),Rp:l.Rp,Xi,inside:isFinite(Xi)&&Xi>=0&&Xi<=l.d*1000,
+        Rpin:inPl?Rpin:0,Rp1:inPl?M.Rp1raw:0,Rp2:inPl?M.Rp2:0,inPl}; });
+    M.Xplane=M.outer?NaN:M.xcm*10; }
   M.ok=true; M.pass=Rpin>=M.Rtr-1e-9;
   return M;
 }
@@ -184,7 +192,9 @@ function losses(o,v){
   const q=(o.tint-o.text)/o.R0;
   const rows=[]; let sum=0;
   for(let i=0;i<12;i++){ const dT=o.tint-T[i]; const hot=dT>0&&T[i]<8; const e=hot?24*MDAYS[i]*dT/o.R0/1000:0; rows.push({m:MON[i],T:T[i],dT,days:MDAYS[i],e}); sum+=e; }
-  return {A,q,Q:q*A,rows,sum,sumA:sum*A,season:0.024*o.gsop/o.R0,seasonA:0.024*o.gsop/o.R0*A};
+  const marks=[{n:"Санитарно-гигиенические требования [Rс]",r:o.Rc,col:"#e02424"},{n:"Нормируемое значение поэлементных требований [Rэ]",r:o.Re,col:"#0b6b1f"},{n:"Базовое значение поэлементных требований [Rт]",r:o.Rt,col:"#3ecf4a"},
+    {n:"Сопротивление теплопередаче ограждающей конструкции [R]",r:o.R0,col:"#2430e0"},{n:"R + 10%",r:o.R0*1.1,col:"#9fd3e6"},{n:"R + 25%",r:o.R0*1.25,col:"#9fd3e6"},{n:"R + 50%",r:o.R0*1.5,col:"#9fd3e6"}];
+  return {A,q,Q:q*A,rows,sum,sumA:sum*A,season:0.024*o.gsop/o.R0,seasonA:0.024*o.gsop/o.R0*A,marks};
 }
 
 /* ======================= интерфейс ======================= */
@@ -269,7 +279,9 @@ function defaultState(){
   const lay=[["201",20],["180",380],["27",150]].map(([id,d])=>fromMat(MATBY[id],d)).filter(Boolean);
   return {ci:msk.i,zone:"2",bt:"1",ct:"1",ribs:false,nman:0.7,tint:20,phi:55,r:1,cond:"auto",tx:NaN,px:NaN,txMode:"p5",area:100,lay};
 }
-function fromMat(m,d){ if(!m) return null; return {mat:m.id,name:m.name,d,lamA:m.lA,lamB:m.lB,mu:m.mu,rho:m.rho,dw:m.dw,rp:NaN,c0:m.c0,air:false}; }
+function fromMat(m,d){ if(!m) return null; let mu=m.mu, note=false;
+  if(!isFinite(mu)){ const base=m.name.split(", ")[0]; const alt=MAT.filter(x=>x.name.split(", ")[0]===base&&isFinite(x.mu)&&x.id!==m.id).sort((a,b)=>Math.abs(a.rho-m.rho)-Math.abs(b.rho-m.rho))[0]; if(alt){ mu=alt.mu; note=true; } }
+  return {mat:m.id,name:m.name,d,lamA:m.lA,lamB:m.lB,mu,muNote:note,rho:m.rho,dw:m.dw,rp:NaN,c0:m.c0,air:false}; }
 function airLayer(k,d){ return {mat:"air"+k,name:AIRN[k],d,air:true,col:k+1,mu:NaN,rho:NaN,dw:null,rp:NaN}; }
 const LCOL=m=>{ const g=m&&m.g||""; return /Теплоизоляционные материалы|засыпки/.test(g)?"#ffe9a0":/Бетоны/.test(g)?"#cfd6e4":/Кирпичная/.test(g)?"#e8c3b0":/Дерево/.test(g)?"#e3cfa8":/Растворы/.test(g)?"#cfe3cf":/Металлы/.test(g)?"#c9c9d4":/Гидро|Плиты/.test(g)?"#dcd6c8":"#e6e6e6"; };
 const layCol=L=>L.air?"#e4f1ff":LCOL(MATBY[L.mat]);
@@ -412,7 +424,7 @@ function mount(root){
     dlg.showModal();
   }
   function editLayer(i){
-    const L=S.lay[i]; const n=x=>isFinite(x)?String(x).replace(".",","):"";
+    const L=S.lay[i]; const n=x=>x!=null&&isFinite(x)?String(x).replace(".",","):"";
     dlg.innerHTML=`<div class="dh"><span>Свойства слоя ${i+1}</span><button type="button" class="ib" data-x>✕</button></div>
       <div class="accb"><div class="g2"><label>Наименование<input type="text" id="e_name" value="${esc(L.name)}"></label>
       ${L.air?`<p class="small">Воздушная прослойка: сопротивление — по табл. Е.1 от толщины.</p>`:`
@@ -505,35 +517,73 @@ function mount(root){
     if(P.cond) h+=`<div class="msg mid"><b>Условия для графика</b>При заданных внутренних и наружных условиях в конструкции есть зона, где температура ниже температуры точки росы (стационарный расчёт). Накопление влаги за год оценивается на вкладке «Влагонакопление».</div>`;
     return h;
   }
+  /* безразмерный график: X — доля термического сопротивления от внутреннего воздуха, Y — доля сопротивления паропроницанию */
+  function moistSvg(c){
+    const M=c.moist, W=760, H=330, mL=44, mR=44, mT=26, mB=44, pw=W-mL-mR, ph=H-mT-mB;
+    const X=x=>mL+x*pw, Y=y=>mT+(1-y)*ph, Rt=c.Rcond;
+    let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="chart" font-family="system-ui,Arial,sans-serif" font-size="12"><rect width="${W}" height="${H}" fill="#fff"/>`;
+    for(let t=0;t<=10;t+=2){ const v=t/10; s+=`<line x1="${mL}" x2="${W-mR}" y1="${Y(v)}" y2="${Y(v)}" stroke="#ccc" stroke-dasharray="2 3" stroke-width=".7"/><text x="${mL-6}" y="${Y(v)+4}" text-anchor="end" fill="#222">${v.toFixed(1)}</text><text x="${W-mR+6}" y="${Y(v)+4}" fill="#222">${v.toFixed(1)}</text><text x="${X(v)}" y="${mT+ph+16}" text-anchor="middle" fill="#222">${v.toFixed(1)}</text>`; }
+    const b=[1/c.aint/Rt]; let Rcum=1/c.aint, Rp=0; const gp=[[0,0],[b[0],0]];
+    const Rp0=M.Rp0; c.layers.forEach((l,i)=>{ Rcum+=l.R; Rp+=l.Rp; b.push(Rcum/Rt); gp.push([Rcum/Rt,Rp/Rp0]); }); gp.push([1,1]);
+    const bl=[0].concat(b); 
+    c.layers.forEach((l,i)=>{ const xm=(bl[i+1]+b[i+1])/2; s+=`<line x1="${X(b[i+1])}" x2="${X(b[i+1])}" y1="${mT}" y2="${mT+ph}" stroke="#777" stroke-width=".8"/>`; s+=`<circle cx="${X((b[i]+b[i+1])/2)}" cy="${Y(0.12)}" r="9" fill="#fff" stroke="#333"/><text x="${X((b[i]+b[i+1])/2)}" y="${Y(0.12)+4}" text-anchor="middle" fill="#222" font-size="11">${i+1}</text>`; });
+    s+=`<line x1="${X(b[0])}" x2="${X(b[0])}" y1="${mT}" y2="${mT+ph}" stroke="#777" stroke-width=".8"/>`;
+    s+=`<polyline points="${gp.map(p=>X(p[0])+","+Y(p[1])).join(" ")}" fill="none" stroke="#22c322" stroke-width="2.2"/>`;
+    // насыщенный пар
+    const cx=M.cx, ev=M.ev, ex=cx.e, pts=[]; for(let k=0;k<=200;k++){ const x=k/200, t=c.tint-(c.tint-cx.t)*x, y=(ev-Esat(t))/(ev-ex); pts.push([x,y]); }
+    let seg=[],segs=[]; pts.forEach(p=>{ if(p[1]>=0&&p[1]<=1.0001){ seg.push(p); } else { if(seg.length) segs.push(seg); seg=[]; } }); if(seg.length) segs.push(seg);
+    segs.forEach(sg=>{ s+=`<polyline points="${sg.map(p=>X(p[0])+","+Y(Math.min(1,p[1]))).join(" ")}" fill="none" stroke="#2430e0" stroke-width="2.2"/>`; });
+    if(!M.outer){ const i=M.plane.i; const xp=((bl[i]+ (b[i+1]-bl[i])*0) , 0); const Rx=1/c.aint+c.layers.slice(0,i).reduce((q,l)=>q+l.R,0)+c.layers[i].R*M.plane.frac; const xx=Rx/Rt; s+=`<line x1="${X(xx)}" x2="${X(xx)}" y1="${mT}" y2="${mT+ph}" stroke="#e02424" stroke-width="2"/>`; }
+    s+=`<text x="${mL}" y="14" fill="#222">Y</text><text x="${W-mR}" y="${H-6}" text-anchor="end" fill="#222">X</text><text x="${mL}" y="${H-6}" fill="#222">Внутри</text><text x="${W-mR-30}" y="${H-6}" text-anchor="end" fill="#222">Снаружи</text></svg>`;
+    return s;
+  }
   function outMoist(c){
     const M=c.moist; if(!M.ok) return `<div class="msg mid"><b>Влагонакопление</b>${esc(M.msg)}</div>`;
-    let h=`<p class="small">Расчёт по СП 50.13330.2012, раздел 8 (метод плоскости максимального увлажнения), климат — СП 131.13330.2025.</p>`;
-    h+=chartSvg(c,"d")+legend(c);
+    let h=`<div class="big" style="font-size:15px">Расчёт защиты от переувлажнения методом безразмерных величин</div><p class="small" style="text-align:center">Нахождение плоскости максимального увлажнения (СП 50.13330.2012, раздел 8; климат — СП 131.13330.2025)</p>`;
+    h+=moistSvg(c);
+    h+=`<div class="leg"><span><span class="sw" style="background:#22c322;height:3px;width:22px;border:0"></span> Безразмерное сопротивление паропроницанию</span><span><span class="sw" style="background:#2430e0;height:3px;width:22px;border:0"></span> То же насыщенного паром воздуха</span><span><span class="sw" style="background:#e02424;height:3px;width:22px;border:0"></span> Плоскость максимального увлажнения</span>${c.layers.map((l,i)=>`<span>(${i+1}) [${fr(l.L.d,0)} мм] ${esc(l.L.name)}</span>`).join("")}</div>`;
     h+=`<div class="acts2"><button type="button" class="btn sec sm" id="ar_png">⭳ Загрузить график</button></div>`;
-    h+=`<div class="req2" style="margin-top:12px"><span>Парциальное давление водяного пара внутреннего воздуха e<sub>в</sub>, Па</span><span>${fr(M.ev,0)}</span>
-      <span>Плоскость максимального увлажнения — в слое «${esc(M.layerName)}», от внутренней поверхности, см</span><span>${fr(M.xcm,1)}</span>
-      <span>Сопротивление паропроницанию всей конструкции R<sub>п</sub>, м²·ч·Па/мг</span><span>${fr(M.Rp0,2)}</span>
-      <span>От внутренней поверхности до плоскости увлажнения R<sub>п,в</sub></span><span>${fr(M.Rpin,2)}</span>
-      <span>От плоскости увлажнения до наружной поверхности R<sub>п,н</sub></span><span>${fr(M.Rpn,2)}</span></div>
-      <p class="small"><b>Годовой период (ф. 8.1, 8.4)</b>: зима (T &lt; −5 °C) — ${M.per.z[0]} мес., весна–осень — ${M.per.z[1]} мес., лето — ${M.per.z[2]} мес.</p>
-      <div class="req2"><span>E — давление насыщенного пара в плоскости увлажнения за год, Па</span><span>${fr(M.E,0)}</span><span>e<sub>н</sub> — среднегодовое парциальное давление наружного воздуха, Па</span><span>${fr(M.en,0)}</span>
-      <span>Требуемое R<sub>п1</sub><sup>тр</sup> (недопустимость накопления за год)</span><span>${fr(M.Rp1,2)}</span></div>`;
-    if(M.z0>0){ h+=`<p class="small"><b>Период с отрицательными среднемесячными температурами (ф. 8.2, 8.5)</b>: z<sub>0</sub> = ${M.z0} сут, t<sub>н.отр</sub> = ${fr(M.tno,2)} °C, e<sub>н.отр</sub> = ${fr(M.eno,0)} Па, t в плоскости = ${fr(M.t0,2)} °C, E<sub>0</sub> = ${fr(M.E0,0)} Па.</p>`;
-      h+=`<div class="req2">${M.eta!==undefined?`<span>η</span><span>${fr(M.eta,1)}</span>`:""}<span>Требуемое R<sub>п2</sub><sup>тр</sup> (ограничение влаги за период с T &lt; 0)</span><span>${M.note2?"—":fr(M.Rp2,2)}</span></div>`;
-      if(M.note2) h+=`<div class="msg mid">${esc(M.note2)}</div>`; }
-    else h+=`<p class="small">Средние месячные температуры наружного воздуха отрицательными не бывают — проверка по ф. (8.2) не требуется.</p>`;
-    h+=`<div class="msg ${M.pass?"ok":"bad"}"><b>R<sub>п,в</sub> = ${fr(M.Rpin,2)} ${M.pass?"≥":"<"} R<sub>п</sub><sup>тр</sup> = ${fr(M.Rtr,2)} (м²·ч·Па)/мг</b>${M.pass?"Сопротивление паропроницанию внутренней части конструкции достаточно: накопления влаги сверх допустимого нет.":"Сопротивление паропроницанию внутренней части конструкции недостаточно. Требуется пароизоляция со стороны помещения или изменение состава слоёв."}</div>`;
+    const raw=v=>isFinite(v)?fr(v,2):"—";
+    h+=`<table class="kv" style="margin-top:12px"><tr><td>Координата плоскости максимального увлажнения</td><td>X</td><td>${M.outer?"—":fr(M.Xplane,1)+" мм"}</td></tr>
+      <tr><td>Сопротивление паропроницанию от внутренней поверхности до плоскости максимального увлажнения</td><td>R<sub>п</sub>(в)</td><td>${M.outer?"0,00":fr(M.Rpin,2)} (м²·ч·Па)/мг</td></tr>
+      <tr><td>Сопротивление паропроницанию от плоскости максимального увлажнения до наружной поверхности</td><td>R<sub>п</sub>(н)</td><td>${fr(M.Rpn,2)} (м²·ч·Па)/мг</td></tr>
+      <tr><td>Условие недопустимости накопления влаги в конструкции за годовой период эксплуатации</td><td>R<sub>п.тр</sub>(1)</td><td class="${M.Rp1>M.Rpin?"rn":"gn"}">${fr(M.Rp1,2)} (м²·ч·Па)/мг</td></tr>
+      <tr><td>Условие ограничения влаги в конструкции за период с отрицательными среднемесячными температурами</td><td>R<sub>п.тр</sub>(2)</td><td class="${M.Rp2>M.Rpin?"rn":"gn"}">${M.note2?"—":fr(M.Rp2,2)} (м²·ч·Па)/мг</td></tr></table>`;
+    if(M.note2) h+=`<div class="msg mid">${esc(M.note2)}</div>`;
+    { const mn=c.layers.filter(l=>l.L.muNote&&!isFinite(l.L.rp)); if(mn.length) h+=`<div class="msg mid">В таблице Т.1 СП 50 для «${esc(mn.map(l=>l.L.name).join("»; «"))}» коэффициент μ не указан — принят по ближайшей плотности того же материала (μ = ${mn.map(l=>fr(l.L.mu,3)).join("; ")}). При необходимости уточните в окне ✎.</div>`; }
+    if(M.outer) h+=`<div class="msg ok"><b>Защита от переувлажнения конструкции</b>В ограждающей конструкции нет условий для образования конденсата: плоскость максимального увлажнения в толще не образуется (расположена на наружной поверхности).</div>`;
+    else h+=`<div class="msg ${M.pass?"ok":"bad"}"><b>Защита от переувлажнения конструкции: R<sub>п</sub>(в) = ${fr(M.Rpin,2)} ${M.pass?"≥":"<"} R<sub>п.тр</sub> = ${fr(M.Rtr,2)} (м²·ч·Па)/мг</b>${M.pass?"Сопротивление паропроницанию внутренней части конструкции достаточно: накопления влаги сверх допустимого нет.":"Сопротивление паропроницанию внутренней части конструкции недостаточно. Требуется пароизоляция со стороны помещения или изменение состава слоёв."}</div>`;
+    h+=`<p class="small" style="margin-top:16px"><b>Послойный расчёт защиты от переувлажнения</b></p><div class="tw"><table class="mt"><thead><tr><th>№</th><th>Толщина</th><th style="text-align:left">Материал</th><th>μ</th><th>R<sub>п</sub></th><th>X</th><th>R<sub>п</sub>(в)</th><th>R<sub>п.тр</sub>(1)</th><th>R<sub>п.тр</sub>(2)</th></tr></thead><tbody>${M.rows.map((r,i)=>`<tr><td>${i+1}</td><td>${fr(r.d,0)}</td><td style="text-align:left">${esc(r.name)}</td><td>${raw(r.mu)}</td><td>${fr(r.Rp,2)}</td><td>${!isFinite(r.Xi)?"—":r.Xi>r.d?fr(r.d,0)+" ("+fr(r.Xi,1)+")":fr(r.Xi,1)}</td><td>${fr(r.Rpin,2)}</td><td>${r.inPl&&isFinite(r.Rp1)?fr(r.Rp1,2):"0,00"}</td><td>${r.inPl&&!M.note2?fr(r.Rp2,2):"0,00"}</td></tr>`).join("")}</tbody></table></div>`;
+    h+=M.rows.map((r,i)=>`<p class="small" style="margin:10px 0 2px"><b>${i+1}. ${esc(r.name)}</b></p><table class="kv"><tr><td>Толщина слоя</td><td>d</td><td>${fr(r.d,0)} мм</td></tr><tr><td>Координата плоскости возможной конденсации</td><td>X<sub>i</sub></td><td>${isFinite(r.Xi)?fr(r.Xi,1)+" мм":"—"}</td></tr></table><div class="msg ${r.inside?"mid":"ok"}" style="margin:4px 0">${r.inside?"В слое возможна плоскость конденсации (температура плоскости максимального увлажнения лежит в пределах слоя).":"В выбранном слое ограждающей конструкции нет условий для образования конденсата."}</div>`).join("");
+    h+=`<p class="small" style="margin-top:12px">Годовой период (ф. 8.1, 8.4): зима (T &lt; −5 °C) — ${M.per.z[0]} мес., весна–осень — ${M.per.z[1]} мес., лето — ${M.per.z[2]} мес.; E = ${fr(M.E,0)} Па, e<sub>н</sub> = ${fr(M.en,0)} Па, e<sub>в</sub> = ${fr(M.ev,0)} Па.${M.z0>0?` Период с отрицательными температурами: z<sub>0</sub> = ${M.z0} сут, t<sub>н.отр</sub> = ${fr(M.tno,2)} °C, e<sub>н.отр</sub> = ${fr(M.eno,0)} Па, E<sub>0</sub> = ${fr(M.E0,0)} Па.`:""}</p>`;
     return h;
   }
+  function lossSvg(c){
+    const L=c.loss, R0=c.R0, dT=c.tint-c.text, W=760, H=330, mL=44, mR=44, mT=26, mB=44, pw=W-mL-mR, ph=H-mT-mB;
+    const Rmin=Math.max(0.2,Math.floor(Math.min(c.Rc,R0)*0.9*2)/2), Rmax=Math.max(R0*1.5,c.Rt)*1.08;
+    const X=r=>mL+(r-Rmin)/(Rmax-Rmin)*pw, ymax=Math.ceil(dT/Rmin/5)*5, Y=q=>mT+(1-q/ymax)*ph;
+    let s=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" class="chart" font-family="system-ui,Arial,sans-serif" font-size="12"><rect width="${W}" height="${H}" fill="#fff"/>`;
+    const st=ymax>40?10:5; for(let q=0;q<=ymax;q+=st) s+=`<line x1="${mL}" x2="${W-mR}" y1="${Y(q)}" y2="${Y(q)}" stroke="#ccc" stroke-dasharray="2 3" stroke-width=".7"/><text x="${mL-6}" y="${Y(q)+4}" text-anchor="end" fill="#222">${q}</text><text x="${W-mR+6}" y="${Y(q)+4}" fill="#222">${q}</text>`;
+    const rs=Math.max(0.5,Math.round((Rmax-Rmin)/8*2)/2); for(let r=Math.ceil(Rmin/rs)*rs;r<=Rmax;r+=rs) s+=`<line x1="${X(r)}" x2="${X(r)}" y1="${mT+ph}" y2="${mT+ph+4}" stroke="#333"/><text x="${X(r)}" y="${mT+ph+16}" text-anchor="middle" fill="#222">${fr(r,1)}</text>`;
+    const pts=[]; for(let k=0;k<=120;k++){ const r=Rmin+(Rmax-Rmin)*k/120; pts.push(X(r)+","+Y(dT/r)); }
+    s+=`<polyline points="${pts.join(" ")}" fill="none" stroke="#777" stroke-width="2.2"/>`;
+    L.marks.forEach(m=>{ if(m.r>=Rmin&&m.r<=Rmax) s+=`<line x1="${X(m.r)}" x2="${X(m.r)}" y1="${Y(dT/m.r)}" y2="${mT+ph}" stroke="${m.col}" stroke-width="2.4"/>`; });
+    s+=`<text x="${mL}" y="14" fill="#222">Q, Вт·ч</text><text x="${W-mR}" y="${H-6}" text-anchor="end" fill="#222">R, (м²·°C)/Вт</text></svg>`; return s;
+  }
   function outLoss(c){
-    const L=c.loss; let h=`<div class="g2" style="max-width:420px"><label>Площадь конструкции, м²<input type="text" id="ar_area" inputmode="decimal" value="${String(S.area).replace(".",",")}"></label></div>
-      <div class="req2"><span>Удельный тепловой поток при расчётной температуре q = (t<sub>int</sub> − t<sub>ext</sub>)/R<sub>0</sub>, Вт/м²</span><span>${fr(L.q,1)}</span>
-      <span>Теплопотери через конструкцию Q = q·A, Вт</span><span>${fr(L.Q,0)}</span>
-      <span>За отопительный период 0,024·ГСОП·A/R<sub>0</sub>, кВт·ч</span><span>${fr(L.seasonA,0)}</span>
-      <span>То же на 1 м², кВт·ч/м²</span><span>${fr(L.season,1)}</span></div>
+    const L=c.loss, q0=L.q;
+    const row=(n,r,col)=>`<tr><td style="text-align:left">${n}</td><td>${fr(r,2)}</td><td>${fr((r/c.R0-1)*100,2)}</td><td>${fr(c.tint-c.text>0?(c.tint-c.text)/r:NaN,2)}</td><td>${fr((c.tint-c.text)/r-q0,2)}</td></tr>`;
+    let h=`<div class="big" style="font-size:15px">Тепловые потери через квадратный метр ограждающей конструкции</div>`+lossSvg(c);
+    h+=`<div class="leg">${L.marks.map(m=>`<span><span class="sw" style="background:${m.col};height:3px;width:22px;border:0"></span> ${m.n}</span>`).join("")}</div>`;
+    h+=`<div class="acts2"><button type="button" class="btn sec sm" id="ar_png">⭳ Загрузить график</button></div>`;
+    h+=`<p class="small" style="margin-top:14px"><b>Потери тепла через 1 м² за один час при сопротивлении теплопередаче (Вт·ч)</b></p><div class="tw"><table class="mt"><thead><tr><th>Сопротивление теплопередаче</th><th>R</th><th>±R, %</th><th>Q</th><th>±Q, Вт·ч</th></tr></thead><tbody>
+      ${row("Санитарно-гигиенические требования [Rс]",c.Rc)}${row("Нормируемое значение поэлементных требований [Rэ]",c.Re)}${row("Базовое значение поэлементных требований [Rт]",c.Rt)}
+      ${row("<b>Сопротивление теплопередаче ограждающей конструкции [R]</b>",c.R0)}${row("R + 10%",c.R0*1.1)}${row("R + 25%",c.R0*1.25)}${row("R + 50%",c.R0*1.5)}${row("R + 100%",c.R0*2)}</tbody></table></div>
+      <div class="req2"><span>Потери тепла через 1 м² за отопительный период 0,024·ГСОП/R, кВт·ч</span><span>${fr(L.season,2)}</span><span>Потери тепла через 1 м² за 1 час при температуре холодной пятидневки, Вт·ч</span><span>${fr(L.q,2)}</span></div>
+      <div class="g2" style="max-width:420px;margin-top:10px"><label>Площадь конструкции, м²<input type="text" id="ar_area" inputmode="decimal" value="${String(S.area).replace(".",",")}"></label></div>
+      <div class="req2"><span>Теплопотери через конструкцию Q = q·A при расчётной температуре, Вт</span><span>${fr(L.Q,0)}</span><span>За отопительный период на всю площадь, кВт·ч</span><span>${fr(L.seasonA,0)}</span></div>
       <div class="tw"><table class="mt"><thead><tr><th>Месяц</th><th>T, °C</th><th>Δt, °C</th><th>Сут</th><th>кВт·ч/м²</th><th>кВт·ч</th></tr></thead><tbody>${L.rows.map(r=>`<tr><td>${r.m}</td><td>${fr(r.T,1)}</td><td>${fr(r.dT,1)}</td><td>${r.days}</td><td>${r.e?fr(r.e,1):"—"}</td><td>${r.e?fr(r.e*L.A,0):"—"}</td></tr>`).join("")}
-      <tr><td><b>Итого</b></td><td></td><td></td><td></td><td><b>${fr(L.sum,1)}</b></td><td><b>${fr(L.sumA,0)}</b></td></tr></tbody></table></div>
-      <p class="small">Помесячный расчёт учитывает месяцы со средней температурой ниже +8 °C.</p>`;
+      <tr><td><b>Итого (помесячно, T &lt; +8 °C)</b></td><td></td><td></td><td></td><td><b>${fr(L.sum,1)}</b></td><td><b>${fr(L.sumA,0)}</b></td></tr></tbody></table></div>`;
     return h;
   }
   function recalc(){
@@ -551,7 +601,8 @@ function mount(root){
     drawRoom(c); fillLayerCells(); scale(c);
     out.innerHTML=tab===0?outThermal(c):tab===1?outMoist(c):outLoss(c);
     const png=out.querySelector("#ar_png"); if(png) png.onclick=()=>savePng(out.querySelector("svg.chart"));
-    const ar=out.querySelector("#ar_area"); if(ar) ar.oninput=()=>{ S.area=pf(ar.value); const c2=calc(S); lastCalc=c2; const pos=ar.selectionStart; out.innerHTML=outLoss(c2); const a2=out.querySelector("#ar_area"); a2.focus(); a2.oninput=ar.oninput; try{a2.setSelectionRange(pos,pos);}catch(e){} };
+    const bindLoss=()=>{ const ar=out.querySelector("#ar_area"); if(!ar) return; ar.oninput=()=>{ S.area=pf(ar.value); const pos=ar.selectionStart; const c2=calc(S); lastCalc=c2; out.innerHTML=outLoss(c2); const p2=out.querySelector("#ar_png"); if(p2) p2.onclick=()=>savePng(out.querySelector("svg.chart")); const a2=out.querySelector("#ar_area"); a2.focus(); try{a2.setSelectionRange(pos,pos);}catch(e){} bindLoss(); }; };
+    bindLoss();
   }
   function drawRoom(c){
     $("room").innerHTML=`<table class="kv"><tr><td>Влажностный режим помещения (табл. 1 СП 50)</td><td>${REGN[c.reg]}</td><td></td></tr>
@@ -589,7 +640,7 @@ function mount(root){
     }catch(e){ alert("Ошибка формирования Word: "+e.message); console.error(e); }
     b.disabled=false; b.textContent="Скачать отчёт Word"; });
   drawClim(); drawLayers(); recalc(); drawClim();
-  root.__ar={S,calc:()=>lastCalc};
+  root.__ar={S,calc:()=>lastCalc,recalc,drawLayers};
 }
 
 /* ======================= отчёт Word ======================= */
