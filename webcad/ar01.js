@@ -10,8 +10,9 @@ const pf=x=>{ const n=parseFloat(String(x).replace(",",".")); return n; };
 /* ---------- климат ---------- */
 const CL=(G.WC_CLIM||[]).map((r,i)=>({i,r:r[0],c:r[1],t5:r[2],z8:r[3],t8:r[4],z10:r[5],t10:r[6],rh:r[7],T:r[8],E:r[9]}));
 const nan13=()=>Array(13).fill(NaN);
-const MANUAL_REG=["Харьковская область","Другой пункт (ввод вручную)"];
-MANUAL_REG.forEach((rg,k)=>CL.push({i:CL.length,r:rg,c:k?"Свой пункт":"Харьков — ввод вручную",manual:true,t5:NaN,z8:NaN,t8:NaN,z10:NaN,t10:NaN,rh:NaN,T:nan13(),E:nan13()}));
+const MANUAL_REG=["Другой пункт (ввод вручную)"];
+MANUAL_REG.forEach(rg=>CL.push({i:CL.length,r:rg,c:"Свой пункт",manual:true,t5:NaN,z8:NaN,t8:NaN,z10:NaN,t10:NaN,rh:NaN,T:nan13(),E:nan13()}));
+{ const b=CL.find(c=>c.c==="Белгород"); if(b) CL.push(Object.assign({},b,{i:CL.length,r:"Харьковская область",c:"Харьков (климат принят по Белгороду)"})); }
 const MON=["Январь","Февраль","Март","Апрель","Май","Июнь","Июль","Август","Сентябрь","Октябрь","Ноябрь","Декабрь"];
 const MDAYS=[31,28,31,30,31,30,31,31,30,31,30,31];
 
