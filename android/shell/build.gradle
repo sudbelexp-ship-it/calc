@@ -1,0 +1,13 @@
+plugins { id 'com.android.library' }
+
+android {
+    namespace 'ru.bildinfotech.shell'
+    compileSdk rootProject.ext.compileSdk
+    defaultConfig { minSdk rootProject.ext.minSdk }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+
+dependencies {
+    api 'androidx.webkit:webkit:1.12.1'
+    api 'androidx.core:core:1.13.1'
+}

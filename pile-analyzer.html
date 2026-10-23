@@ -268,7 +268,7 @@ kbd { border-radius: 6px; padding: 1px 6px; font-size: .74rem; background: var(-
   </button>
   <button id="btnHelp">Справка</button>
   <input type="file" id="inFiles" accept=".wav,audio/wav,audio/x-wav" multiple hidden>
-  <input type="file" id="inDir" webkitdirectory multiple hidden>
+  <input type="file" id="inDir" webkitdirectory multiple hidden data-shell-ext=".wav">
 </header>
 
 <div class="objbar">
@@ -2207,6 +2207,8 @@ const PlotLib = (() => {
   $('btnOpenFiles').addEventListener('click', () => $('inFiles').click());
   $('inDir').addEventListener('change', e => { loadFiles([...e.target.files].map(f => ({ file: f, rel: f.webkitRelativePath || f.name })), true); e.target.value = ''; });
   $('inFiles').addEventListener('change', e => { loadFiles([...e.target.files].map(f => ({ file: f, rel: f.name })), !state.piles.length); e.target.value = ''; });
+  // Android-приложение «Анализ свай»: папки, данные «Спектр» и файлы по Bluetooth приходят готовым списком { file, rel }
+  $('inDir').addEventListener('shell-folder', e => loadFiles(e.detail, true));
 
   let dragDepth = 0;
   window.addEventListener('dragenter', e => { if (e.dataTransfer && [...e.dataTransfer.types].includes('Files')) { dragDepth++; $('dropHint').classList.add('on'); } });

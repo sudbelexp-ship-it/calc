@@ -1,0 +1,20 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'ru.bildinfotech.svai'
+    compileSdk rootProject.ext.compileSdk
+    defaultConfig {
+        applicationId 'ru.bildinfotech.svai'
+        minSdk rootProject.ext.minSdk
+        targetSdk rootProject.ext.targetSdk
+        versionCode rootProject.ext.versionCode
+        versionName rootProject.ext.versionName
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    lint { abortOnError false; checkReleaseBuilds false }
+    // Веб-часть (webcad.html + webcad/*) копирует сюда tools/sync_web.py перед сборкой
+    sourceSets { main { assets.srcDirs += ["$rootDir/build-web/svai"] } }
+}
+apply from: "$rootDir/signing.gradle"
+
+dependencies { implementation project(':shell') }

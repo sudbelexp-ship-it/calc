@@ -1,0 +1,13 @@
+plugins {
+    id 'com.android.application' version '8.7.3' apply false
+    id 'com.android.library' version '8.7.3' apply false
+}
+
+// Общие параметры всех приложений БИЛДИНФОТЕХ под планшеты Aquarius NS220 (Android 8.1)
+ext {
+    minSdk = 26
+    targetSdk = 28          // без scoped storage: прямой доступ к /sdcard/Spectr и папке Bluetooth
+    compileSdk = 34
+    versionCode = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int
+    versionName = "1.0." + versionCode
+}
