@@ -79,6 +79,9 @@ header.top { display: flex; align-items: center; gap: 8px; padding: 10px 14px; b
 .menu-list { position: absolute; top: calc(100% + 6px); left: 0; z-index: 20; background: var(--surface); border-radius: 14px; box-shadow: 0 10px 30px rgba(20,20,40,.18); padding: 6px; min-width: 250px; }
 .menu-list button { display: block; width: 100%; text-align: left; background: none; padding: 8px 12px; border-radius: 9px; font-weight: 400; }
 .menu-list button:hover { background: var(--accent-soft); color: var(--accent-text); }
+.menu-opt { display: flex; flex-direction: column; gap: 5px; padding: 8px 12px 10px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+.menu-opt label.chk { white-space: normal; font-size: .82rem; }
+input[type=radio] { accent-color: var(--accent); margin: 0; cursor: pointer; }
 
 /* строка объекта */
 .objbar { display: flex; gap: 10px 18px; align-items: center; padding: 10px 14px; background: var(--surface); border-radius: 18px; flex-wrap: wrap; }
@@ -120,6 +123,8 @@ main { flex: 1; display: grid; grid-template-columns: 250px minmax(0, 1fr) 340px
 .hit.sel { background: var(--accent-soft); color: var(--accent-text); }
 .hit .sw { width: 14px; height: 3px; border-radius: 2px; flex: none; }
 .hit .t { color: var(--faint); margin-left: auto; font-size: .74rem; font-family: var(--f-num); }
+.hit .hlen { margin-left: auto; font-family: var(--f-num); font-size: .76rem; font-weight: 500; color: var(--accent-text); }
+.hit .hlen + .t { margin-left: 6px; }
 .hit.off span:not(.t) { color: var(--faint); text-decoration: line-through; }
 
 /* центр */
@@ -253,6 +258,11 @@ kbd { border-radius: 6px; padding: 1px 6px; font-size: .74rem; background: var(-
   <div class="menu">
     <button id="btnExport" disabled>Экспорт ▾</button>
     <div class="menu-list" id="exportMenu" hidden>
+      <div class="menu-opt" title="Для свай, у которых выключено «Усреднение»: каждый удар анализируется отдельно">
+        <div class="muted small">Сваи без усреднения — удары:</div>
+        <label class="chk"><input type="radio" name="hitExport" value="split"> разделить — каждый удар отдельное испытание</label>
+        <label class="chk"><input type="radio" name="hitExport" value="merge"> объединить — все удары в одной свае</label>
+      </div>
       <button data-exp="pdf">PDF-отчёт: текущая свая</button>
       <button data-exp="pdfall">PDF-отчёт: все сваи с результатом</button>
       <button data-exp="docx">Word-отчёт: текущая свая</button>
@@ -1176,10 +1186,10 @@ const PlotLib = (() => {
   };
 
   const state = {
-    obj: Object.assign({ name: '', V: 4000, vMode: 'v', Rmpa: null, cls: 25, Lp: null, useWindow: true, window: 50, ch: 'main', splitMin: 2 }, store.get('obj', {})),
+    obj: Object.assign({ name: '', V: 4000, vMode: 'v', Rmpa: null, cls: 25, hitExport: 'split', Lp: null, useWindow: true, window: 50, ch: 'main', splitMin: 2 }, store.get('obj', {})),
     proc: Object.assign({ integrate: true, hp: true, hpF: 100, lp: true, lpF: 2000, gainOn: true, ma: 20, maAuto: true, gainDelay: 0 }, store.get('proc', {})),
     view: Object.assign({ scale: 'depth', spectrum: true, extended: true }, store.get('view', {})),
-    hits: [], piles: [], cur: -1, tab: 'signal', hlHit: null,
+    hits: [], piles: [], cur: -1, tab: 'signal', hlHit: null, anVer: 0,
     // measurement points {id, us}; measSel — ids of the pair the length is measured between (id 0 = strike)
     meas: [], measSel: [null, null], measAuto: true, specMeas: [],
   };
@@ -1190,8 +1200,11 @@ const PlotLib = (() => {
   // ---------------- per-pile persistence ----------------
   const pileKey = p => 'pile:' + (state.obj.name || p.object) + '|' + p.id + (p.gid || '');
   function savePile(p) {
+    // per-hit results (pile shown without averaging) are kept by file name
+    const hitsSaved = {};
+    for (const h of p.hits) if (h.manualDt != null || h.conclusion != null) hitsSaved[h.name] = { dt: h.manualDt, from: h.manualFrom, concl: h.conclusion };
     store.set(pileKey(p), { V: p.V, vMode: p.vMode, Rmpa: p.Rmpa, cls: p.cls, Lp: p.Lp, polarity: p.polarity, manualDt: p.manualDt, manualFrom: p.manualFrom, conclusion: p.conclusion,
-      layers: p.layers, excluded: p.hits.filter(h => !h.include).map(h => h.name) });
+      layers: p.layers, excluded: p.hits.filter(h => !h.include).map(h => h.name), hits: hitsSaved });
   }
   function restorePile(p, hits) {
     const s = store.get(pileKey(p), null);
@@ -1200,7 +1213,11 @@ const PlotLib = (() => {
     p.vMode = s.vMode ?? (s.V > 0 ? 'v' : null); p.Rmpa = s.Rmpa ?? null; p.cls = s.cls ?? null;
     p.manualDt = s.manualDt ?? null; p.manualFrom = s.manualFrom ?? null; p.conclusion = s.conclusion ?? null;
     p.layers = Array.isArray(s.layers) ? s.layers : [];
-    for (const h of hits) h.include = !(s.excluded || []).includes(h.name);
+    for (const h of hits) {
+      h.include = !(s.excluded || []).includes(h.name);
+      const hs = s.hits && s.hits[h.name];
+      h.manualDt = hs ? hs.dt ?? null : null; h.manualFrom = hs ? hs.from ?? null : null; h.conclusion = hs ? hs.concl ?? null : null;
+    }
   }
   // known depths along the pile (section joints, soil boundaries…) — reflections there are expected, not defects
   const LAYER_TYPES = {
@@ -1438,8 +1455,48 @@ const PlotLib = (() => {
       ma: state.proc.maAuto ? null : state.proc.ma, fMax: state.proc.lp ? Math.min(4000, state.proc.lpF * 1.2) : 3000,
     });
     p.analysis = { res, V, Lp, ch: d.ch, n: d.inc.length };
+    if (!p.parent) state.anVer++;
   }
-  const refreshAnalyses = () => { for (const p of state.piles) if (p.analysis) runAnalysis(p); };
+  const refreshAnalyses = () => { state.anVer++; for (const p of state.piles) if (p.analysis) runAnalysis(p); };
+
+  // ---------------- per-hit mode (pile shown without averaging) ----------------
+  const isPerHit = p => p.view !== 'avg' && p.hits.length > 1;
+  // A single hit as a test of its own: the pile's settings (V, L, layers), but its own analysis, result and conclusion.
+  // force: analyse even if the pile itself was not analysed yet (exports).
+  function hitPile(p, h, force) {
+    const k = p.hits.indexOf(h), n = h.hitNum || k + 1;
+    const v = Object.assign({}, p, { hits: [h], view: 0, manualDt: h.manualDt ?? null, manualFrom: h.manualFrom ?? null,
+      conclusion: h.conclusion ?? null, analysis: null, label: `${p.label} · удар ${n}`, hitLabel: `Удар ${n}`, parent: p, hit: h });
+    if (p.analysis || force) {
+      // cached per hit until any setting changes (state.anVer)
+      if (!h._an || h._an.ver !== state.anVer || h._an.pile !== p) { runAnalysis(v); h._an = { ver: state.anVer, pile: p, a: v.analysis }; }
+      v.analysis = h._an.a;
+    }
+    return v;
+  }
+  const hitPiles = (p, force = true) => p.hits.filter(h => h.include).map(h => hitPile(p, h, force));
+  // what is shown and edited now: the selected hit in per-hit mode, otherwise the pile
+  const viewTarget = p => p && isPerHit(p) ? hitPile(p, p.hits[p.view]) : p;
+  // the pile's result in lists and the summary: the median of the hits in per-hit mode
+  const shownFinal = p => isPerHit(p) && p.analysis ? mergedFinal(p, hitPiles(p, false)) : finalOf(p);
+  // per-hit piles: the pile length is the median of the hits' own results
+  function mergedFinal(p, hp) {
+    const Ls = hp.map(finalOf).filter(Boolean).map(f => f.L).sort((a, b) => a - b);
+    if (!Ls.length) return null;
+    const m = Ls.length >> 1, L = Ls.length & 1 ? Ls[m] : (Ls[m - 1] + Ls[m]) / 2, V = pileV(p), Lp = pileLp(p);
+    return { L, manual: false, merged: true, n: Ls.length, spread: Ls[Ls.length - 1] - Ls[0], dt: 2 * L / V * 1e6, elr: Lp ? (L - Lp) / Lp * 100 : null };
+  }
+  // what gets exported for the chosen piles: {p, kind: 'pile' | 'merge', hp}
+  function exportUnits(piles) {
+    const out = [];
+    for (const p of piles) {
+      if (!isPerHit(p)) { out.push({ kind: 'pile', p }); continue; }
+      const hp = hitPiles(p);
+      if (state.obj.hitExport === 'merge') out.push({ kind: 'merge', p, hp });
+      else for (const v of hp) out.push({ kind: 'pile', p: v });
+    }
+    return out;
+  }
 
   function finalOf(p) {
     const V = pileV(p), Lp = pileLp(p);
@@ -1452,9 +1509,16 @@ const PlotLib = (() => {
     const fromUs = manual && p.manualFrom > 0 ? p.manualFrom : null;
     return { L, manual, auto, fromUs, dt: 2 * L / V * 1e6, elr: Lp ? (L - Lp) / Lp * 100 : null };
   }
+  // a manual result of a hit view goes to that hit only
   function setManual(p, dt, fromUs = null) {
-    p.manualDt = dt; p.manualFrom = dt != null && fromUs > 0 ? fromUs : null;
-    savePile(p);
+    const o = p.hit || p;
+    o.manualDt = dt; o.manualFrom = dt != null && fromUs > 0 ? fromUs : null;
+    p.manualDt = o.manualDt; p.manualFrom = o.manualFrom;
+    savePile(p.parent || p);
+  }
+  function setConclusion(p, text) {
+    (p.hit || p).conclusion = text; p.conclusion = text;
+    savePile(p.parent || p);
   }
 
   // a hand-set length that none of the methods supports: the report then shows no method lengths at all
@@ -1491,7 +1555,8 @@ const PlotLib = (() => {
 
   function signalPlotData(p, opt) {
     const d = pileData(p), V = pileV(p), fs = d.fs, Lp = pileLp(p), scale = opt.scale;
-    const single = p.view !== 'avg' && d.traces[p.view];
+    // allHits: every included hit as its own full line, no average (merged per-hit report)
+    const single = !opt.allHits && p.view !== 'avg' && d.traces[p.view];
     const mainT = single ? d.traces[p.view] : d.avg;
     const i0 = mainT.i0;
     let ma = null;
@@ -1510,12 +1575,12 @@ const PlotLib = (() => {
       for (const t of d.inc) {
         const j = p.hits.indexOf(t.hit), hl = opt.interactive && state.hlHit != null;
         const on = hl && state.hlHit === j;
-        series.push({ x: toXY(t.s, t.i0), y: gain(t.s, t.i0), color: hitColor(j), skipRange: true,
-          width: on ? 2.4 : 1.3, alpha: hl ? (on ? 1 : 0.2) : 0.75 });
+        series.push(opt.allHits ? { x: toXY(t.s, t.i0), y: gain(t.s, t.i0), color: hitColor(j), width: 1.6 }
+          : { x: toXY(t.s, t.i0), y: gain(t.s, t.i0), color: hitColor(j), skipRange: true, width: on ? 2.4 : 1.3, alpha: hl ? (on ? 1 : 0.2) : 0.75 });
       }
     }
     const ys = gain(mainT.s, i0);
-    series.push({ x: toXY(ys, i0), y: ys, color, width: !single && d.inc.length > 1 ? 2.6 : 2,
+    if (!opt.allHits) series.push({ x: toXY(ys, i0), y: ys, color, width: !single && d.inc.length > 1 ? 2.6 : 2,
       alpha: opt.interactive && state.hlHit != null && !single ? 0.5 : 1 });
     let y2Label = null, y2Color = null;
     if (opt.second && showSecond(p)) {
@@ -1534,7 +1599,7 @@ const PlotLib = (() => {
     const markers = [{ x: 0, color: C.t0, dash: [5, 4], width: 1, label: 'удар' }];
     const bands = [];
     const conv = L => scale === 'depth' ? L : 2 * L / V * 1e6;
-    const a = p.analysis;
+    const a = opt.allHits ? null : p.analysis;
     if (a) {
       const r = a.res;
       if (!opt.report) bands.push({ x1: conv(r.window[0]), x2: conv(r.window[1]), color: 'rgba(37,99,235,.06)' });
@@ -1544,7 +1609,7 @@ const PlotLib = (() => {
       }
       for (const an of r.anomalies) if (!layerOf(p, an.L)) markers.push({ x: conv(an.L), color: C.anom, dash: [2, 3], width: 1.2, label: `А ${fmt(an.L, 1)}` });
     }
-    const f = finalOf(p);
+    const f = opt.allHits ? opt.final : finalOf(p);
     for (const l of pileLayers(p)) {
       const t = LAYER_TYPES[l.type], hit = a && a.res.anomalies.some(an => layerOf(p, an.L) === l);
       markers.push({ x: conv(l.d), color: t.color, dash: [7, 3], width: 1.4, label: `${t.short} ${fmt(l.d, 1)}${hit ? ' ✓' : ''}` });
@@ -1578,7 +1643,7 @@ const PlotLib = (() => {
     const xmaxDepth = Math.max(Lp ? Lp * 1.6 : 0, fEnd * 1.35, Lp || f ? 0 : 20);
     const xr = [conv(-1.2), conv(xmaxDepth)];
     const unit = state.proc.integrate ? 'мм/с' : 'м/с²';
-    const title = (single ? `Удар ${single.hit.hitNum || p.view + 1}` : d.inc.length > 1 ? `Усреднённый сигнал (${d.inc.length} уд.)` : 'Сигнал')
+    const title = (opt.allHits ? `Удары (${d.inc.length}), без усреднения` : single ? `Удар ${single.hit.hitNum || p.view + 1}` : d.inc.length > 1 ? `Усреднённый сигнал (${d.inc.length} уд.)` : 'Сигнал')
       + ` · ${CHNAME[d.ch]}` + (opt.gain ? ` · усиление Ma = ${fmt(ma, 1)}` : '');
     return {
       plot: { series, markers, bands, points, xRange: xr, xLabel: scale === 'depth' ? 'Длина, м' : 'Время, мкс',
@@ -1595,13 +1660,21 @@ const PlotLib = (() => {
       const r = DSP.processChannel(tr.hit.ch[d.ch] || tr.hit.ch[0], fs, Object.assign(procParams(), { integrate: false }));
       return { s: DSP.applyPolarity(r.v, tr.pol), i0: tr.i0 };
     };
-    const t = single ? accel(single) : DSP.average(d.inc.map(accel));
-    const { mag, df } = DSP.spectrum(t.s, t.i0, fs, opt.extended ? 32768 : 2048);
-    const fTop = Math.min(5000, fs / 2), n = Math.floor(fTop / df);
-    let mx = 0;
-    for (let k = 1; k <= n; k++) mx = Math.max(mx, mag[k]);
-    const x = new Float64Array(n + 1), y = new Float64Array(n + 1);
-    for (let k = 0; k <= n; k++) { x[k] = k * df; y[k] = mx ? mag[k] / mx : 0; }
+    const fTop = Math.min(5000, fs / 2);
+    const spec = t => {
+      const { mag, df } = DSP.spectrum(t.s, t.i0, fs, opt.extended ? 32768 : 2048);
+      const n = Math.floor(fTop / df);
+      let mx = 0;
+      for (let k = 1; k <= n; k++) mx = Math.max(mx, mag[k]);
+      const x = new Float64Array(n + 1), y = new Float64Array(n + 1);
+      for (let k = 0; k <= n; k++) { x[k] = k * df; y[k] = mx ? mag[k] / mx : 0; }
+      return { x, y, mag, df, mx };
+    };
+    if (opt.allHits) {
+      return { series: d.inc.map(t => Object.assign(spec(accel(t)), { color: hitColor(p.hits.indexOf(t.hit)), width: 1.4 })),
+        markers: [], points: [], xRange: [0, fTop], yRange: [0, 1.05], xLabel: 'Частота, Гц', yLabel: `${CHNAME[d.ch]}, м/с²`, yColor: d.ch === 0 ? C.main : C.side };
+    }
+    const { x, y, mag, df, mx } = spec(single ? accel(single) : DSP.average(d.inc.map(accel)));
     const markers = [];
     const m3 = p.analysis && p.analysis.res.methods.spectrum;
     if (m3 && m3.ok && !(opt.report && manualDisagrees(p))) {
@@ -1707,11 +1780,16 @@ const PlotLib = (() => {
   function renderPiles() {
     $('pileCount').textContent = state.piles.length ? `(${state.piles.length})` : '';
     const html = state.piles.map((p, i) => {
-      const f = finalOf(p), st = pileStatus(p), cur = i === state.cur;
+      const cur = i === state.cur, per = isPerHit(p) && p.analysis;
+      // per-hit mode: every hit has its own result, the pile shows their median
+      const hp = per ? hitPiles(p, false) : null, hitF = hp ? new Map(hp.map(v => [v.hit, finalOf(v)])) : null;
+      const mf = hp ? mergedFinal(p, hp) : null;
+      const f = per ? mf : finalOf(p);
+      const st = per ? (!mf ? 'bad' : mf.spread / mf.L > 0.06 ? 'warn' : 'ok') : pileStatus(p);
       let s = `<div class="pile${cur ? ' sel' : ''}" data-i="${i}">
         <button class="tog" data-tog="${i}" title="${p.expanded ? 'Свернуть' : 'Показать'} удары">${p.expanded ? '▾' : '▸'}</button>
         <div class="pname">Свая ${esc(p.label)}</div>
-        ${f || p.analysis ? `<div class="pres st-${st}">${f ? fmt(f.L, 2) + ' м' : 'н/д'}</div>` : '<div class="pres"></div>'}
+        ${f || p.analysis ? `<div class="pres st-${st}"${per ? ' title="Медиана итогов по ударам"' : ''}>${f ? (per ? '≈ ' : '') + fmt(f.L, 2) + ' м' : 'н/д'}</div>` : '<div class="pres"></div>'}
         <button class="pdel" data-del="${i}" title="Убрать сваю из списка (файлы в папке не затрагиваются)">✕</button>
         <div class="pmeta">${p.hits.length} уд.${p.hits[0].date ? ' · ' + pileTimes(p) : ''}${p.V > 0 ? ' · V ' + p.V : ''}</div></div>`;
       if (p.expanded) {
@@ -1723,7 +1801,9 @@ const PlotLib = (() => {
           ${p.hits.map((h, j) => `<div class="hit${sel(j) ? ' sel' : ''}${h.include ? '' : ' off'}${cur && state.hlHit === j ? ' hl' : ''}" data-j="${j}" title="${esc(h.rel)}">
             <input type="checkbox" data-inc="${j}"${h.include ? ' checked' : ''} title="Учитывать в усреднении и анализе">
             ${p.hits.length > 1 ? `<span class="sw" style="background:${h.include ? hitColor(j) : '#d1d5db'}"></span>` : ''}
-            <span>Удар ${esc(h.hitNum || j + 1)}</span><span class="t">${esc(h.time)}</span></div>`).join('')}
+            <span>Удар ${esc(h.hitNum || j + 1)}</span>
+            ${hitF && hitF.has(h) ? `<span class="hlen" title="${hitF.get(h) && hitF.get(h).manual ? 'Итог удара задан вручную' : 'Итог удара'}">${hitF.get(h) ? fmt(hitF.get(h).L, 2) + (hitF.get(h).manual ? ' ✎' : '') : '—'}</span>` : ''}
+            <span class="t">${esc(h.time)}</span></div>`).join('')}
         </div>`;
       }
       return s;
@@ -1735,7 +1815,7 @@ const PlotLib = (() => {
     syncClearBtn();
     const p = curPile();
     if (!p) { sigCtx = null; sigPlot.set({ series: [], xRange: [0, 1], title: 'Сигнал' }); return; }
-    const r = signalPlotData(p, { scale: state.view.scale, gain: state.proc.gainOn, second: true, interactive: true });
+    const r = signalPlotData(viewTarget(p), { scale: state.view.scale, gain: state.proc.gainOn, second: true, interactive: true });
     sigCtx = r;
     sigPlot.set(Object.assign({ title: r.title }, r.plot), keepView);
     if (state.proc.gainOn && state.proc.maAuto) $('pMa').value = r.ma != null ? r.ma.toFixed(1) : '';
@@ -1757,7 +1837,7 @@ const PlotLib = (() => {
     const p = curPile();
     if (!state.view.spectrum) return;
     if (!p) { specPlot.set({ series: [], xRange: [0, 5000], title: 'Спектр сигнала' }); return; }
-    specPlot.set(Object.assign({ title: 'Спектр сигнала' }, spectrumPlotData(p, { extended: state.view.extended, interactive: true })), keepView);
+    specPlot.set(Object.assign({ title: 'Спектр сигнала' }, spectrumPlotData(viewTarget(p), { extended: state.view.extended, interactive: true })), keepView);
   }
 
   const confChip = c => `<span class="chip ${c === 'высокая' ? 'st-ok' : c === 'средняя' ? 'st-warn' : 'st-bad'}">${c}</span>`;
@@ -1815,7 +1895,8 @@ const PlotLib = (() => {
   }
 
   function renderResult() {
-    const p = curPile(), body = $('resultBody');
+    // per-hit mode: the panel shows and edits the selected hit; V, L and layers stay the pile's
+    const p = viewTarget(curPile()), body = $('resultBody');
     $('resPile').textContent = p ? `· свая ${p.label}` : '';
     if (!p) { body.innerHTML = '<div class="res muted">Загрузите файлы сигналов.</div>'; return; }
     const a = p.analysis, f = finalOf(p), V = pileV(p), Lp = pileLp(p);
@@ -1914,14 +1995,16 @@ const PlotLib = (() => {
 
   function renderTable() {
     const rows = state.piles.map((p, i) => {
-      const a = p.analysis, f = finalOf(p), st = pileStatus(p), m = a ? a.res.methods : null;
+      const per = isPerHit(p) && p.analysis, a = p.analysis, f = shownFinal(p);
+      const st = per ? (!f ? 'bad' : f.spread / f.L > 0.06 ? 'warn' : 'ok') : pileStatus(p), m = a && !per ? a.res.methods : null;
       const mv = k => m && m[k].ok ? fmt(m[k].L, 2) : '—';
+      const anList = per ? commonAnomalies(hitPiles(p, false)) : a ? a.res.anomalies : [];
       return `<tr data-i="${i}"><td>${esc(p.label)}</td><td class="l">${esc(p.hits[0].date ? pileTimes(p) : '—')}</td><td>${p.hits.filter(h => h.include).length}/${p.hits.length}</td>
         <td class="l">${a ? CHNAME[a.ch] : '—'}</td><td>${pileV(p)}</td><td>${fmt(pileLp(p), 1)}</td>
         <td>${mv('time')}</td><td>${mv('gain')}</td><td>${mv('spectrum')}</td>
         <td><b>${f ? fmt(f.L, 2) : '—'}</b>${f && f.manual ? ' ✎' : ''}</td><td>${f ? fmtSigned(f.elr, 1) : '—'}</td>
-        <td class="l">${a && !f?.manual ? a.res.final.conf || '—' : f?.manual ? 'вручную' : '—'}</td>
-        <td class="l">${a && a.res.anomalies.length ? a.res.anomalies.map(x => fmt(x.L, 1) + (layerOf(p, x.L) ? ' (' + LAYER_TYPES[layerOf(p, x.L).type].short + ')' : '')).join('; ') : '—'}</td>
+        <td class="l">${per ? (f ? `медиана по ${f.n} уд.` : '—') : a && !f?.manual ? a.res.final.conf || '—' : f?.manual ? 'вручную' : '—'}</td>
+        <td class="l">${anList.length ? anList.map(x => fmt(x.L, 1) + (layerOf(p, x.L) ? ' (' + LAYER_TYPES[layerOf(p, x.L).type].short + ')' : '')).join('; ') : '—'}</td>
         <td class="l"><span class="chip st-${st}">${{ ok: 'норма', warn: 'проверить', bad: 'не определена', none: 'не анализ.' }[st]}</span></td></tr>`;
     }).join('');
     $('sumTable').innerHTML = `<thead><tr><th>Свая</th><th class="l">Дата и время</th><th>Ударов</th><th>Канал</th><th>V, м/с</th><th>L проект, м</th>
@@ -1938,7 +2021,7 @@ const PlotLib = (() => {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const th = PlotLib.theme();
     ctx.fillStyle = th.bg; ctx.fillRect(0, 0, r.width, r.height);
-    const vals = state.piles.map(finalOf).filter(f => f && f.elr != null).map(f => f.elr);
+    const vals = state.piles.map(shownFinal).filter(f => f && f.elr != null).map(f => f.elr);
     ctx.font = '12px "Golos Text", system-ui, "Segoe UI", Arial'; ctx.fillStyle = th.ink;
     ctx.fillText('Гистограмма ELR, % (ГОСТ Р 72171, Б.3): сваи вне ±10 % — на дополнительный анализ', 12, 18);
     if (!vals.length) { ctx.fillStyle = th.text; ctx.fillText('Нет данных: задайте проектную длину и выполните анализ.', 12, 44); return; }
@@ -2111,7 +2194,7 @@ const PlotLib = (() => {
   }
 
   $('resultBody').addEventListener('change', e => {
-    if (e.target.id === 'rConcl') { const p = curPile(); if (p) { p.conclusion = e.target.value; savePile(p); } return; }
+    if (e.target.id === 'rConcl') { const p = curPile(); if (p) setConclusion(viewTarget(p), e.target.value); return; }
     applyResultField(e.target);
   });
   $('resultBody').addEventListener('input', debounce(e => applyResultField(e.target), LIVE_MS));
@@ -2129,7 +2212,7 @@ const PlotLib = (() => {
     else if (el.id === 'rR') { p.Rmpa = v > 0 ? v : null; p.V = velocityOf(p).V; }
     else if (el.id === 'rCls') { p.cls = +el.value; p.V = velocityOf(p).V; }
     else if (el.id === 'rLp') p.Lp = v > 0 ? v : null;
-    else if (el.id === 'rFinalL') { if (!(v >= 0.5 && v <= 80)) return; setManual(p, 2 * v / pileV(p) * 1e6); }
+    else if (el.id === 'rFinalL') { if (!(v >= 0.5 && v <= 80)) return; setManual(viewTarget(p), 2 * v / pileV(p) * 1e6); }
     else if (/^rLd\d+$/.test(el.id)) { const l = p.layers[+el.id.slice(3)]; if (!l) return; l.d = v > 0 ? v : null; }
     else if (/^rLt\d+$/.test(el.id)) { const l = p.layers[+el.id.slice(3)]; if (!l) return; l.type = el.value; }
     else return;
@@ -2138,6 +2221,7 @@ const PlotLib = (() => {
   }
   $('resultBody').addEventListener('click', e => {
     const p = curPile(); if (!p) return;
+    const t = viewTarget(p);
     const opt = e.target.closest('.mopt');
     if (opt) {
       state.measSel[+opt.dataset.side] = +opt.dataset.id; state.measAuto = false;
@@ -2145,12 +2229,12 @@ const PlotLib = (() => {
     }
     const take = e.target.closest('[data-take]');
     if (take) {
-      const m = p.analysis && p.analysis.res.methods[take.dataset.take];
-      if (m && m.ok) { setManual(p, 2 * m.L / pileV(p) * 1e6); renderAll(false, true); }
+      const m = t.analysis && t.analysis.res.methods[take.dataset.take];
+      if (m && m.ok) { setManual(t, 2 * m.L / pileV(p) * 1e6); renderAll(false, true); }
       return;
     }
     const step = e.target.closest('[data-step]');
-    if (step) { stepFinal(p, +step.dataset.step); return; }
+    if (step) { stepFinal(t, +step.dataset.step); return; }
     const del = e.target.closest('[data-ldel]');
     if (del) { p.layers.splice(+del.dataset.ldel, 1); savePile(p); renderAll(false, true); return; }
     if (e.target.id === 'rLayerAdd') { p.layers.push({ d: null, type: 'joint' }); savePile(p); renderResult(); $('rLd' + (p.layers.length - 1)).focus(); return; }
@@ -2166,20 +2250,20 @@ const PlotLib = (() => {
     }
     const id = e.target.id;
     if (id === 'rRun') { runAnalysis(p); renderAll(false, true); }
-    else if (id === 'rResetManual') { setManual(p, null); renderAll(false, true); }
+    else if (id === 'rResetManual') { setManual(t, null); renderAll(false, true); }
     else if (id === 'rAcceptMeas' && measPair()) {
       const pr = measPair();
-      setManual(p, Math.abs(pr[1].us - pr[0].us), Math.min(pr[0].us, pr[1].us)); renderAll(false, true);
+      setManual(t, Math.abs(pr[1].us - pr[0].us), Math.min(pr[0].us, pr[1].us)); renderAll(false, true);
     }
-    else if (id === 'rConclReset') { p.conclusion = null; savePile(p); renderResult(); }
+    else if (id === 'rConclReset') { setConclusion(t, null); renderResult(); }
     else if (id === 'rClearMeas') clearMeas();
   });
 
   $('btnAuto').addEventListener('click', () => {
     const p = curPile(); if (!p) return;
     runAnalysis(p); renderAll(false, true);
-    const f = finalOf(p);
-    toast(f ? `Свая ${p.label}: ${fmt(f.L, 2)} м (${p.analysis.res.final.status || 'вручную'})` : `Свая ${p.label}: длина не определена`);
+    const t = viewTarget(p), f = finalOf(t);
+    toast(f ? `Свая ${t.label}: ${fmt(f.L, 2)} м (${f.manual ? 'вручную' : t.analysis.res.final.status})` : `Свая ${t.label}: длина не определена`);
   });
   const analyzeAll = () => {
     for (const p of state.piles) runAnalysis(p);
@@ -2223,7 +2307,12 @@ const PlotLib = (() => {
   $('btnHelp').addEventListener('click', () => $('helpDlg').showModal());
   $('btnExport').addEventListener('click', e => { e.stopPropagation(); $('exportMenu').hidden = !$('exportMenu').hidden; });
   document.addEventListener('click', () => { $('exportMenu').hidden = true; });
+  for (const r of document.querySelectorAll('input[name=hitExport]')) {
+    r.checked = r.value === state.obj.hitExport;
+    r.addEventListener('change', () => { state.obj.hitExport = r.value; saveObj(); });
+  }
   $('exportMenu').addEventListener('click', e => {
+    e.stopPropagation();
     const k = e.target.dataset.exp; if (!k) return;
     $('exportMenu').hidden = true;
     if (k === 'pdf') exportPdf([curPile()].filter(Boolean));
@@ -2266,33 +2355,27 @@ const PlotLib = (() => {
   function reportData(p) {
     const V = pileV(p), f = finalOf(p), a = p.analysis;
     const ch = a ? a.ch : analysisChannel(p);
+    const one = !!p.parent, hitNo = one ? p.hitLabel.toLowerCase() : '';
     const sig = signalPlotData(p, { scale: 'depth', gain: false, second: false, interactive: false, report: true });
     const gsig = signalPlotData(p, { scale: 'depth', gain: true, second: false, interactive: false, report: true });
     const spec = spectrumPlotData(p, { extended: true, interactive: false, report: true });
     const inc = p.hits.filter(h => h.include);
     const showMethods = a && !manualDisagrees(p);
-    const equip = `Прибор диагностики свай «Спектр-4.3»; ${SENSOR[ch]}` + (state.obj.ch === 'main+hammer' ? '; молоток с датчиком силы МДС-1.1' : '');
+    const gainText = a && a.res.methods.gain.ok ? `; экспоненциальное усиление Ma = ${fmt(a.res.methods.gain.ma, 1)}·10⁻³` : '';
     return {
-      title: `Протокол сейсмоакустического контроля сваи № ${p.id}`,
-      sub: 'ГОСТ Р 72171-2025 «Сваи. Сейсмоакустические методы контроля сплошности бетона и длины свай»',
-      info: [
-        ['Объект', state.obj.name || p.object],
-        ['Свая', `№ ${p.id}`],
-        ['Дата испытания', p.hits[0].date ? pileTimes(p) : '—'],
-        ['Оборудование', equip],
-        ['Метод', 'Стандартный метод (возбуждение и приём вблизи оголовка), анализ во временной и частотной областях'],
-        ['Скорость волны V', `${V} м/с`],
-        ['Обработка', `${procText()}; усреднение ${inc.length} из ${p.hits.length} ударов${a && a.res.methods.gain.ok ? `; экспоненциальное усиление Ma = ${fmt(a.res.methods.gain.ma, 1)}·10⁻³` : ''}`],
-      ],
+      title: `Протокол сейсмоакустического контроля сваи № ${p.id}${one ? ` (${hitNo})` : ''}`,
+      sub: REPORT_SUB,
+      info: reportInfo(p, ch, one ? `${procText()}; сигнал одного удара${gainText}` : `${procText()}; усреднение ${inc.length} из ${p.hits.length} ударов${gainText}`, one ? `№ ${p.id}, ${hitNo}` : `№ ${p.id}`),
       images: [
-        { cap: 'Рис. 1. Сигнал виброскорости оголовка (усреднённый), отметки длины', w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
+        { cap: `Рис. 1. Сигнал виброскорости оголовка (${one ? hitNo : 'усреднённый'}), отметки длины`, w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
         { cap: 'Рис. 2. Сигнал виброскорости с экспоненциальным усилением', w: 820, h: 260, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title }), 820, 260) },
         { cap: 'Рис. 3. Амплитудный спектр сигнала виброускорения', w: 820, h: 190, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектр сигнала', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 190) },
       ],
-      methods: showMethods ? ['time', 'gain', 'spectrum'].map(k => {
-        const m = a.res.methods[k];
-        return [MNAME[k], m.ok ? fmt(m.L, 2) : '—', m.ok ? (k === 'spectrum' ? `Δf = ${fmt(m.dfHz, 0)} Гц` : `Δt = ${Math.round(m.dtUs)} мкс`) : m.reason, m.ok ? m.confLabel : '—'];
-      }) : null,
+      table: showMethods ? { head: ['Метод определения длины', 'L, м', 'Параметр', 'Достоверность'], widths: [3900, 1100, 2738, 1900],
+        rows: ['time', 'gain', 'spectrum'].map(k => {
+          const m = a.res.methods[k];
+          return [MNAME[k], m.ok ? fmt(m.L, 2) : '—', m.ok ? (k === 'spectrum' ? `Δf = ${fmt(m.dfHz, 0)} Гц` : `Δt = ${Math.round(m.dtUs)} мкс`) : m.reason, m.ok ? m.confLabel : '—'];
+        }) } : null,
       length: f ? fmt(f.L, 2) + ' м' : 'не определена',
       lengthNote: f && f.elr != null ? `; ELR = ${fmtSigned(f.elr, 1)} %` : '',
       result: [
@@ -2303,17 +2386,74 @@ const PlotLib = (() => {
     };
   }
 
+  const REPORT_SUB = 'ГОСТ Р 72171-2025 «Сваи. Сейсмоакустические методы контроля сплошности бетона и длины свай»';
+  function reportInfo(p, ch, processing, pileText) {
+    const equip = `Прибор диагностики свай «Спектр-4.3»; ${SENSOR[ch]}` + (state.obj.ch === 'main+hammer' ? '; молоток с датчиком силы МДС-1.1' : '');
+    return [
+      ['Объект', state.obj.name || p.object],
+      ['Свая', pileText],
+      ['Дата испытания', p.hits[0].date ? pileTimes(p) : '—'],
+      ['Оборудование', equip],
+      ['Метод', 'Стандартный метод (возбуждение и приём вблизи оголовка), анализ во временной и частотной областях'],
+      ['Скорость волны V', `${pileV(p)} м/с`],
+      ['Обработка', processing],
+    ];
+  }
+
+  // anomalies seen on at least half of the hits (±0,3 м)
+  function commonAnomalies(hp) {
+    const all = hp.flatMap(v => v.analysis ? v.analysis.res.anomalies.map(a => a.L) : []).sort((a, b) => a - b);
+    const groups = [];
+    for (const L of all) { const g = groups[groups.length - 1]; if (g && L - g[g.length - 1] <= 0.3) g.push(L); else groups.push([L]); }
+    return groups.filter(g => g.length >= Math.ceil(hp.length / 2)).map(g => ({ L: g.reduce((m, v) => m + v, 0) / g.length, rel: 0 }));
+  }
+
+  // the pile as the conclusion text sees it in the merged report: the median length and the common anomalies
+  const mergedView = (p, mf, anoms) => Object.assign({}, p, { manualDt: mf ? mf.dt : null, manualFrom: null,
+    analysis: { res: { anomalies: anoms, final: { ok: false } } } });
+
+  // merged protocol: all hits of the pile as separate signals, a per-hit results table, length = median of the hits
+  function reportDataMerged(p, hp) {
+    const mf = mergedFinal(p, hp), ch = analysisChannel(p), opt = { scale: 'depth', second: false, interactive: false, report: true, allHits: true, final: mf };
+    const sig = signalPlotData(p, Object.assign({ gain: false }, opt));
+    const gsig = signalPlotData(p, Object.assign({ gain: true }, opt));
+    const spec = spectrumPlotData(p, { extended: true, interactive: false, report: true, allHits: true });
+    const anoms = commonAnomalies(hp);
+    const view = mergedView(p, mf, anoms);
+    const mv = (v, k) => { const m = v.analysis && v.analysis.res.methods[k]; return m && m.ok ? fmt(m.L, 2) : '—'; };
+    return {
+      title: `Протокол сейсмоакустического контроля сваи № ${p.id}`,
+      sub: REPORT_SUB,
+      info: reportInfo(p, ch, `${procText()}; ${hp.length} ударов, каждый обработан отдельно, без усреднения`, `№ ${p.id}`),
+      images: [
+        { cap: 'Рис. 1. Сигналы виброскорости оголовка по ударам (без усреднения)', w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
+        { cap: 'Рис. 2. Сигналы виброскорости с экспоненциальным усилением', w: 820, h: 260, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title + ' · усиление' }), 820, 260) },
+        { cap: 'Рис. 3. Амплитудные спектры сигналов виброускорения по ударам', w: 820, h: 190, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектры сигналов', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 190) },
+      ],
+      table: { head: ['Удар', 'М1, м', 'М2, м', 'М3, м', 'Итог, м'], widths: [2638, 1750, 1750, 1750, 1750],
+        rows: hp.map(v => { const f = finalOf(v); return [`${v.hitLabel}${v.hits[0].time ? ' · ' + v.hits[0].time : ''}`, mv(v, 'time'), mv(v, 'gain'), mv(v, 'spectrum'), f ? fmt(f.L, 2) : '—']; }) },
+      length: mf ? fmt(mf.L, 2) + ' м' : 'не определена',
+      lengthNote: (mf && mf.merged ? `; медиана по ${mf.n} ударам, разброс ${fmt(mf.spread, 2)} м` : '') + (mf && mf.elr != null ? `; ELR = ${fmtSigned(mf.elr, 1)} %` : ''),
+      result: [
+        ...(pileLayers(p).length ? [['Слои и стыки', pileLayers(p).map(layerText).join('; ')]] : []),
+        ['Акустические аномалии', anoms.length ? anoms.map(x => anomalyText(p, x)).join('; ') + ' (на большинстве ударов)' : 'не выявлены'],
+        ['Заключение', p.conclusion ?? autoConclusion(view)],
+      ],
+    };
+  }
+  const unitReport = u => u.kind === 'merge' ? reportDataMerged(u.p, u.hp) : reportData(u.p);
+
   function exportPdf(piles) {
     if (!piles.length) { toast('Нет свай с результатом — сначала выполните анализ'); return; }
-    const pages = piles.map(p => {
-      const r = reportData(p);
+    const pages = exportUnits(piles).map(u => {
+      const r = unitReport(u);
       const tr = rows => rows.map(([k, v], i) => `<tr><th${i === 0 ? ' style="width:32%"' : ''}>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('');
       return `<section class="rpage">
         <h1>${esc(r.title)}</h1>
         <div class="sub">${esc(r.sub)}</div>
         <table>${tr(r.info)}</table>
         ${r.images.map(im => `<div class="cap">${esc(im.cap)}</div><img src="${im.url}">`).join('')}
-        ${r.methods ? `<table><tr><th>Метод определения длины</th><th>L, м</th><th>Параметр</th><th>Достоверность</th></tr>${r.methods.map(m => `<tr>${m.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : ''}
+        ${r.table ? `<table><tr>${r.table.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${r.table.rows.map(m => `<tr>${m.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : ''}
         <table>
           <tr><th style="width:32%">Длина сваи</th><td><b>${esc(r.length)}</b>${esc(r.lengthNote)}</td></tr>
           ${r.result.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}
@@ -2368,7 +2508,7 @@ const PlotLib = (() => {
     const x = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
     const run = (t, o = {}) => `<w:r><w:rPr>${o.b ? '<w:b/>' : ''}${o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : ''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r>`;
-    const para = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.center ? '<w:jc w:val="center"/>' : ''}</w:pPr>${runs}</w:p>`;
+    const para = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}${o.pageBreak ? '<w:pageBreakBefore/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.center ? '<w:jc w:val="center"/>' : ''}</w:pPr>${runs}</w:p>`;
     const cell = (content, w, shade) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${shade ? '<w:shd w:val="clear" w:color="auto" w:fill="EEEEEE"/>' : ''}</w:tcPr>${content}</w:tc>`;
     const cellP = (t, o) => para(run(t, Object.assign({ sz: 20 }, o)), { after: 0 });
     const B = 'w:val="single" w:sz="4" w:space="0" w:color="555555"';
@@ -2388,18 +2528,19 @@ const PlotLib = (() => {
         + `<pic:nvPicPr><pic:cNvPr id="${id}" name="image${n}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
         + `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
     };
-    const body = piles.map((p, i) => {
-      const r = reportData(p);
-      let s = i ? '<w:p><w:r><w:br w:type="page"/></w:r></w:p>' : '';
-      s += para(run(r.title, { b: true, sz: 30 }), { center: true, after: 40 });
+    const units = exportUnits(piles);
+    const body = units.map((u, i) => {
+      const r = unitReport(u);
+      // the break belongs to the title: a separate break paragraph spills onto an empty page when a protocol fills the sheet
+      let s = para(run(r.title, { b: true, sz: 30 }), { center: true, after: 40, pageBreak: i > 0 });
       s += para(run(r.sub, { sz: 20 }), { center: true, after: 160 });
       s += kv(r.info);
       for (const im of r.images) s += para(run(im.cap, { b: true, sz: 20 }), { before: 80, after: 20, keep: true }) + image(im);
-      if (r.methods) {
-        const w = [3900, 1100, 2738, 1900];
+      if (r.table) {
+        const w = r.table.widths;
         s += table([
-          `<w:tr>${['Метод определения длины', 'L, м', 'Параметр', 'Достоверность'].map((t, k) => cell(cellP(t, { b: true }), w[k], true)).join('')}</w:tr>`,
-          ...r.methods.map(m => `<w:tr>${m.map((t, k) => cell(cellP(t), w[k])).join('')}</w:tr>`),
+          `<w:tr>${r.table.head.map((t, k) => cell(cellP(t, { b: true }), w[k], true)).join('')}</w:tr>`,
+          ...r.table.rows.map(m => `<w:tr>${m.map((t, k) => cell(cellP(t), w[k])).join('')}</w:tr>`),
         ], w);
         s += para('', { after: 80 });
       }
@@ -2422,7 +2563,7 @@ const PlotLib = (() => {
       { name: 'word/styles.xml', data: styles },
       ...media.map(m => ({ name: m.name, data: m.data })),
     ];
-    const name = piles.length === 1 ? `Протокол_сваи_${safeName(piles[0].label)}_${safeName(state.obj.name)}.docx` : `Протоколы_${safeName(state.obj.name)}.docx`;
+    const name = units.length === 1 ? `Протокол_сваи_${safeName(units[0].p.label)}_${safeName(state.obj.name)}.docx` : `Протоколы_${safeName(state.obj.name)}.docx`;
     download(zip(files, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'), name);
     toast(`Сохранён Word-файл: ${name}`);
   }
@@ -2463,20 +2604,45 @@ const PlotLib = (() => {
     return { rows, gain: g ? g.ma : null };
   }
 
+  const STATUS_TEXT = { ok: 'норма', warn: 'проверить', bad: 'не определена', none: 'не анализировалась' };
+  function summaryRow(p, f = finalOf(p), label = p.label, status = STATUS_TEXT[pileStatus(p)]) {
+    const a = p.analysis, m = a && a.res.methods;
+    const mv = k => m && m[k] && m[k].ok ? r2(m[k].L, 2) : null;
+    return [label, p.hits[0].date ? pileTimes(p) : '', p.hits.filter(h => h.include).length, a && a.ch != null ? CHNAME[a.ch] : CHNAME[analysisChannel(p)],
+      pileV(p), pileLp(p), mv('time'), mv('gain'), mv('spectrum'),
+      f ? r2(f.L, 2) : null, f ? Math.round(f.dt) : null, f ? r2(f.elr, 1) : null,
+      f && f.merged ? `медиана по ${f.n} уд.` : f && f.manual ? 'вручную' : a && a.res.final ? a.res.final.conf || '' : '',
+      a ? a.res.anomalies.map(x => anomalyText(p, x)).join('; ') : '', status, f || a ? (p.conclusion ?? autoConclusion(p)) : ''];
+  }
+
+  // signal columns: the average, or every included hit separately when the pile is shown without averaging
+  function hitSignalRows(p) {
+    const d = pileData(p), V = pileV(p), fs = d.fs, tr = d.inc;
+    const kMin = -Math.min(...tr.map(t => t.i0)), kMax = Math.min(...tr.map(t => t.s.length - t.i0)) - 1;
+    const rows = [];
+    for (let k = kMin; k <= kMax; k++) rows.push([r2(k / fs * 1e6, 2), r2(k / fs * V / 2, 4), ...tr.map(t => t.s[t.i0 + k])]);
+    return { rows, head: tr.map(t => `Удар ${t.hit.hitNum || p.hits.indexOf(t.hit) + 1}, мм/с`) };
+  }
+
   function exportXlsx() {
     const sum = [['Объект', state.obj.name], ['V объекта, м/с', state.obj.V], ['Обработка', procText()], [],
       ['Свая', 'Дата и время', 'Ударов', 'Канал', 'V, м/с', 'L проект, м', 'М1, м', 'М2, м', 'М3, м', 'Итог, м', 'Δt, мкс', 'ELR, %', 'Достоверность', 'Аномалии, м', 'Статус', 'Заключение']];
-    for (const p of state.piles) {
-      const a = p.analysis, f = finalOf(p), m = a ? a.res.methods : null;
-      const mv = k => m && m[k].ok ? r2(m[k].L, 2) : null;
-      sum.push([p.label, p.hits[0].date ? pileTimes(p) : '', p.hits.filter(h => h.include).length, a ? CHNAME[a.ch] : '', pileV(p), pileLp(p), mv('time'), mv('gain'), mv('spectrum'),
-        f ? r2(f.L, 2) : null, f ? Math.round(f.dt) : null, f ? r2(f.elr, 1) : null,
-        f && f.manual ? 'вручную' : a ? a.res.final.conf || '' : '', a ? a.res.anomalies.map(x => anomalyText(p, x)).join('; ') : '',
-        { ok: 'норма', warn: 'проверить', bad: 'не определена', none: 'не анализировалась' }[pileStatus(p)], f || a ? (p.conclusion ?? autoConclusion(p)) : '']);
+    for (const u of exportUnits(state.piles)) {
+      if (u.kind === 'pile') { sum.push(summaryRow(u.p)); continue; }
+      // merged: the pile row (median of the hits), then every hit as its own row
+      const mf = mergedFinal(u.p, u.hp), row = summaryRow(u.p, mf, u.p.label, mf ? 'по ударам' : 'не определена');
+      row[2] = u.hp.length; row[6] = row[7] = row[8] = null;
+      row[13] = commonAnomalies(u.hp).map(x => anomalyText(u.p, x)).join('; ');
+      row[15] = u.p.conclusion ?? autoConclusion(mergedView(u.p, mf, commonAnomalies(u.hp)));
+      sum.push(row);
+      for (const v of u.hp) sum.push(summaryRow(v, finalOf(v), '   ' + v.label));
     }
     const sheets = [{ name: 'Сводная', rows: sum }];
     const p = curPile();
-    if (p) {
+    if (p && isPerHit(p)) {
+      const { rows, head } = hitSignalRows(p);
+      sheets.push({ name: 'Сигналы сваи ' + p.id, rows: [['Свая ' + p.label + ', удары без усреднения, ' + procText()], ['t, мкс', 'L, м', ...head], ...rows] });
+    } else if (p) {
       const { rows, gain } = signalRows(p);
       sheets.push({ name: 'Сигнал сваи ' + p.id, rows: [['Свая ' + p.label + ', усреднение ' + p.hits.filter(h => h.include).length + ' уд., ' + procText()],
         ['t, мкс', 'L, м', 'v, мм/с', gain != null ? `с усилением Ma=${fmt(gain, 1)}` : ''], ...rows] });
@@ -2486,12 +2652,16 @@ const PlotLib = (() => {
 
   function exportTxt() {
     const p = curPile(); if (!p) return;
-    const { rows } = signalRows(p);
     const c = v => v == null ? '' : String(v).replace('.', ',');
-    const f = finalOf(p);
+    const e = v => v == null ? '' : c(v.toExponential(6));
+    const f = finalOf(p), per = isPerHit(p);
+    const sig = per ? hitSignalRows(p) : { rows: signalRows(p).rows.map(r => r.slice(0, 3)), head: ['v, мм/с'] };
+    const hp = per ? hitPiles(p) : null, mf = hp ? mergedFinal(p, hp) : null;
     const head = [`# Объект: ${state.obj.name}`, `# Свая: ${p.label}`, `# V, м/с: ${pileV(p)}`, `# Обработка: ${procText()}`,
-      `# Ударов в усреднении: ${p.hits.filter(h => h.include).length}`, `# Итоговая длина, м: ${f ? fmt(f.L, 2) : '—'}`, 't, мкс\tL, м\tv, мм/с'];
-    const body = rows.map(r => [c(r[0]), c(r[1]), c(r[2].toExponential(6))].join('\t'));
+      per ? `# Удары без усреднения: ${sig.head.length}` : `# Ударов в усреднении: ${p.hits.filter(h => h.include).length}`,
+      per ? `# Длина по ударам, м: ${hp.map(v => { const x = finalOf(v); return x ? fmt(x.L, 2) : '—'; }).join('; ')} (медиана ${mf ? fmt(mf.L, 2) : '—'})`
+        : `# Итоговая длина, м: ${f ? fmt(f.L, 2) : '—'}`, ['t, мкс', 'L, м', ...sig.head].join('\t')];
+    const body = sig.rows.map(r => [c(r[0]), c(r[1]), ...r.slice(2).map(e)].join('\t'));
     download(new Blob(['﻿' + head.concat(body).join('\r\n')], { type: 'text/plain;charset=utf-8' }), `Свая_${safeName(p.id)}_${safeName(state.obj.name)}.txt`);
   }
 
