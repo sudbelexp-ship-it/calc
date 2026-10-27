@@ -220,20 +220,21 @@ kbd { border-radius: 6px; padding: 1px 6px; font-size: .74rem; background: var(-
 
 #report { display: none; }
 @media print {
-  @page { size: A4; margin: 12mm; }
+  @page { size: A4; margin: 10mm 12mm; }
   html, body { height: auto; overflow: visible; background: #fff; display: block; padding: 0; }
   body > *:not(#report) { display: none !important; }
-  #report { display: block; color: #000; font-size: 11pt; font-family: "Times New Roman", serif; }
+  #report { display: block; color: #000; font-size: 11pt; line-height: 1.25; font-family: "Times New Roman", serif; }
   .rpage { page-break-after: always; break-after: page; }
   .rpage:last-child { page-break-after: auto; break-after: auto; }
-  .rpage h1 { font-size: 15pt; margin: 0 0 2mm; text-align: center; }
-  .rpage .sub { text-align: center; margin-bottom: 4mm; font-size: 10pt; }
-  .rpage table { border-collapse: collapse; width: 100%; margin: 2mm 0; font-size: 10pt; }
-  .rpage td, .rpage th { border: 1px solid #555; padding: 1.2mm 2mm; text-align: left; vertical-align: top; }
+  .rpage h1 { font-size: 14pt; margin: 0 0 1mm; text-align: center; }
+  .rpage .sub { text-align: center; margin-bottom: 2mm; font-size: 10pt; }
+  .rpage table { border-collapse: collapse; width: 100%; margin: 1.5mm 0; font-size: 9.5pt; }
+  .rpage td, .rpage th { border: 1px solid #555; padding: 0.5mm 1.5mm; line-height: 1.2; text-align: left; vertical-align: top; }
   .rpage th { background: #eee; }
-  .rpage img { width: 100%; display: block; margin: 1mm 0 3mm; }
-  .rpage .cap { font-size: 9.5pt; font-weight: 600; margin-top: 2mm; }
-  .rpage .sign { margin-top: 8mm; display: flex; justify-content: space-between; font-size: 10pt; }
+  .rpage img { width: 64%; display: block; margin: 0.5mm auto 1.5mm; }
+  .rpage .cap { font-size: 9.5pt; font-weight: 600; margin-top: 1mm; }
+  .rpage .pre { font-size: 8.5pt; text-align: justify; margin: 1.5mm 0; line-height: 1.2; }
+  .rpage .sign { margin-top: 4mm; display: flex; justify-content: space-between; font-size: 10pt; }
 }
 </style>
 </head>
@@ -1844,15 +1845,14 @@ const PlotLib = (() => {
 
   function autoConclusion(p) {
     const f = finalOf(p), V = pileV(p), Lp = pileLp(p);
-    if (!f) return 'Отражение от нижнего конца сваи по результатам сейсмоакустического контроля не выделяется; длина сваи не определена. Рекомендуется повторить испытания другим ударным источником или применить иной метод контроля.';
+    if (!f) return 'Отражение от нижнего конца сваи не выделяется; длина сваи по данным сейсмоакустического контроля не определена (ГОСТ Р 72171-2025, прил. В, В.2).';
     let t = `По результатам сейсмоакустического контроля (ГОСТ Р 72171-2025) длина сваи составляет ${fmt(f.L, 2)} м при скорости продольной волны V = ${V} м/с`;
     t += '.';
     const all = p.analysis ? p.analysis.res.anomalies : [];
     const known = all.filter(a => layerOf(p, a.L)), an = all.filter(a => !layerOf(p, a.L));
     if (known.length) t += ` Отражения на глубине ${known.map(a => anomalyText(p, a)).join('; ')} соответствуют известным отметкам по длине сваи.`;
-    if (an.length) t += ` Выявлены акустические аномалии на глубине ${an.map(a => fmt(a.L, 2)).join('; ')} м, требующие дополнительного анализа.`;
+    if (an.length) t += ` Выявлены акустические аномалии на глубине ${an.map(a => fmt(a.L, 2)).join('; ')} м.`;
     else t += known.length ? ' Иных значимых акустических аномалий по стволу сваи не выявлено.' : ' Значимых акустических аномалий по стволу сваи не выявлено.';
-    if (f.elr != null && Math.abs(f.elr) > 10) t += ' Отклонение длины от проектной превышает 10 %; рекомендуется дополнительный анализ сигналов.';
     return t;
   }
 
@@ -2367,9 +2367,9 @@ const PlotLib = (() => {
       sub: REPORT_SUB,
       info: reportInfo(p, ch, one ? `${procText()}; сигнал одного удара${gainText}` : `${procText()}; усреднение ${inc.length} из ${p.hits.length} ударов${gainText}`, one ? `№ ${p.id}, ${hitNo}` : `№ ${p.id}`),
       images: [
-        { cap: `Рис. 1. Сигнал виброскорости оголовка (${one ? hitNo : 'усреднённый'}), отметки длины`, w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
-        { cap: 'Рис. 2. Сигнал виброскорости с экспоненциальным усилением', w: 820, h: 260, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title }), 820, 260) },
-        { cap: 'Рис. 3. Амплитудный спектр сигнала виброускорения', w: 820, h: 190, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектр сигнала', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 190) },
+        { cap: `Рис. 1. Сигнал виброскорости оголовка (${one ? hitNo : 'усреднённый'}), отметки длины`, w: 820, h: 210, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 210) },
+        { cap: 'Рис. 2. Сигнал виброскорости с экспоненциальным усилением', w: 820, h: 210, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title }), 820, 210) },
+        { cap: 'Рис. 3. Амплитудный спектр сигнала виброускорения', w: 820, h: 150, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектр сигнала', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 150) },
       ],
       table: showMethods ? { head: ['Метод определения длины', 'L, м', 'Параметр', 'Достоверность'], widths: [3900, 1100, 2738, 1900],
         rows: ['time', 'gain', 'spectrum'].map(k => {
@@ -2383,10 +2383,45 @@ const PlotLib = (() => {
         ['Акустические аномалии', a && a.res.anomalies.length ? a.res.anomalies.map(x => anomalyText(p, x)).join('; ') : 'не выявлены'],
         ['Заключение', p.conclusion ?? autoConclusion(p)],
       ],
+      pre: REPORT_PRE,
+      analysis: analysisText(p),
     };
   }
 
   const REPORT_SUB = 'ГОСТ Р 72171-2025 «Сваи. Сейсмоакустические методы контроля сплошности бетона и длины свай»';
+  const REPORT_PRE = 'Контроль выполнен стандартным сейсмоакустическим методом по ГОСТ Р 72171-2025 (возбуждение и регистрация упругих волн вблизи оголовка сваи). '
+    + 'Длина сваи и глубины акустических аномалий вычисляются по времени прихода отражённых волн при принятой скорости стержневой волны V (п. 8.5, прил. А) и пропорциональны принятому значению V; '
+    + 'пределы допускаемой относительной погрешности измерения интервалов времени прибором «Спектр-4.3» составляют ±5 % в диапазоне 500…5000 мкс и ±1 % в диапазоне св. 5000 до 40 000 мкс. '
+    + 'Разрешающая способность метода и достоверность интерпретации зависят от соотношения сигнал/помеха (примечание к п. 8.4); при повышенной акустической жёсткости грунтов и (или) большом отношении длины сваи к диаметру выделение отражения от нижнего конца возможно не всегда (прил. В, В.2). '
+    + 'Сейсмоакустические методы не позволяют определить сплошность сваи ниже первой значительной акустической аномалии, обнаружить нарушения сплошности у нижнего конца сваи (на участке около 10 % длины), '
+    + 'а также определить геометрические размеры и физические свойства нарушений сплошности (прил. В, В.3); глубины выделенных аномалий подлежат сопоставлению с границами инженерно-геологических элементов (прил. Б, Б.1).';
+  const MANALYSIS = { time: 'во временной области', gain: 'по усиленному сигналу', spectrum: 'в частотной области' };
+  const ELR_TEXT = 'Согласно ГОСТ Р 72171-2025 (Б.3) для свай с ELR вне диапазона ±10 % выполнен анализ сигналов во временной и частотной областях (рис. 1–3).';
+  const noToeText = n => `Отражение от нижнего конца сваи не выделено ни во временной, ни в частотной области, в том числе на сигнале с экспоненциальным усилением${n > 1 ? ` и по сигналам ${n} ударов` : ''}.`;
+
+  // closing analysis of the protocol: what the length rests on, stated as work done
+  function analysisText(p) {
+    const f = finalOf(p), a = p.analysis, n = p.hits.filter(h => h.include).length;
+    if (!a) return '';
+    if (!f) return noToeText(n);
+    let t = `Отражение от нижнего конца сваи выделено при Δt = ${Math.round(f.dt)} мкс.`;
+    if (!manualDisagrees(p)) {
+      const agree = ['time', 'gain', 'spectrum'].filter(k => { const m = a.res.methods[k]; return m.ok && Math.abs(m.L - f.L) / f.L <= 0.08; });
+      const names = agree.map(k => MANALYSIS[k] + (k === 'spectrum' ? ` (Δf = ${fmt(a.res.methods.spectrum.dfHz, 0)} Гц)` : ''));
+      const dev = Math.max(...agree.map(k => Math.abs(a.res.methods[k].L - f.L) / f.L * 100));
+      if (agree.length > 1) t += ` Длина подтверждена ${agree.length} методами из 3: ${names.join(', ')}; расхождение не более ${fmt(Math.max(dev, 1), 0)} %.`;
+      else if (agree.length) t += ` Длина определена ${names[0]}.`;
+    }
+    if (!p.parent && n > 1 && a.res.spread != null) t += ` Усреднены сигналы ${n} ударов; разброс длины по ударам ${fmt(a.res.spread, 2)} м.`;
+    if (f.elr != null && Math.abs(f.elr) > 10) t += ' ' + ELR_TEXT;
+    return t;
+  }
+  function analysisTextMerged(mf, hp) {
+    if (!mf) return noToeText(hp.length);
+    let t = `Каждый из ${hp.length} ударов обработан отдельно; длина принята как медиана по ${mf.n} ударам, разброс ${fmt(mf.spread, 2)} м (таблица по ударам).`;
+    if (mf.elr != null && Math.abs(mf.elr) > 10) t += ' ' + ELR_TEXT;
+    return t;
+  }
   function reportInfo(p, ch, processing, pileText) {
     const equip = `Прибор диагностики свай «Спектр-4.3»; ${SENSOR[ch]}` + (state.obj.ch === 'main+hammer' ? '; молоток с датчиком силы МДС-1.1' : '');
     return [
@@ -2426,9 +2461,9 @@ const PlotLib = (() => {
       sub: REPORT_SUB,
       info: reportInfo(p, ch, `${procText()}; ${hp.length} ударов, каждый обработан отдельно, без усреднения`, `№ ${p.id}`),
       images: [
-        { cap: 'Рис. 1. Сигналы виброскорости оголовка по ударам (без усреднения)', w: 820, h: 260, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 260) },
-        { cap: 'Рис. 2. Сигналы виброскорости с экспоненциальным усилением', w: 820, h: 260, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title + ' · усиление' }), 820, 260) },
-        { cap: 'Рис. 3. Амплитудные спектры сигналов виброускорения по ударам', w: 820, h: 190, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектры сигналов', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 190) },
+        { cap: 'Рис. 1. Сигналы виброскорости оголовка по ударам (без усреднения)', w: 820, h: 210, url: PlotLib.image(Object.assign({}, sig.plot, { title: sig.title }), 820, 210) },
+        { cap: 'Рис. 2. Сигналы виброскорости с экспоненциальным усилением', w: 820, h: 210, url: PlotLib.image(Object.assign({}, gsig.plot, { title: gsig.title + ' · усиление' }), 820, 210) },
+        { cap: 'Рис. 3. Амплитудные спектры сигналов виброускорения по ударам', w: 820, h: 150, url: PlotLib.image(Object.assign({}, spec, { title: 'Спектры сигналов', xRange: [0, Math.min(3000, spec.xRange[1])] }), 820, 150) },
       ],
       table: { head: ['Удар', 'М1, м', 'М2, м', 'М3, м', 'Итог, м'], widths: [2638, 1750, 1750, 1750, 1750],
         rows: hp.map(v => { const f = finalOf(v); return [`${v.hitLabel}${v.hits[0].time ? ' · ' + v.hits[0].time : ''}`, mv(v, 'time'), mv(v, 'gain'), mv(v, 'spectrum'), f ? fmt(f.L, 2) : '—']; }) },
@@ -2439,6 +2474,8 @@ const PlotLib = (() => {
         ['Акустические аномалии', anoms.length ? anoms.map(x => anomalyText(p, x)).join('; ') + ' (на большинстве ударов)' : 'не выявлены'],
         ['Заключение', p.conclusion ?? autoConclusion(view)],
       ],
+      pre: REPORT_PRE,
+      analysis: analysisTextMerged(mf, hp),
     };
   }
   const unitReport = u => u.kind === 'merge' ? reportDataMerged(u.p, u.hp) : reportData(u.p);
@@ -2452,12 +2489,14 @@ const PlotLib = (() => {
         <h1>${esc(r.title)}</h1>
         <div class="sub">${esc(r.sub)}</div>
         <table>${tr(r.info)}</table>
+        <p class="pre">${esc(r.pre)}</p>
         ${r.images.map(im => `<div class="cap">${esc(im.cap)}</div><img src="${im.url}">`).join('')}
         ${r.table ? `<table><tr>${r.table.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr>${r.table.rows.map(m => `<tr>${m.map(c => `<td>${esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : ''}
         <table>
           <tr><th style="width:32%">Длина сваи</th><td><b>${esc(r.length)}</b>${esc(r.lengthNote)}</td></tr>
           ${r.result.map(([k, v]) => `<tr><th>${esc(k)}</th><td>${esc(v)}</td></tr>`).join('')}
         </table>
+        ${r.analysis ? `<p class="pre"><b>Анализ результатов.</b> ${esc(r.analysis)}</p>` : ''}
         <div class="sign"><span>Исполнитель: ____________________</span><span>Дата: ______________</span></div>
       </section>`;
     });
@@ -2508,7 +2547,7 @@ const PlotLib = (() => {
     const x = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const head = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
     const run = (t, o = {}) => `<w:r><w:rPr>${o.b ? '<w:b/>' : ''}${o.sz ? `<w:sz w:val="${o.sz}"/><w:szCs w:val="${o.sz}"/>` : ''}</w:rPr><w:t xml:space="preserve">${x(t)}</w:t></w:r>`;
-    const para = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}${o.pageBreak ? '<w:pageBreakBefore/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.center ? '<w:jc w:val="center"/>' : ''}</w:pPr>${runs}</w:p>`;
+    const para = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}${o.pageBreak ? '<w:pageBreakBefore/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 80}"/>${o.center ? '<w:jc w:val="center"/>' : o.justify ? '<w:jc w:val="both"/>' : ''}</w:pPr>${runs}</w:p>`;
     const cell = (content, w, shade) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${shade ? '<w:shd w:val="clear" w:color="auto" w:fill="EEEEEE"/>' : ''}</w:tcPr>${content}</w:tc>`;
     const cellP = (t, o) => para(run(t, Object.assign({ sz: 20 }, o)), { after: 0 });
     const B = 'w:val="single" w:sz="4" w:space="0" w:color="555555"';
@@ -2521,8 +2560,8 @@ const PlotLib = (() => {
       const b64 = im.url.split(',')[1], bin = atob(b64), u8 = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
       media.push({ name: `word/media/image${n}.png`, data: u8, rid });
-      // 15 cm wide so that a pile's protocol fits one A4 page
-      const cx = 5400000, cy = Math.round(cx * im.h / im.w), id = docId++;
+      // 13,5 cm wide so that a pile's protocol fits one A4 page
+      const cx = 4860000, cy = Math.round(cx * im.h / im.w), id = docId++;
       return `<w:p><w:pPr><w:spacing w:after="40"/><w:jc w:val="center"/></w:pPr><w:r><w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/><wp:docPr id="${id}" name="Рисунок ${id}"/>`
         + `<a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture">`
         + `<pic:nvPicPr><pic:cNvPr id="${id}" name="image${n}.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rid}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>`
@@ -2535,6 +2574,7 @@ const PlotLib = (() => {
       let s = para(run(r.title, { b: true, sz: 30 }), { center: true, after: 40, pageBreak: i > 0 });
       s += para(run(r.sub, { sz: 20 }), { center: true, after: 160 });
       s += kv(r.info);
+      s += para(run(r.pre, { sz: 17 }), { before: 40, after: 20, justify: true });
       for (const im of r.images) s += para(run(im.cap, { b: true, sz: 20 }), { before: 80, after: 20, keep: true }) + image(im);
       if (r.table) {
         const w = r.table.widths;
@@ -2548,11 +2588,12 @@ const PlotLib = (() => {
         `<w:tr>${cell(cellP('Длина сваи', { b: true }), 3100, true)}${cell(para(run(r.length, { b: true, sz: 20 }) + run(r.lengthNote, { sz: 20 }), { after: 0 }), 6538)}</w:tr>`,
         ...r.result.map(([k, v]) => `<w:tr>${cell(cellP(k, { b: true }), 3100, true)}${cell(cellP(v), 6538)}</w:tr>`),
       ], [3100, 6538]);
-      s += para(run('Исполнитель: ____________________          Дата: ______________'), { before: 200, after: 0 });
+      if (r.analysis) s += para(run('Анализ результатов. ', { b: true, sz: 17 }) + run(r.analysis, { sz: 17 }), { before: 80, after: 0, justify: true });
+      s += para(run('Исполнитель: ____________________          Дата: ______________'), { before: 120, after: 0 });
       return s;
     }).join('');
     const doc = head + '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">'
-      + `<w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1000" w:right="850" w:bottom="850" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+      + `<w:body>${body}<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="680" w:right="850" w:bottom="560" w:left="1418" w:header="709" w:footer="709" w:gutter="0"/></w:sectPr></w:body></w:document>`;
     const styles = head + '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman" w:eastAsia="Times New Roman"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="ru-RU"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="80"/></w:pPr></w:pPrDefault></w:docDefaults></w:styles>';
     const files = [
       { name: '[Content_Types].xml', data: head + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Default Extension="png" ContentType="image/png"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>' },
