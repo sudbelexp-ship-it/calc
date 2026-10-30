@@ -7,6 +7,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<script src="theme.js"></script>
 <style>
 /* Единый стиль сайта БИЛДИНФОТЕХ: Golos Text + JetBrains Mono, белые карточки без рамок, индиго-акцент, индиго «hero» для итога */
 :root {
@@ -20,13 +21,7 @@
   --f-num: "JetBrains Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
   font: 13.5px/1.42 var(--f-ui);
 }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
-  --bg: #121319; --surface: #1b1c25; --sunk: #23242f; --ink: #e8e8f2; --muted: #a0a0b8; --faint: #71718a;
-  --line: #2b2c39; --line-strong: #3a3b4b;
-  --accent: #7d74f2; --accent-ink: #ffffff; --accent-text: #b7b2ff; --accent-soft: #262448;
-  --hero: #4a40c9; --hero-ink: #ffffff;
-  --ok: #5fd39a; --ok-soft: #15301f; --warn: #f0b35a; --warn-soft: #2f2615; --bad: #ff8a99; --bad-soft: #3a1820; --paper: #1b1c25;
-  color-scheme: dark; } }
+
 :root[data-theme="dark"] {
   --bg: #121319; --surface: #1b1c25; --sunk: #23242f; --ink: #e8e8f2; --muted: #a0a0b8; --faint: #71718a;
   --line: #2b2c39; --line-strong: #3a3b4b;
@@ -568,6 +563,12 @@ const DSP = (() => {
     }
     let i0 = w1;
     for (let i = w1; i < w2; i++) if (pol * v[i] > pol * v[i0]) i0 = i;
+    // после фильтров пик сдвигается и может выйти за окно поиска — тогда максимум «упирался» в его край:
+    // доводим момент удара до настоящей вершины первой полуволны (не дальше 2 мс)
+    const lim = Math.min(n - 2, i0 + Math.round(0.002 * fs));
+    while (i0 < lim && pol * v[i0 + 1] > pol * v[i0]) i0++;
+    const lim2 = Math.max(1, i0 - Math.round(0.0005 * fs));
+    while (i0 > lim2 && pol * v[i0 - 1] > pol * v[i0]) i0--;
     return { i0, pol };
   }
 
@@ -1057,6 +1058,17 @@ const PlotLib = (() => {
       ctx.strokeStyle = T.hover; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(Math.round(X(hover)) + 0.5, R.t); ctx.lineTo(Math.round(X(hover)) + 0.5, R.b); ctx.stroke();
     }
+    // линии-«двойники» от курсора другого графика (синхронизация удара и спектра)
+    (d.ghost || []).forEach(g => {
+      if (g.x < x1 || g.x > x2) return;
+      const px = Math.round(X(g.x)) + 0.5;
+      ctx.strokeStyle = g.main ? '#e8590c' : 'rgba(232,89,12,.45)'; ctx.lineWidth = g.main ? 1.4 : 1; ctx.setLineDash(g.main ? [4, 3] : [2, 4]);
+      ctx.beginPath(); ctx.moveTo(px, R.t); ctx.lineTo(px, R.b); ctx.stroke(); ctx.setLineDash([]);
+      if (g.label) {
+        ctx.font = FONT; const w = ctx.measureText(g.label).width + 8; let lx = px + 4; if (lx + w > R.r) lx = px - 4 - w;
+        ctx.fillStyle = T.labelBg; ctx.fillRect(lx, R.b - 19, w, 15); ctx.fillStyle = '#e8590c'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillText(g.label, lx + 4, R.b - 11);
+      }
+    });
     ctx.restore();
     ctx.restore();
     return { R, X, Y, yr, inv: px => x1 + (px - R.l) / (R.r - R.l) * (x2 - x1), invY: py => yr[0] + (R.b - py) / (R.b - R.t) * (yr[1] - yr[0]) };
@@ -1097,10 +1109,11 @@ const PlotLib = (() => {
       this.draw();
     }
     xr() { return this.view || this.full; }
+    setGhost(g) { this.ghost = g || []; if (this.geo) this.draw(); }
     draw() {
       const ctx = this.cv.getContext('2d');
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-      this.geo = draw(ctx, this.w, this.h, this.d, this.xr(), this.hover);
+      this.geo = draw(ctx, this.w, this.h, Object.assign({}, this.d, { ghost: this.ghost || [] }), this.xr(), this.hover);
     }
     pos(e) { const r = this.cv.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
     inside(p) { const R = this.geo && this.geo.R; return R && p.x >= R.l && p.x <= R.r && p.y >= R.t && p.y <= R.b; }
@@ -1192,7 +1205,7 @@ const PlotLib = (() => {
     view: Object.assign({ scale: 'depth', spectrum: true, extended: true }, store.get('view', {})),
     hits: [], piles: [], cur: -1, tab: 'signal', hlHit: null, anVer: 0,
     // measurement points {id, us}; measSel — ids of the pair the length is measured between (id 0 = strike)
-    meas: [], measSel: [null, null], measAuto: true, specMeas: [],
+    meas: [], measSel: [null, null], measAuto: true, specMeas: [], measMem: {}, measKey: null,
   };
 
   // amplification became on by default in settings version 2
@@ -1626,6 +1639,10 @@ const PlotLib = (() => {
     } else if (f) markers.push({ x: conv(f.L), color: C.final, width: 2.2, bold: true,
       fill: C.final, textColor: '#fff', label: `Итог${f.manual && !opt.report ? ' (вручную)' : ''} ${fmt(f.L, 2)} м` });
     if (Lp && !opt.report) markers.push({ x: conv(Lp), color: '#9ca3af', dash: [1, 3], width: 1, label: `проект ${fmt(Lp, 1)}` });
+    if (opt.interactive && state.specMeas.length === 2) {
+      const dF = Math.abs(state.specMeas[1] - state.specMeas[0]);
+      if (dF > 0) markers.push({ x: conv(V / (2 * dF)), color: C.meas, dash: [3, 3], width: 1.2, label: `Δf спектра → ${fmt(V / (2 * dF), 2)} м` });
+    }
 
     const points = [];
     if (opt.interactive) {
@@ -1687,6 +1704,10 @@ const PlotLib = (() => {
       const kk = Math.round(f / df);
       points.push({ x: f, y: mx ? (mag[Math.min(kk, mag.length - 1)] / mx) : 0, color: C.meas, label: `f${k + 1} = ${Math.round(f)} Гц` });
     });
+    if (opt.interactive) {
+      const pr = measPair();
+      if (pr) { const dL = Math.abs(pr[1].us - pr[0].us) * 1e-6 * V / 2; if (dL > 0.1) markers.push({ x: V / (2 * dL), color: C.meas, dash: [3, 3], width: 1.2, label: `по точкам: Δf = ${Math.round(V / (2 * dL))} Гц` }); }
+    }
     if (state.specMeas.length === 2 && opt.interactive) {
       const dF = Math.abs(state.specMeas[1] - state.specMeas[0]);
       if (dF > 0) markers.push({ x: Math.max(...state.specMeas), color: C.meas, width: 0.1, label: `Δf = ${Math.round(dF)} Гц → L = ${fmt(V / (2 * dF), 2)} м` });
@@ -1700,9 +1721,14 @@ const PlotLib = (() => {
   const sigPlot = new PlotLib.Plot($('cvSignal'), {
     onHover: x => {
       const p = curPile();
-      if (x == null || !p || !sigCtx) { $('cursorInfo').textContent = ''; return; }
+      if (x == null || !p || !sigCtx) { $('cursorInfo').textContent = ''; specPlot.setGhost([]); return; }
       const V = sigCtx.V, us = state.view.scale === 'depth' ? 2 * x / V * 1e6 : x;
-      $('cursorInfo').textContent = `${fmt(us * 1e-6 * V / 2, 2)} м · ${Math.round(us)} мкс`;
+      const L = us * 1e-6 * V / 2;
+      $('cursorInfo').textContent = `${fmt(L, 2)} м · ${Math.round(us)} мкс`;
+      // тот же отсчёт на спектре: длине L соответствует шаг гармоник Δf = V/2L
+      const g = [];
+      if (L > 0.3 && state.view.spectrum) { const f1 = V / (2 * L), top = specPlot.full[1]; for (let k = 1; k * f1 <= top && k <= 30; k++) g.push({ x: k * f1, main: k === 1, label: k === 1 ? `Δf = ${Math.round(f1)} Гц` : '' }); }
+      specPlot.setGhost(g);
     },
     onClick: x => {
       const p = curPile();
@@ -1723,6 +1749,10 @@ const PlotLib = (() => {
     onHover: f => {
       const p = curPile();
       $('cursorInfo').textContent = f == null || !p ? '' : `${Math.round(f)} Гц · V/2f = ${fmt(pileV(p) / (2 * f), 2)} м`;
+      if (f == null || !p || !sigCtx || f < 20) { sigPlot.setGhost([]); return; }
+      // длина, которой соответствует эта частота как шаг гармоник, — на графике удара
+      const L = sigCtx.V / (2 * f), xs = state.view.scale === 'depth' ? L : 2 * L / sigCtx.V * 1e6;
+      sigPlot.setGhost([{ x: xs, main: true, label: `V/2f = ${fmt(L, 2)} м` }]);
     },
     onClick: f => {
       if (state.specMeas.length >= 2) state.specMeas = [];
@@ -1813,6 +1843,7 @@ const PlotLib = (() => {
   }
 
   function renderSignal(keepView) {
+    syncMeasView();
     syncClearBtn();
     const p = curPile();
     if (!p) { sigCtx = null; sigPlot.set({ series: [], xRange: [0, 1], title: 'Сигнал' }); return; }
@@ -1825,6 +1856,15 @@ const PlotLib = (() => {
     $('stComment').textContent = (h.comment ? 'Комментарий: ' + h.comment + ' · ' : '') + `${h.fs} Гц · ${h.ch[0].length} отсч.`;
   }
 
+  // точки принадлежат конкретному удару (или усреднению) и не переносятся на другие
+  function syncMeasView() {
+    const p = curPile(), key = p ? state.cur + '|' + p.view : null;
+    if (key === state.measKey) return;
+    if (state.measKey != null) state.measMem[state.measKey] = { meas: state.meas, measSel: state.measSel, measAuto: state.measAuto, specMeas: state.specMeas };
+    const m = key != null ? state.measMem[key] : null;
+    state.meas = m ? m.meas : []; state.measSel = m ? m.measSel : [null, null]; state.measAuto = m ? m.measAuto : true; state.specMeas = m ? m.specMeas : [];
+    state.measKey = key;
+  }
   function clearMeas() {
     state.meas = []; state.measSel = [null, null]; state.measAuto = true; state.specMeas = [];
     renderSignal(true); renderSpectrum(true); renderResult();
@@ -1833,6 +1873,7 @@ const PlotLib = (() => {
   const syncClearBtn = () => { $('btnClearMeas').disabled = !state.meas.length && !state.specMeas.length; };
 
   function renderSpectrum(keepView) {
+    syncMeasView();
     syncClearBtn();
     $('boxSpectrum').hidden = !state.view.spectrum;
     const p = curPile();
@@ -1895,6 +1936,7 @@ const PlotLib = (() => {
   }
 
   function renderResult() {
+    syncMeasView();
     // per-hit mode: the panel shows and edits the selected hit; V, L and layers stay the pile's
     const p = viewTarget(curPile()), body = $('resultBody');
     $('resPile').textContent = p ? `· свая ${p.label}` : '';
@@ -2709,9 +2751,8 @@ const PlotLib = (() => {
   window.addEventListener('resize', () => { if (state.tab === 'table') drawHist(); });
 
   // ---------------- day / night ----------------
-  // an explicit choice is remembered; without it the system setting is followed
-  const darkQuery = window.matchMedia ? window.matchMedia('(prefers-color-scheme: dark)') : null;
-  const themeNow = () => store.get('theme', null) || (darkQuery && darkQuery.matches ? 'dark' : 'light');
+  // тема общая для всего сайта (theme.js), по умолчанию светлая
+  const themeNow = () => (window.BitTheme ? BitTheme.get() : 'light');
   function applyTheme(redraw) {
     const t = themeNow();
     document.documentElement.dataset.theme = t;
@@ -2719,8 +2760,8 @@ const PlotLib = (() => {
     $('btnTheme').title = t === 'dark' ? 'Дневной режим' : 'Ночной режим';
     if (redraw) { renderSignal(true); renderSpectrum(true); if (state.tab === 'table') drawHist(); }
   }
-  $('btnTheme').addEventListener('click', () => { store.set('theme', themeNow() === 'dark' ? 'light' : 'dark'); applyTheme(true); });
-  if (darkQuery && darkQuery.addEventListener) darkQuery.addEventListener('change', () => { if (!store.get('theme', null)) applyTheme(true); });
+  $('btnTheme').addEventListener('click', () => { BitTheme.toggle(); applyTheme(true); });
+  window.addEventListener('bit-theme', () => { if (themeNow() !== document.documentElement.dataset.theme) applyTheme(true); });
   applyTheme(false);
 
   syncControls();
