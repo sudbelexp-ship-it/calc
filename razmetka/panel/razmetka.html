@@ -116,10 +116,16 @@ footer a{color:var(--accent)}
       <h3>Документы</h3>
       <div id="docs"></div>
       <button class="btn sm" id="btnAdd" type="button" style="margin-top:10px;width:100%">+ Добавить документ</button>
+      <button class="btn sec sm" id="resumeLibrary" type="button" style="margin-top:8px;width:100%">Продолжить последнюю очередь</button>
+      <p class="muted" style="font-size:12px">Готовые страницы пропускаются. После остановки или перезапуска нажмите «Продолжить».</p>
     </div>
   </aside>
 
   <main style="min-width:0;display:flex;flex-direction:column;gap:12px">
+    <section class="card" id="jobBox" hidden>
+      <div class="bar"><i id="jobBar"></i></div>
+      <div class="row"><span id="jobMsg" style="font-size:13px;color:var(--muted)"></span><button class="btn sec sm" id="rStop" type="button" hidden>Остановить</button></div>
+    </section>
     <section class="card" id="addBox" hidden>
       <h3 style="margin:0 0 8px;font-size:16px">Новый документ</h3>
       <div class="drop" id="drop">Перетащите PDF сюда или нажмите, чтобы выбрать файл (копия попадёт в папку программы)</div>
@@ -127,18 +133,26 @@ footer a{color:var(--accent)}
       <p style="margin:10px 0 6px;font-size:13.5px;color:var(--muted)">Или выберите файл на диске (без копирования):</p>
       <div class="row" style="margin-bottom:6px"><input type="text" id="bpath" size="52" placeholder="Путь к PDF или папке"><button class="btn sec sm" id="bgo" type="button">Показать</button></div>
       <div class="fl" id="blist" hidden></div>
+      <div class="row" style="margin-top:8px"><button class="btn sec sm" id="pickSourceFolder" type="button">Выбрать открытую папку с PDF</button><button class="btn sec sm" id="pickOutputFolder" type="button">Сохранять в открытую папку</button></div>
+      <label style="display:block;margin-top:10px">Папка с документами <input id="sourceFolder" type="text" style="width:100%" placeholder="Выберите папку выше или вставьте путь"></label>
+      <label style="display:block;margin-top:8px">Место сохранения <input id="outputPath" type="text" style="width:100%" placeholder="По умолчанию: подпапка «Распознанные документы» рядом с PDF"></label>
+      <label><input type="checkbox" id="recursiveFolder">Включать вложенные папки</label>
+      <div class="row" style="margin-top:8px"><button class="btn sm" id="folderGo" type="button">Добавить папку и продолжить обработку</button><label>Режим очереди <select id="queueMode"><option value="auto">Авто</option><option value="ocr">OCR</option><option value="precise">Точный</option></select></label></div>
+      <p id="folderStatus" class="muted" style="font-size:13px"></p>
       <div class="row" style="margin-top:8px"><input type="text" id="newName" size="28" placeholder="Обозначение папки латиницей, напр. GOST_8509-93"><button class="btn sm" id="newGo" type="button" disabled>Создать</button><span id="newSel" style="font-size:13px;color:var(--muted)"></span></div>
     </section>
 
     <section class="card" id="docView" hidden>
       <div class="tools">
         <b id="dname" style="font-size:17px"></b><span class="chip" id="dstat"></span>
+        <button class="btn sec sm" id="resumeDoc" type="button">Продолжить документ</button>
+        <button class="btn sec sm" id="removeDoc" type="button" title="Убирает из списка; исходный PDF и результаты остаются на диске">Удалить из списка</button>
+        <span id="outputLocation" class="muted" style="font-size:12px;overflow-wrap:anywhere"></span>
         <span style="flex:1"></span>
         <label>Режим <select id="mode"><option value="auto">Авто (слой PDF или OCR)</option><option value="ocr">Только OCR (скан)</option><option value="precise">OCR точный (медленнее)</option></select></label>
         <button class="btn sm" id="rPage" type="button">Распознать страницу</button>
         <button class="btn sec sm" id="rRange" type="button">Диапазон…</button>
         <button class="btn sec sm" id="rAll" type="button">Весь документ</button>
-        <button class="btn sec sm" id="rStop" type="button" hidden>Остановить</button>
       </div>
       <details class="meta" style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13.5px;color:var(--muted)">Шапка документа (обозначение, название, редакция)</summary>
         <div class="row" style="margin-top:8px">
@@ -149,7 +163,6 @@ footer a{color:var(--accent)}
           <button class="btn sec sm" id="h_save" type="button">Сохранить шапку</button>
         </div>
       </details>
-      <div id="jobBox" hidden><div class="bar"><i id="jobBar"></i></div><div style="font-size:13px;color:var(--muted)" id="jobMsg"></div></div>
       <div class="pages" id="pages"></div>
 
       <div class="tools">
@@ -234,7 +247,8 @@ async function connect(){
     const j = await r.json();
     if (!j.ok) throw new Error('нет ответа');
     if (!j.auth) { setConn(false, 'неверный ключ'); showSetup('Программа найдена, но ключ не подошёл. Скопируйте ключ из окна программы.'); return false; }
-    setConn(true, 'подключено'); $('setup').hidden = true; $('app').hidden = false; await loadDocs(); return true;
+    setConn(true, 'подключено'); $('setup').hidden = true; $('app').hidden = false; await loadDocs();
+    const saved=await api('GET','library');$('sourceFolder').value=saved.last_source || '';$('outputPath').value=saved.last_output_setting || '';if(saved.last_mode)$('queueMode').value=saved.last_mode;if(saved.warning){$('addBox').hidden=false;$('folderStatus').textContent=saved.warning;}return true;
   } catch(e) { setConn(false, 'нет связи'); showSetup('Не удалось связаться с программой на адресе ' + BASE + '. Запущен ли start.bat?'); return false; }
 }
 function showSetup(msg){ $('setup').hidden = false; $('app').hidden = true; $('tok').value = LS.get('rz_t') || ''; $('port').value = LS.get('rz_p') || '8765'; const e = $('setupErr'); e.hidden = !msg; e.textContent = msg || ''; }
@@ -248,14 +262,17 @@ async function loadDocs(){
   if (!j.docs.length) box.innerHTML = '<p style="color:var(--muted);font-size:13px;margin:0">Документов пока нет.</p>';
   for (const d of j.docs) {
     const b = document.createElement('button'); b.type = 'button'; b.className = 'doc' + (d.name === DOC ? ' sel' : '');
-    b.innerHTML = '<b></b><small></small>'; b.firstChild.textContent = d.name;
+    b.innerHTML = '<b></b><small></small>'; b.firstChild.textContent = d.label || d.name;
+    b.title = d.output || '';
     b.lastChild.textContent = `стр.: ${d.pages} · авто: ${d.auto} · проверено: ${d.reviewed || 0}`;
     b.onclick = () => openDoc(d.name); box.appendChild(b);
   }
 }
 async function openDoc(name){
   DOC = name; PN = 1; $('addBox').hidden = true;
-  await refreshInfo(); $('docView').hidden = false; $('tools2').hidden = false; $('dname').textContent = name;
+  await refreshInfo(); $('docView').hidden = false; $('tools2').hidden = false; $('dname').textContent = INFO.label || name;
+  $('resumeDoc').hidden=!INFO.managed;
+  $('outputLocation').textContent = 'Результат: ' + (INFO.output || '');
   await loadDocs(); await showPage(PN);
 }
 async function refreshInfo(){
@@ -304,8 +321,39 @@ async function browse(p){
 $('bgo').onclick = () => { const v = $('bpath').value.trim(); if (/\.(pdf|jpe?g|png|tiff?)$/i.test(v)) pick(v); else browse(v); };
 $('newGo').onclick = async () => {
   $('newGo').disabled = true;
-  try { const job = await api('POST', 'doc', {path: pickPath, name: $('newName').value.trim()}); await waitJob(job.id, 'Нарезка страниц…'); await loadDocs(); await openDoc(job.result ? job.result.name : $('newName').value.trim()); }
+  try { const job = await api('POST', 'doc', {path: pickPath, name: $('newName').value.trim(), output:$('outputPath').value.trim()}); const completed=await waitJob(job.id, 'Добавление документа…'); if(completed.state!=='done') return; await loadDocs(); await openDoc(completed.result.name); }
   catch(e) { alert(e.message); } finally { $('newGo').disabled = false; }
+};
+
+$('pickSourceFolder').onclick=()=>{$('sourceFolder').value=$('bpath').value;};
+$('pickOutputFolder').onclick=()=>{$('outputPath').value=$('bpath').value;};
+async function resumeDocuments(ids){
+  const job=await api('POST','library/run',{ids,mode:$('queueMode').value});
+  const completed=await waitJob(job.id,'Продолжение очереди…');
+  await loadDocs();
+  if(DOC) {await refreshInfo();await showPage(PN);}
+  return completed;
+}
+$('folderGo').onclick=async()=>{
+  $('folderGo').disabled=true;
+  try {
+    const job=await api('POST','library/import',{path:$('sourceFolder').value.trim(),output:$('outputPath').value.trim(),recursive:$('recursiveFolder').checked});
+    const imported=await waitJob(job.id,'Проверка документов и готовых результатов…');
+    if(imported.state!=='done')return;
+    $('folderStatus').textContent=`Документов: ${imported.result.count}. Результаты: ${imported.result.output}`;
+    await loadDocs();await resumeDocuments(imported.result.ids);
+    $('folderStatus').textContent+=' · Обработка завершена или остановлена. Готовые страницы сохранены.';
+  } catch(e){$('folderStatus').textContent='Ошибка: '+e.message;}
+  finally{$('folderGo').disabled=false;await loadDocs();}
+};
+$('resumeLibrary').onclick=async()=>{
+  try{const saved=await api('GET','library');if(!saved.last_ids.length)throw new Error('Сначала добавьте документ или папку');await resumeDocuments(saved.last_ids);}
+  catch(e){alert(e.message);}
+};
+$('resumeDoc').onclick=async()=>{try{await resumeDocuments([DOC]);}catch(e){alert(e.message);}};
+$('removeDoc').onclick=async()=>{
+  try{await api('DELETE','doc/'+encodeURIComponent(DOC));DOC=null;INFO=null;$('docView').hidden=true;$('tools2').hidden=true;await loadDocs();}
+  catch(e){alert(e.message);}
 };
 
 // ---------- задания
@@ -317,7 +365,7 @@ async function waitJob(id, title){
         const j = await api('GET', 'job/' + id);
         $('jobMsg').textContent = (j.msg || title || '') + (j.total ? ` (${j.done}/${j.total})` : '') + ` · ${j.elapsed} с`;
         $('jobBar').style.width = (j.total ? Math.round(100 * j.done / j.total) : 8) + '%';
-        if (j.state === 'done' || j.state === 'cancelled') { JOB = null; $('rStop').hidden = true; setTimeout(() => $('jobBox').hidden = true, 1500); resolve(j); }
+        if (j.state === 'done' || j.state === 'cancelled') { JOB = null; $('rStop').hidden = true; setTimeout(() => {if(!JOB)$('jobBox').hidden = true;}, 1500); resolve(j); }
         else if (j.state === 'error') { JOB = null; $('rStop').hidden = true; reject(new Error(j.error)); }
         else setTimeout(tick, 700);
       } catch(e) { reject(e); }

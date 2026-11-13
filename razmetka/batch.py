@@ -30,6 +30,10 @@ def main(argv=None):
     for folder in folders:
         try:
             E.NORMY = folder.parent
+            meta=E.load_json(folder/'meta.json') or {}
+            if meta.get('source_sha256'):
+                import library
+                library.check_source({'source':meta['source'],'sha256':meta['source_sha256']})
             pr = E.load_json(folder / 'progress.json')
             todo = []
             for n in range(1, pr['pages'] + 1):

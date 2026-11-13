@@ -1,4 +1,7 @@
 token.txt
+library.json
+library*.json
+.test-data/
 **/token.txt
 venv/
 **/venv/

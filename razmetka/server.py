@@ -13,7 +13,7 @@ sys.path.insert(0, str(HERE))
 import engine as E
 
 PORT = int(os.environ.get('RAZMETKA_PORT', '8765'))
-VERSION = '2.1-test'
+VERSION = '2.2-test'
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024
 ALLOWED_HOSTS = {f'127.0.0.1:{PORT}', f'localhost:{PORT}'}
@@ -180,6 +180,8 @@ class H(BaseHTTPRequestHandler):
             return self.send(404, {'error': 'not found'})
         d = E.docdir(parts[0]).resolve()
         f = (d / parts[1]).resolve()
+        if not f.exists() and re.fullmatch(r'pages/p\d{3,}\.jpg',parts[1]):
+            E.ensure_page(parts[0],int(Path(parts[1]).stem[1:]))
         if d not in f.parents or not f.is_file():
             return self.send(404, {'error': 'not found'})
         ctype = mimetypes.guess_type(str(f))[0] or 'application/octet-stream'
@@ -189,6 +191,25 @@ class H(BaseHTTPRequestHandler):
 
     def api(self, method, p, q):
         seg = p.strip('/').split('/')
+        if seg == ['library'] and method == 'GET':
+            import library
+            saved=library.state()
+            return self.send(200, {k:saved.get(k,[] if k=='last_ids' else '') for k in ('last_source','last_output','last_output_setting','last_ids','last_mode','warning')})
+        if seg == ['library','import'] and method == 'POST':
+            import library
+            b=self.body_json()
+            def fn(job):
+                result=library.register(b.get('path',''),b.get('output',''),recursive=bool(b.get('recursive')))
+                for name in result['ids']:library.initialize(name,library.state()['documents'][name])
+                return result
+            return self.send(200,new_job('import','library',fn))
+        if seg == ['library','run'] and method == 'POST':
+            import library
+            b=self.body_json();ids=b.get('ids');mode=b.get('mode','auto')
+            if not isinstance(ids,list) or not ids or not all(isinstance(x,str) for x in ids) or mode not in ('auto','ocr','precise'):
+                return self.send(400,{'error':'Выберите документы и режим'})
+            def fn(job):return library.run(ids,mode,progress_cb(job),lambda:job['cancel'])
+            return self.send(200,new_job('queue','library',fn))
         if seg == ['docs'] and method == 'GET':
             return self.send(200, {'docs': E.list_docs()})
         if seg == ['browse'] and method == 'GET':
@@ -215,10 +236,11 @@ class H(BaseHTTPRequestHandler):
             name = E.safe_name(b.get('name') or Path(src).stem)
 
             def fn(job):
-                job['msg'] = 'Нарезка страниц…'
-                E.prep(src, name)
-                job['msg'] = 'Готово'
-                return {'name': name}
+                import library
+                registered=library.register(src,b.get('output',''),b.get('name',''))
+                name=registered['ids'][0]
+                library.initialize(name,library.state()['documents'][name])
+                return {'name':name,'output':registered['output']}
             return self.send(200, new_job('prep', name, fn))
         if seg[0] == 'job' and len(seg) >= 2:
             job = JOBS.get(seg[1])
@@ -230,6 +252,12 @@ class H(BaseHTTPRequestHandler):
         if seg[0] == 'doc' and len(seg) >= 2:
             name = seg[1]
             d = E.docdir(name)
+            if not seg[2:] and method == 'DELETE':
+                if any(j['state'] in ('queued','running') for j in JOBS.values()):
+                    return self.send(409,{'error':'Сначала остановите обработку и дождитесь её завершения'})
+                import library
+                library.remove(name)
+                return self.send(200,{'ok':True,'files_deleted':False})
             if not (d / 'progress.json').exists():
                 return self.send(404, {'error': 'документ не найден'})
             rest = seg[2:]
@@ -240,7 +268,15 @@ class H(BaseHTTPRequestHandler):
                 pages, mode = b.get('pages') or [], b.get('mode', 'auto')
 
                 def fn(job):
-                    return E.recognize(name, pages, mode, progress=progress_cb(job), cancel=lambda: job['cancel'])
+                    import library
+                    entry=library.state()['documents'].get(name)
+                    stamp=library.check_source(entry) if entry else None
+                    def cancelled():
+                        if entry:
+                            path=Path(entry['source'])
+                            if (path.stat().st_size,path.stat().st_mtime_ns)!=stamp:raise ValueError('PDF изменился во время обработки')
+                        return job['cancel']
+                    return E.recognize(name, pages, mode, progress=progress_cb(job), cancel=cancelled)
                 return self.send(200, new_job('recognize', name, fn))
             if rest[:1] == ['page'] and len(rest) >= 2:
                 n = int(rest[1])
@@ -256,7 +292,7 @@ class H(BaseHTTPRequestHandler):
                     reviewed = d / 'pages_md' / f'p{n:03d}.reviewed'
                     if reviewed.exists():
                         reviewed.unlink()
-                    pm.write_text(b.get('md', ''), encoding='utf-8')
+                    E.save_text(pm,b.get('md', ''))
                     flag.write_text('1', encoding='utf-8')
                     E.assemble(name)
                     return self.send(200, {'ok': True})
@@ -265,7 +301,7 @@ class H(BaseHTTPRequestHandler):
                         flag.unlink()
                     if (d / 'auto' / f'p{n:03d}.json').exists():
                         r = E.render_page(name, n)
-                        pm.write_text(r['md'], encoding='utf-8')
+                        E.save_text(pm,r['md'])
                         E.assemble(name)
                     return self.send(200, {'ok': True})
             if rest == ['crop'] and method == 'POST':
@@ -312,7 +348,7 @@ class H(BaseHTTPRequestHandler):
                     if not pagefile.exists():
                         return self.send(400, {'error': 'Сначала распознайте и сохраните страницу'})
                     text = pagefile.read_text(encoding='utf-8').replace('[?LaTeX не сверен]<!-- latex-unverified -->', '')
-                    pagefile.write_text(text, encoding='utf-8')
+                    E.save_text(pagefile,text)
                     (d / 'pages_md' / f'p{n:03d}.manual').write_text('1', encoding='utf-8')
                     (d / 'pages_md' / f'p{n:03d}.reviewed').write_text('Проверена пользователем', encoding='utf-8')
                 out, code = E.run_script('prep.py', '--done', d, *[int(x) for x in b.get('pages', [])])

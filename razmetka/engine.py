@@ -49,6 +49,10 @@ def safe_name(name):
 
 
 def docdir(name):
+    import library
+    mounted = library.locate(name)
+    if mounted is not None:
+        return mounted
     return NORMY / safe_name(name)
 
 
@@ -76,6 +80,18 @@ def save_json(p, obj):
             tmp.unlink(missing_ok=True)
 
 
+def save_text(path, text):
+    import tempfile
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    temporary=None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',dir=path.parent,suffix='.tmp',delete=False) as out:
+            temporary=Path(out.name);out.write(text);out.flush();os.fsync(out.fileno())
+        os.replace(temporary,path)
+    finally:
+        if temporary is not None:temporary.unlink(missing_ok=True)
+
+
 def run_script(script, *args, timeout=900):
     env = dict(os.environ, PYTHONIOENCODING='utf-8')
     r = subprocess.run([sys.executable, '-W', 'ignore', str(SCRIPTS / script), *map(str, args)], capture_output=True, text=True, encoding='utf-8', errors='replace', env=env, timeout=timeout)
@@ -85,14 +101,17 @@ def run_script(script, *args, timeout=900):
 # ---------------------------------------------------------------- документы
 
 def list_docs():
+    import library
     out = []
-    if not NORMY.exists():
-        return out
-    for d in sorted(NORMY.iterdir()):
+    hidden=set(library.state()['hidden'])
+    candidates=[(d.name,d,None) for d in sorted(NORMY.iterdir()) if d.is_dir() and d.name not in hidden] if NORMY.exists() else []
+    candidates += [(name,Path(entry['output']),entry) for name,entry in library.entries()]
+    for name,d,entry in candidates:
         pr = load_json(d / 'progress.json')
         if not pr:
+            if entry:out.append(dict(name=name,label=entry['label'],output=str(d),source=entry['source'],pages=0,done=0,auto=0,reviewed=0,md=False))
             continue
-        out.append({'name': d.name, 'pages': pr.get('pages', 0), 'done': len(pr.get('done', [])),
+        out.append({'name': name, 'label': entry['label'] if entry else name, 'output': str(d), 'pages': pr.get('pages', 0), 'done': len(pr.get('done', [])),
                     'reviewed': len(list((d / 'pages_md').glob('*.reviewed'))), 'md': (d / 'document.md').exists(), 'auto': len(list((d / 'auto').glob('p*.json'))) if (d / 'auto').exists() else 0})
     return out
 
@@ -120,7 +139,9 @@ def doc_info(name):
         pages.append({'n': n, 'done': n in pr.get('done', []), 'auto': bool(a), 'source': a.get('source') if a else None,
                       'tables': len(a['tables']) if a else 0, 'figures': len(a['figures']) if a else 0, 'doubts': a.get('doubts', 0) if a else 0,
                       'reviewed': (d / 'pages_md' / f'p{n:03d}.reviewed').exists(), 'manual': (d / 'pages_md' / f'p{n:03d}.manual').exists()})
-    return {'name': d.name, 'source': meta.get('source'), 'head': meta.get('head', {}), 'pages': pages, 'md': (d / 'document.md').exists()}
+    import library
+    entry=library.state()['documents'].get(name,{})
+    return {'name': name, 'label':entry.get('label',name), 'managed':bool(entry), 'output': str(d), 'source': meta.get('source'), 'head': meta.get('head', {}), 'pages': pages, 'md': (d / 'document.md').exists()}
 
 
 # ---------------------------------------------------------------- картинки страниц
@@ -437,13 +458,32 @@ def split_at_lines(words, tbls):
 
 
 @OCR.RES.worker()
+def ensure_page(name,n):
+    d=docdir(name);path=d/'pages'/f'p{n:03d}.jpg'
+    if path.exists():return path
+    meta=load_json(d/'meta.json') or {}
+    with fitz.open(meta['source']) as pdf:
+        if not 1<=n<=len(pdf):raise ValueError('Неверная страница')
+        page=pdf[n-1]
+        OCR.RES.checkpoint()
+        OCR.RES.check_pixels(page.rect.width*SCALE,page.rect.height*SCALE)
+        pix=page.get_pixmap(dpi=300,colorspace=fitz.csRGB)
+        prepared=cv2.cvtColor(np.frombuffer(pix.samples,np.uint8).reshape(pix.height,pix.width,3),cv2.COLOR_RGB2BGR)
+    save_page_image(d,n,prepared)
+    return path
+
+
+@OCR.RES.worker()
 def extract(name, n, mode='auto'):
     """mode: auto | text | ocr | precise. Результат: auto/pNNN.json."""
     OCR.RES.checkpoint()
     d = docdir(name)
     meta = load_json(d / 'meta.json') or {}
     pdf = meta.get('source') if meta.get('kind') == 'pdf' else None
-    img = imread(d / 'pages' / f'p{n:03d}.jpg')
+    image_path = d / 'pages' / f'p{n:03d}.jpg'
+    if not image_path.exists() and pdf:
+        ensure_page(name,n)
+    img = imread(image_path)
     if mode == 'precise' and pdf:
         with fitz.open(pdf) as pd:
             OCR.RES.check_pixels(pd[n-1].rect.width * 400/72, pd[n-1].rect.height * 400/72)
@@ -1063,7 +1103,7 @@ def assemble(name, overwrite=True):
     out = d / 'document.md'
     if out.exists() and MARK not in out.read_text(encoding='utf-8', errors='ignore')[:600]:
         shutil.copy(out, d / 'document.manual.bak.md')
-    out.write_text(text, encoding='utf-8')
+    save_text(out,text)
     quality.run_relcheck_cli(d, text, run_script)
     return {'doubts': sum(len(re.findall(r'\[\?[^\]]*\]', t)) for t in body), 'relations': len(issues)}
 
@@ -1091,7 +1131,7 @@ def recognize(name, pages, mode='auto', progress=None, cancel=None):
         (d / 'pages_md').mkdir(exist_ok=True)
         if not (d / 'pages_md' / f'p{n:03d}.manual').exists():
             r = render_page(name, n)
-            (d / 'pages_md' / f'p{n:03d}.md').write_text(r['md'], encoding='utf-8')
+            save_text(d / 'pages_md' / f'p{n:03d}.md',r['md'])
         pr['done'] = sorted(set(pr.get('done', [])) | {n})
         save_json(d / 'progress.json', pr)
     # колонтитулы по всем страницам документа
@@ -1106,7 +1146,7 @@ def recognize(name, pages, mode='auto', progress=None, cancel=None):
             a = load_json(d / 'auto' / f'p{n:03d}.json')
             a['doubts'] = r['doubts']
             save_json(d / 'auto' / f'p{n:03d}.json', a)
-            (d / 'pages_md' / f'p{n:03d}.md').write_text(r['md'], encoding='utf-8')
+            save_text(d / 'pages_md' / f'p{n:03d}.md',r['md'])
     res = assemble(name)
     if progress:
         progress(len(pages), len(pages), 'Готово')
