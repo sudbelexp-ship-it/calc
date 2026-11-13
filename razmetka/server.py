@@ -218,15 +218,9 @@ class H(BaseHTTPRequestHandler):
             name = re.sub(r'[\\/:*?"<>|]+', '_', (q.get('name') or ['file.pdf'])[0])
             INBOX.mkdir(exist_ok=True)
             n = int(self.headers.get('Content-Length') or 0)
-            f = INBOX / name
-            with open(f, 'wb') as out:
-                left = n
-                while left > 0:
-                    chunk = self.rfile.read(min(1 << 20, left))
-                    if not chunk:
-                        break
-                    out.write(chunk)
-                    left -= len(chunk)
+            import library
+            try:f=library.receive_upload(self.rfile,n,name,INBOX)
+            except ValueError as exc:return self.send(400,{'error':str(exc)})
             return self.send(200, {'path': str(f)})
         if seg == ['doc'] and method == 'POST':
             b = self.body_json()

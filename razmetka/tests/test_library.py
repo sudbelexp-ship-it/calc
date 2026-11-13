@@ -5,6 +5,7 @@ import tempfile
 import unittest
 import subprocess
 import os
+import io
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import engine as E
@@ -12,6 +13,19 @@ import library as L
 
 
 class Library(unittest.TestCase):
+    def test_uploads_preserve_same_named_versions_and_identical_copies(self):
+        first=b'%PDF first version';second=b'%PDF second version'
+        a=L.receive_upload(io.BytesIO(first),len(first),'same.pdf',self.root/'inbox')
+        stamp=a.stat().st_mtime_ns
+        b=L.receive_upload(io.BytesIO(second),len(second),'same.pdf',self.root/'inbox')
+        again=L.receive_upload(io.BytesIO(first),len(first),'same.pdf',self.root/'inbox')
+        self.assertNotEqual(a,b);self.assertEqual(a,again)
+        self.assertEqual(a.stat().st_mtime_ns,stamp)
+        self.assertEqual(a.read_bytes(),first);self.assertEqual(b.read_bytes(),second)
+        with self.assertRaisesRegex(ValueError,'оборвалась'):
+            L.receive_upload(io.BytesIO(b'partial'),100,'broken.pdf',self.root/'inbox')
+        self.assertEqual(list((self.root/'inbox').glob('*.tmp')),[])
+
     def test_empty_source_does_not_import_current_working_directory(self):
         with self.assertRaisesRegex(ValueError,'Выберите'):L.register('')
 

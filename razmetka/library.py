@@ -56,6 +56,31 @@ def check_source(entry):
     return before
 
 
+def receive_upload(stream,length,name,inbox):
+    """Preserve uploaded versions and reuse identical copies without touching them."""
+    import tempfile
+    inbox=Path(inbox).resolve();inbox.mkdir(parents=True,exist_ok=True)
+    name=re.sub(r'[\\/:*?"<>|]+','_',name).strip(' .') or 'file.pdf'
+    temporary=None;digest=hashlib.sha256()
+    try:
+        with tempfile.NamedTemporaryFile(dir=inbox,suffix='.tmp',delete=False) as out:
+            temporary=Path(out.name);remaining=length
+            if remaining<=0:raise ValueError('Пустой файл')
+            while remaining:
+                chunk=stream.read(min(1024*1024,remaining))
+                if not chunk:raise ValueError('Загрузка оборвалась; повторите отправку файла')
+                out.write(chunk);digest.update(chunk);remaining-=len(chunk)
+            out.flush();os.fsync(out.fileno())
+        target=inbox/digest.hexdigest()/name
+        if not target.resolve().is_relative_to(inbox):raise ValueError('Неверное имя файла')
+        target.parent.mkdir(exist_ok=True)
+        if not target.exists() or target.stat().st_size!=length or fingerprint(target)!=digest.hexdigest():
+            os.replace(temporary,target)
+        return target
+    finally:
+        if temporary is not None:temporary.unlink(missing_ok=True)
+
+
 def valid_page(data,number):
     import math
     def box(values):return isinstance(values,(list,tuple)) and len(values)==4 and all(isinstance(v,(int,float)) and math.isfinite(v) for v in values)
