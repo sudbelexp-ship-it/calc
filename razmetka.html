@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разметка документов и OCR — БИЛДИНФОТЕХ</title>
+<meta name="description" content="Панель для оцифровки нормативных документов (СП, ГОСТ) в Markdown: распознавание выполняется локальной программой на вашем компьютере, без интернета.">
+<script src="theme.js"></script>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#fff; --text:#1c2230; --muted:#667085; --faint:#98a2b3; --line:#e4e7ec; --sunk:#f2f4f7;
+  --accent:#3b4ccb; --accent-soft:#eceefc; --ok:#137a4b; --ok-soft:#e3f5ec; --bad:#b42318; --bad-soft:#fdeceb; --warn:#9a5a00; --warn-soft:#fff3dc;
+  --mono:ui-monospace,"SFMono-Regular","JetBrains Mono",Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme]){color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#12151c; --card:#1b1f2a; --text:#e8eaf0; --muted:#9aa3b5; --faint:#6b7488; --line:#2a3040; --sunk:#161a23;
+  --accent:#8c97ff; --accent-soft:#252a45; --ok:#5fd39b; --ok-soft:#173326; --bad:#ff8a80; --bad-soft:#3a1d1b; --warn:#f0b35a; --warn-soft:#33270f; color-scheme:dark}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1500px;margin:0 auto;padding:20px 16px 48px}
+header .brand{font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+header .brand a{color:inherit;text-decoration:none}
+h1{margin:4px 0 4px;font-size:clamp(22px,4vw,30px);line-height:1.2}
+header p{margin:0;color:var(--muted);font-size:14px;max-width:820px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;min-width:0}
+.btn{font:inherit;font-weight:600;color:#fff;background:var(--accent);border:0;border-radius:10px;padding:8px 14px;cursor:pointer}
+.btn.sec{background:var(--accent-soft);color:var(--accent)}
+.btn.sm{padding:4px 10px;font-size:13px;border-radius:8px}
+.btn:disabled{opacity:.55;cursor:default}
+.btn:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+input[type=text],input[type=number],select,textarea{font:inherit;font-size:14px;color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:999px;background:var(--accent-soft);color:var(--accent)}
+.chip.ok{background:var(--ok-soft);color:var(--ok)} .chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.warn{background:var(--warn-soft);color:var(--warn)}
+.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:10px;margin-bottom:14px}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:900px){.layout{grid-template-columns:minmax(0,1fr)}}
+.docs h3,.side h3{margin:0 0 8px;font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.docs #docs{max-height:60vh;overflow:auto}
+.doc{display:block;width:100%;text-align:left;font:inherit;background:none;border:1px solid transparent;border-radius:10px;padding:8px 10px;cursor:pointer;color:var(--text)}
+.doc:hover{background:var(--sunk)} .doc.sel{background:var(--accent-soft);border-color:var(--accent)}
+.doc b{display:block;font-size:14px;overflow-wrap:anywhere}
+.doc small{color:var(--muted);font-size:12px}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:6px 0}
+.bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .25s}
+.tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.tools label{font-size:13px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.pages{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 12px;max-height:104px;overflow:auto}
+.pg{font:inherit;font-size:12px;min-width:30px;padding:3px 6px;border-radius:6px;border:1px solid var(--line);background:var(--sunk);color:var(--muted);cursor:pointer}
+.pg.auto{background:var(--accent-soft);color:var(--accent)} .pg.manual{background:var(--warn-soft);color:var(--warn)} .pg.done{background:var(--ok-soft);color:var(--ok)} .pg.sel{outline:2px solid var(--accent)}
+.pg.dbt::after{content:"•";color:var(--bad);margin-left:2px}
+.work{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}
+@media (max-width:1100px){.work{grid-template-columns:minmax(0,1fr)}}
+.imgbox{position:relative;border:1px solid var(--line);border-radius:10px;overflow:auto;max-height:78vh;background:var(--sunk)}
+.imgbox .inner{position:relative;display:inline-block;line-height:0;min-width:100%}
+.imgbox img{display:block;width:100%;height:auto;user-select:none;-webkit-user-drag:none}
+.imgbox canvas{position:absolute;inset:0;width:100%;height:100%;cursor:crosshair}
+.mdwrap{display:flex;flex-direction:column;gap:8px;min-width:0}
+.tabs{display:flex;gap:6px}
+textarea#md{width:100%;height:62vh;min-height:300px;resize:vertical;font:13px/1.5 var(--mono)}
+.prev{height:62vh;min-height:300px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:10px 14px;background:var(--card);font-size:14px}
+.prev h1,.prev h2,.prev h3{margin:12px 0 6px;font-size:18px} .prev p{margin:6px 0}
+.prev table{border-collapse:collapse;margin:8px 0;font-size:12.5px} .prev th,.prev td{border:1px solid var(--line);padding:3px 6px;text-align:center}
+.prev img{max-width:100%;border:1px solid var(--line);margin:4px 0}
+.prev .dbt{background:var(--bad-soft);color:var(--bad);border-radius:4px;padding:0 3px}
+.prev pre{background:var(--sunk);padding:6px 8px;border-radius:6px;overflow:auto;font-size:12px}
+.note{font-size:13.5px;color:var(--warn);background:var(--warn-soft);padding:8px 10px;border-radius:8px;margin:8px 0}
+.out{white-space:pre-wrap;font:12.5px/1.45 var(--mono);background:var(--sunk);border-radius:8px;padding:8px 10px;max-height:240px;overflow:auto}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.drop{border:2px dashed var(--line);border-radius:10px;padding:14px;text-align:center;color:var(--muted);cursor:pointer}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.fl{max-height:240px;overflow:auto;border:1px solid var(--line);border-radius:8px}
+.fl button{display:block;width:100%;text-align:left;font:inherit;font-size:13px;background:none;border:0;border-bottom:1px solid var(--line);padding:5px 8px;cursor:pointer;color:var(--text)}
+.fl button:hover{background:var(--sunk)}
+ol{margin:6px 0;padding-left:20px} code{font-family:var(--mono);font-size:12.5px;background:var(--sunk);padding:1px 5px;border-radius:4px}
+body.emb header,body.emb footer{display:none}
+body.emb .wrap{padding:0 0 24px;max-width:none}
+footer{border-top:1px solid var(--line);margin-top:24px;padding-top:14px;color:var(--muted);font-size:13.5px}
+footer a{color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="brand"><a href="index.html">← БИЛДИНФОТЕХ · калькуляторы</a></div>
+  <div class="top">
+    <div>
+      <h1>Разметка документов и OCR</h1>
+      <p>СП и ГОСТ в Markdown: текст, таблицы и вырезки обрабатываются на вашем компьютере. Основной запуск — через start.bat. Каждое автоматическое число помечено [?…] до сверки с оригиналом.</p>
+    </div>
+    <div class="row"><span class="chip" id="conn">нет связи</span><button class="btn sec sm" id="btnConn" type="button">Подключение</button></div>
+  </div>
+</header>
+
+<section class="card" id="setup" hidden>
+  <h2 style="margin:0 0 8px;font-size:18px">Подключение к локальной программе</h2>
+  <ol>
+    <li>Скачайте тестовую сборку с GitHub. Один раз выполните <code>razmetka\install.bat</code> с интернетом для установки зависимостей и моделей.</li>
+    <li>Запустите <code>razmetka\start.bat</code>. Откроется локальная панель <code>http://127.0.0.1:8765/</code> с ключом из окна программы.</li>
+    <li>Эта панель на сайте — дополнительный вариант. Браузер может запросить разрешение доступа к локальной сети. Если соединение не установилось, используйте локальную панель. Ключ можно вставить вручную:</li>
+  </ol>
+  <div class="row">
+    <input type="text" id="tok" placeholder="Ключ доступа (token)" size="34" autocomplete="off">
+    <input type="number" id="port" value="8765" min="1024" max="65535" style="width:92px" title="Порт">
+    <button class="btn" id="btnGo" type="button">Подключиться</button>
+  </div>
+  <p class="note" id="setupErr" hidden></p>
+  <p style="color:var(--muted);font-size:13.5px;margin:10px 0 0">Если сайт открыт по <code>http://</code>, браузер может блокировать связь с программой на вашем компьютере. Тогда откройте панель по ссылке <code>http://127.0.0.1:8765/</code> из окна программы: это та же панель.</p>
+</section>
+
+<p class="note">Фото с перспективными искажениями и тенями не поддерживаются — нужен скан в PDF. Кнопка «Проверена» фиксирует ручную сверку; сомнения в числах нужно разобрать по вырезкам.</p>
+<div class="layout" id="app" hidden>
+  <aside class="card side">
+    <div class="docs">
+      <h3>Документы</h3>
+      <div id="docs"></div>
+      <button class="btn sm" id="btnAdd" type="button" style="margin-top:10px;width:100%">+ Добавить документ</button>
+    </div>
+  </aside>
+
+  <main style="min-width:0;display:flex;flex-direction:column;gap:12px">
+    <section class="card" id="addBox" hidden>
+      <h3 style="margin:0 0 8px;font-size:16px">Новый документ</h3>
+      <div class="drop" id="drop">Перетащите PDF сюда или нажмите, чтобы выбрать файл (копия попадёт в папку программы)</div>
+      <input type="file" id="fileIn" accept=".pdf" hidden>
+      <p style="margin:10px 0 6px;font-size:13.5px;color:var(--muted)">Или выберите файл на диске (без копирования):</p>
+      <div class="row" style="margin-bottom:6px"><input type="text" id="bpath" size="52" placeholder="Путь к PDF или папке"><button class="btn sec sm" id="bgo" type="button">Показать</button></div>
+      <div class="fl" id="blist" hidden></div>
+      <div class="row" style="margin-top:8px"><input type="text" id="newName" size="28" placeholder="Обозначение папки латиницей, напр. GOST_8509-93"><button class="btn sm" id="newGo" type="button" disabled>Создать</button><span id="newSel" style="font-size:13px;color:var(--muted)"></span></div>
+    </section>
+
+    <section class="card" id="docView" hidden>
+      <div class="tools">
+        <b id="dname" style="font-size:17px"></b><span class="chip" id="dstat"></span>
+        <span style="flex:1"></span>
+        <label>Режим <select id="mode"><option value="auto">Авто (слой PDF или OCR)</option><option value="ocr">Только OCR (скан)</option><option value="precise">OCR точный (медленнее)</option></select></label>
+        <button class="btn sm" id="rPage" type="button">Распознать страницу</button>
+        <button class="btn sec sm" id="rRange" type="button">Диапазон…</button>
+        <button class="btn sec sm" id="rAll" type="button">Весь документ</button>
+        <button class="btn sec sm" id="rStop" type="button" hidden>Остановить</button>
+      </div>
+      <details class="meta" style="margin-bottom:8px"><summary style="cursor:pointer;font-size:13.5px;color:var(--muted)">Шапка документа (обозначение, название, редакция)</summary>
+        <div class="row" style="margin-top:8px">
+          <input type="text" id="h_oz" placeholder="Обозначение: СП 15.13330.2020" size="26">
+          <input type="text" id="h_nm" placeholder="Название" size="40">
+          <input type="text" id="h_rd" placeholder="Редакция" size="22">
+          <input type="text" id="h_dt" placeholder="Дата введения 2021-07-01" size="20">
+          <button class="btn sec sm" id="h_save" type="button">Сохранить шапку</button>
+        </div>
+      </details>
+      <div id="jobBox" hidden><div class="bar"><i id="jobBar"></i></div><div style="font-size:13px;color:var(--muted)" id="jobMsg"></div></div>
+      <div class="pages" id="pages"></div>
+
+      <div class="tools">
+        <button class="btn sec sm" id="prev" type="button">←</button>
+        <span>стр. <input type="number" id="pn" min="1" value="1" style="width:70px"> из <span id="ptot">0</span></span>
+        <button class="btn sec sm" id="next" type="button">→</button>
+        <span class="chip" id="psrc"></span>
+        <span style="flex:1"></span>
+        <label>Вырезка: <select id="cropKind"><option value="tabl">таблица</option><option value="formula">формула</option><option value="ris">рисунок</option></select></label>
+        <input type="text" id="cropNum" placeholder="номер (6.1)" size="9">
+        <button class="btn sec sm" id="cropGo" type="button" disabled>Вырезать и вставить</button>
+        <label style="font-size:12px"><input type="checkbox" id="allowModelDownload">Разрешить загрузку необязательной модели формул (~650 МБ, нужен интернет)</label>
+        <button class="btn sec sm" id="glmGo" type="button" disabled title="Распознать выделенную формулу нейросетью на видеокарте этого компьютера">Формула → LaTeX</button>
+      </div>
+      <div class="work">
+        <div class="imgbox" id="imgbox"><div class="inner"><img id="pimg" alt="Страница документа"><canvas id="cv"></canvas></div></div>
+        <div class="mdwrap">
+          <div class="tabs"><button class="btn sm" id="tEd" type="button">Markdown</button><button class="btn sec sm" id="tPv" type="button">Просмотр</button><span style="flex:1"></span><span class="chip" id="dbtN"></span></div>
+          <textarea id="md" spellcheck="false" aria-label="Markdown страницы"></textarea>
+          <div class="prev" id="prevBox" hidden></div>
+          <div class="row"><button class="btn sm" id="save" type="button">Сохранить страницу</button><button class="btn sec sm" id="reset" type="button">Вернуть авто-разметку</button><button class="btn sec sm" id="mdone" type="button">Страница проверена ✓</button><span id="saveMsg" style="font-size:13px;color:var(--muted)"></span></div>
+          <div id="dbtList" class="row" style="gap:4px"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="tools2" hidden>
+      <h3 style="margin:0 0 8px;font-size:16px">Сборка и проверка</h3>
+      <div class="row">
+        <button class="btn sm" id="asm" type="button">Собрать document.md</button>
+        <button class="btn sec sm" id="chk" type="button">Проверить (check.py)</button>
+        <button class="btn sec sm" id="opn" type="button">Открыть папку</button>
+        <span style="width:12px"></span>
+        <span style="font-size:13px;color:var(--muted)">Пересчёт таблицы:</span>
+        <input type="text" id="rtab" placeholder="№ таблицы" size="9">
+        <input type="text" id="rrel" placeholder='"c8 ~ 0.785*c7" "c10 ~ sqrt(c9/c7)"  или  --cols' size="44">
+        <button class="btn sec sm" id="rel" type="button">Проверить</button>
+      </div>
+      <div class="out" id="out" style="margin-top:10px" hidden></div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  Программа работает на вашем компьютере: файлы не загружаются на сайт. Результат — черновик: числа и формулы сверяйте по вырезкам и пометкам <code>[?…]</code>. Главная: <a href="index.html">c.bit-exp.ru</a>.
+</footer>
+</div>
+
+<script>
+(function(){
+'use strict';
+const $ = id => document.getElementById(id);
+const LS = {get(k){try{return localStorage.getItem(k)}catch(e){return null}}, set(k,v){try{localStorage.setItem(k,v)}catch(e){}}};
+let TOKEN = '', BASE = '', DOC = null, INFO = null, PN = 1, CUR = null, SEL = null, JOB = null, polls = null, pickPath = '';
+
+// ---------- связь
+function parseHash(){
+  const h = new URLSearchParams(location.hash.replace(/^#/, ''));
+  if (h.get('t')) { LS.set('rz_t', h.get('t')); if (h.get('p')) LS.set('rz_p', h.get('p')); history.replaceState(null, '', location.pathname); }
+}
+function guessBase(){
+  const own = ['127.0.0.1','localhost'].includes(location.hostname) && location.port && /^\/(index\.html)?$/.test(location.pathname);
+  return own ? location.origin : 'http://127.0.0.1:' + (LS.get('rz_p') || '8765');
+}
+async function api(method, path, body, raw){
+  const opt = {method, headers: {'X-Token': TOKEN}};
+  if (body !== undefined && !raw) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(body); }
+  if (raw) opt.body = raw;
+  const r = await fetch(BASE + '/api/' + path, opt);
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || ('Ошибка ' + r.status));
+  return j;
+}
+const furl = (rel, bust) => BASE + '/files/' + encodeURIComponent(DOC) + '/' + rel.split('/').map(encodeURIComponent).join('/') + '?t=' + encodeURIComponent(TOKEN) + (bust ? '&v=' + Date.now() : '');
+function setConn(ok, txt){ const c = $('conn'); c.textContent = txt; c.className = 'chip ' + (ok ? 'ok' : 'bad'); }
+async function connect(){
+  TOKEN = LS.get('rz_t') || ''; BASE = guessBase();
+  try {
+    const r = await fetch(BASE + '/api/ping', {headers: {'X-Token': TOKEN}});
+    const j = await r.json();
+    if (!j.ok) throw new Error('нет ответа');
+    if (!j.auth) { setConn(false, 'неверный ключ'); showSetup('Программа найдена, но ключ не подошёл. Скопируйте ключ из окна программы.'); return false; }
+    setConn(true, 'подключено'); $('setup').hidden = true; $('app').hidden = false; await loadDocs(); return true;
+  } catch(e) { setConn(false, 'нет связи'); showSetup('Не удалось связаться с программой на адресе ' + BASE + '. Запущен ли start.bat?'); return false; }
+}
+function showSetup(msg){ $('setup').hidden = false; $('app').hidden = true; $('tok').value = LS.get('rz_t') || ''; $('port').value = LS.get('rz_p') || '8765'; const e = $('setupErr'); e.hidden = !msg; e.textContent = msg || ''; }
+$('btnConn').onclick = () => showSetup('');
+$('btnGo').onclick = () => { LS.set('rz_t', $('tok').value.trim()); LS.set('rz_p', $('port').value.trim() || '8765'); connect(); };
+
+// ---------- документы
+async function loadDocs(){
+  const j = await api('GET', 'docs');
+  const box = $('docs'); box.innerHTML = '';
+  if (!j.docs.length) box.innerHTML = '<p style="color:var(--muted);font-size:13px;margin:0">Документов пока нет.</p>';
+  for (const d of j.docs) {
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'doc' + (d.name === DOC ? ' sel' : '');
+    b.innerHTML = '<b></b><small></small>'; b.firstChild.textContent = d.name;
+    b.lastChild.textContent = `стр.: ${d.pages} · авто: ${d.auto} · проверено: ${d.reviewed || 0}`;
+    b.onclick = () => openDoc(d.name); box.appendChild(b);
+  }
+}
+async function openDoc(name){
+  DOC = name; PN = 1; $('addBox').hidden = true;
+  await refreshInfo(); $('docView').hidden = false; $('tools2').hidden = false; $('dname').textContent = name;
+  await loadDocs(); await showPage(PN);
+}
+async function refreshInfo(){
+  INFO = await api('GET', 'doc/' + encodeURIComponent(DOC));
+  $('ptot').textContent = INFO.pages.length; $('pn').max = INFO.pages.length;
+  const auto = INFO.pages.filter(p => p.auto).length, done = INFO.pages.filter(p => p.reviewed).length;
+  const hd = INFO.head || {}; $('h_oz').value = hd['обозначение'] || ''; $('h_nm').value = hd['название'] || ''; $('h_rd').value = hd['редакция'] || ''; $('h_dt').value = hd['дата_введения'] || '';
+  $('dstat').textContent = `распознано ${auto} из ${INFO.pages.length} · проверено ${done}`;
+  const box = $('pages'); box.innerHTML = '';
+  for (const p of INFO.pages) {
+    const b = document.createElement('button'); b.type = 'button'; b.textContent = p.n;
+    b.className = 'pg' + (p.reviewed ? ' done' : p.manual ? ' manual' : p.auto ? ' auto' : '') + (p.n === PN ? ' sel' : '') + (p.doubts ? ' dbt' : '');
+    b.title = p.auto ? `${p.source}; таблиц ${p.tables}, рисунков ${p.figures}, сомнений ${p.doubts}` : 'не распознана';
+    b.onclick = () => showPage(p.n); box.appendChild(b);
+  }
+}
+
+// ---------- добавление документа
+$('btnAdd').onclick = () => { $('addBox').hidden = !$('addBox').hidden; if (!$('addBox').hidden && !$('blist').dataset.on) browse(''); };
+$('drop').onclick = () => $('fileIn').click();
+['dragenter','dragover'].forEach(e => $('drop').addEventListener(e, ev => { ev.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave','drop'].forEach(e => $('drop').addEventListener(e, ev => { ev.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', ev => upload(ev.dataTransfer.files[0]));
+$('fileIn').onchange = () => upload($('fileIn').files[0]);
+async function upload(f){
+  if (!f) return;
+  $('drop').textContent = 'Загрузка ' + f.name + '…';
+  try { const j = await api('PUT', 'upload?name=' + encodeURIComponent(f.name), undefined, f); pick(j.path); $('drop').textContent = 'Файл принят: ' + f.name; }
+  catch(e) { $('drop').textContent = 'Ошибка: ' + e.message; }
+}
+function pick(path){
+  pickPath = path; $('newSel').textContent = path; $('newGo').disabled = false;
+  const base = path.split(/[\\/]/).pop().replace(/\.[^.]+$/, '');
+  if (!$('newName').value) $('newName').value = base.replace(/[^A-Za-z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'doc';
+}
+async function browse(p){
+  try {
+    const j = await api('GET', 'browse?path=' + encodeURIComponent(p)); $('blist').dataset.on = '1'; $('blist').hidden = false; $('bpath').value = j.path;
+    const l = $('blist'); l.innerHTML = '';
+    const mk = (t, fn) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.onclick = fn; l.appendChild(b); };
+    for (const d of j.drives) mk('💽 ' + d, () => browse(d));
+    if (j.parent) mk('⬆ ..', () => browse(j.parent));
+    for (const it of j.items) mk((it.dir ? '📁 ' : '📄 ') + it.name + (it.dir ? '' : '  (' + Math.round(it.size/1024) + ' КБ)'), () => it.dir ? browse(j.path.replace(/[\\/]$/, '') + '\\' + it.name) : pick(j.path.replace(/[\\/]$/, '') + '\\' + it.name));
+  } catch(e) { $('blist').hidden = false; $('blist').textContent = e.message; }
+}
+$('bgo').onclick = () => { const v = $('bpath').value.trim(); if (/\.(pdf|jpe?g|png|tiff?)$/i.test(v)) pick(v); else browse(v); };
+$('newGo').onclick = async () => {
+  $('newGo').disabled = true;
+  try { const job = await api('POST', 'doc', {path: pickPath, name: $('newName').value.trim()}); await waitJob(job.id, 'Нарезка страниц…'); await loadDocs(); await openDoc(job.result ? job.result.name : $('newName').value.trim()); }
+  catch(e) { alert(e.message); } finally { $('newGo').disabled = false; }
+};
+
+// ---------- задания
+async function waitJob(id, title){
+  $('jobBox').hidden = false; $('rStop').hidden = false; JOB = id;
+  return new Promise((resolve, reject) => {
+    const tick = async () => {
+      try {
+        const j = await api('GET', 'job/' + id);
+        $('jobMsg').textContent = (j.msg || title || '') + (j.total ? ` (${j.done}/${j.total})` : '') + ` · ${j.elapsed} с`;
+        $('jobBar').style.width = (j.total ? Math.round(100 * j.done / j.total) : 8) + '%';
+        if (j.state === 'done' || j.state === 'cancelled') { JOB = null; $('rStop').hidden = true; setTimeout(() => $('jobBox').hidden = true, 1500); resolve(j); }
+        else if (j.state === 'error') { JOB = null; $('rStop').hidden = true; reject(new Error(j.error)); }
+        else setTimeout(tick, 700);
+      } catch(e) { reject(e); }
+    };
+    tick();
+  });
+}
+async function recognize(pages){
+  const mode = $('mode').value;
+  try { const job = await api('POST', 'doc/' + encodeURIComponent(DOC) + '/recognize', {pages, mode}); await waitJob(job.id, 'Распознавание…'); }
+  catch(e) { alert(e.message); }
+  await refreshInfo(); await loadDocs(); await showPage(PN);
+}
+$('rPage').onclick = () => recognize([PN]);
+$('rAll').onclick = () => { if (confirm('Распознать весь документ? Ручные правки страниц сохранятся.')) recognize([]); };
+$('rRange').onclick = () => {
+  const v = prompt('Страницы (например 1-5,8,10-12):', `${PN}-${Math.min(PN + 9, INFO.pages.length)}`); if (!v) return;
+  const s = new Set(); for (const part of v.split(',')) { const m = part.trim().match(/^(\d+)(?:\s*-\s*(\d+))?$/); if (m) for (let i = +m[1]; i <= +(m[2] || m[1]); i++) s.add(i); }
+  recognize([...s]);
+};
+$('rStop').onclick = () => { if (JOB) api('POST', 'job/' + JOB + '/cancel').catch(() => {}); };
+
+// ---------- страница
+async function showPage(n){
+  if (!INFO) return; n = Math.max(1, Math.min(INFO.pages.length, n)); PN = n; $('pn').value = n; SEL = null; $('cropGo').disabled = true; $('glmGo').disabled = true;
+  document.querySelectorAll('#pages .pg').forEach(b => b.classList.toggle('sel', +b.textContent === n));
+  $('pimg').src = furl('pages/p' + String(n).padStart(3, '0') + '.jpg', true);
+  CUR = await api('GET', 'doc/' + encodeURIComponent(DOC) + '/page/' + n);
+  $('md').value = CUR.md || ''; $('psrc').textContent = CUR.auto ? ({text: 'текстовый слой', ocr: 'OCR', 'text+ocr': 'слой + OCR', 'layer-ocr': 'чужой OCR-слой + проверка', 'layer-ocr+ocr': 'чужой OCR-слой + дополнение'}[CUR.auto.source] || CUR.auto.source) + (CUR.manual ? ' · правлено вручную' : '') : (CUR.md ? 'правлено вручную' : 'не распознана');
+  $('saveMsg').textContent = ''; refreshPreview(); doubts();
+}
+$('prev').onclick = () => showPage(PN - 1); $('next').onclick = () => showPage(PN + 1);
+$('pn').onchange = () => showPage(+$('pn').value || 1);
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input,textarea,select')) { if (e.key === 's' && (e.ctrlKey || e.metaKey) && e.target.id === 'md') { e.preventDefault(); $('save').click(); } return; }
+  if (e.key === 'ArrowLeft') showPage(PN - 1); if (e.key === 'ArrowRight') showPage(PN + 1);
+});
+$('save').onclick = async () => {
+  try { await api('PUT', 'doc/' + encodeURIComponent(DOC) + '/page/' + PN, {md: $('md').value}); $('saveMsg').textContent = 'Сохранено'; await refreshInfo(); } catch(e) { $('saveMsg').textContent = e.message; }
+};
+$('reset').onclick = async () => {
+  if (!confirm('Заменить текст страницы авто-разметкой? Ваши правки будут потеряны.')) return;
+  await api('DELETE', 'doc/' + encodeURIComponent(DOC) + '/page/' + PN); await refreshInfo(); await showPage(PN);
+};
+$('mdone').onclick = async () => { await api('PUT', 'doc/' + encodeURIComponent(DOC) + '/page/' + PN, {md: $('md').value}); await api('POST', 'doc/' + encodeURIComponent(DOC) + '/done', {pages: [PN]}); await refreshInfo(); showPage(PN + 1); };
+
+// ---------- сомнительные места
+function doubts(){
+  const t = $('md').value, list = $('dbtList'); list.innerHTML = '';
+  const re = /\[\?([^\]]{1,40})\]/g; let m, k = 0;
+  while ((m = re.exec(t)) && k < 60) { k++; const s = m.index, e = s + m[0].length; const b = document.createElement('button'); b.type = 'button'; b.className = 'btn sec sm'; b.textContent = m[1]; b.onclick = () => { $('tEd').click(); const ta = $('md'); ta.focus(); ta.setSelectionRange(s, e); }; list.appendChild(b); }
+  const c = (t.match(/\[\?/g) || []).length; $('dbtN').textContent = c ? 'сомнений: ' + c : 'сомнений нет'; $('dbtN').className = 'chip ' + (c ? 'warn' : 'ok');
+}
+$('md').addEventListener('input', () => { doubts(); if (!$('prevBox').hidden) refreshPreview(); $('saveMsg').textContent = 'не сохранено'; });
+
+// ---------- просмотр
+$('tEd').onclick = () => { $('md').hidden = false; $('prevBox').hidden = true; $('tEd').className = 'btn sm'; $('tPv').className = 'btn sec sm'; };
+$('tPv').onclick = () => { $('md').hidden = true; $('prevBox').hidden = false; $('tPv').className = 'btn sm'; $('tEd').className = 'btn sec sm'; refreshPreview(); };
+function esc(s){ return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function escAttr(s){ return esc(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+function safeTable(m){
+  return esc(m)
+    .replace(/&lt;(\/?)(table|thead|tbody|tfoot|tr|br|sup|sub|i)&gt;/g, '<$1$2>')
+    .replace(/&lt;(\/?)(th|td)((?:\s+(?:rowspan|colspan)=(?:"\d+"|'\d+'|\d+))*)\s*&gt;/g, (a,s,tag,at) => '<' + s + tag + at + '>')
+    .replace(/\[\?([^\]]*)\]/g, '<span class="dbt">$1</span>');
+}
+function renderMd(md){
+  let t = md.replace(/<!--[\s\S]*?-->/g, m => /стр\./.test(m) ? '\n§PG§' + esc(m.replace(/<!--|-->/g, '').trim()) + '\n' : '');
+  const blocks = []; const keep = h => { blocks.push(h); return '\u0000' + (blocks.length - 1) + '\u0000'; };
+  t = t.replace(/<table[\s\S]*?<\/table>/g, m => keep(safeTable(m)));
+  t = t.replace(/!\[([^\]]*)\]\((img\/[^)]+)\)/g, (a, alt, src) => keep(`<img alt="${escAttr(alt)}" src="${furl(src, true)}">`));
+  t = t.replace(/\$\$([\s\S]*?)\$\$/g, (a, f) => keep('<pre>' + esc(f.trim()) + '</pre>'));
+  const out = [];
+  for (const blk of esc(t).split(/\n{2,}/)) {
+    let b = blk.trim(); if (!b) continue;
+    b = b.replace(/\[\?([^\]]*)\]/g, '<span class="dbt">$1</span>');
+    if (b.startsWith('§PG§')) { out.push('<div style="font-size:11px;color:var(--faint);border-top:1px dashed var(--line);margin-top:8px">' + b.slice(4) + '</div>'); continue; }
+    const h = b.match(/^(#{1,3}) (.*)$/s); if (h) { out.push(`<h${h[1].length}>${h[2]}</h${h[1].length}>`); continue; }
+    if (/^\|.*\|/.test(b) && b.split('\n').length > 1) {
+      const rows = b.split('\n').filter(r => !/^\|\s*-/.test(r)).map(r => r.replace(/^\||\|$/g, '').split('|').map(c => c.trim()));
+      out.push('<table>' + rows.map((r, i) => '<tr>' + r.map(c => (i ? '<td>' : '<th>') + c + (i ? '</td>' : '</th>')).join('') + '</tr>').join('') + '</table>'); continue;
+    }
+    out.push('<p>' + b.replace(/\n/g, '<br>') + '</p>');
+  }
+  return out.join('\n').replace(/\u0000(\d+)\u0000/g, (a, i) => blocks[+i]);
+}
+function refreshPreview(){ if (!$('prevBox').hidden) $('prevBox').innerHTML = renderMd($('md').value); }
+
+// ---------- выделение и вырезки
+const cv = $('cv'), img = $('pimg'); let drag = null;
+function fit(){ cv.width = img.clientWidth; cv.height = img.clientHeight; draw(); }
+img.onload = fit; window.addEventListener('resize', fit);
+function draw(){
+  const g = cv.getContext('2d'); g.clearRect(0, 0, cv.width, cv.height);
+  if (CUR && CUR.auto) {
+    const k = cv.width / CUR.auto.w; g.lineWidth = 2;
+    g.strokeStyle = 'rgba(19,122,75,.8)'; for (const b of CUR.auto.tables) g.strokeRect(b[0] * k, b[1] * k, (b[2] - b[0]) * k, (b[3] - b[1]) * k);
+    g.strokeStyle = 'rgba(154,90,0,.8)'; for (const b of CUR.auto.figures) g.strokeRect(b[0] * k, b[1] * k, (b[2] - b[0]) * k, (b[3] - b[1]) * k);
+  }
+  if (SEL) { g.fillStyle = 'rgba(59,76,203,.18)'; g.strokeStyle = '#3b4ccb'; g.lineWidth = 2; g.fillRect(SEL.x0 * cv.width, SEL.y0 * cv.height, (SEL.x1 - SEL.x0) * cv.width, (SEL.y1 - SEL.y0) * cv.height); g.strokeRect(SEL.x0 * cv.width, SEL.y0 * cv.height, (SEL.x1 - SEL.x0) * cv.width, (SEL.y1 - SEL.y0) * cv.height); }
+}
+function pos(e){ const r = cv.getBoundingClientRect(); return {x: Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), y: Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))}; }
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); drag = pos(e); SEL = null; draw(); });
+cv.addEventListener('pointermove', e => { if (!drag) return; const p = pos(e); SEL = {x0: Math.min(drag.x, p.x), y0: Math.min(drag.y, p.y), x1: Math.max(drag.x, p.x), y1: Math.max(drag.y, p.y)}; draw(); });
+cv.addEventListener('pointerup', () => { drag = null; const ok = SEL && (SEL.x1 - SEL.x0) > .01 && (SEL.y1 - SEL.y0) > .005; if (!ok) SEL = null; $('cropGo').disabled = !SEL; $('glmGo').disabled = !SEL; draw(); });
+function insertAtCursor(text){ const ta = $('md'); const s = ta.selectionStart ?? ta.value.length; ta.value = ta.value.slice(0, s) + text + ta.value.slice(ta.selectionEnd ?? s); ta.focus(); ta.setSelectionRange(s + text.length, s + text.length); doubts(); $('saveMsg').textContent = 'не сохранено'; }
+async function doCrop(){
+  const kind = $('cropKind').value, num = $('cropNum').value.trim().replace(/[^A-Za-z0-9А-Яа-я._-]/g, '');
+  const name = kind + '_' + (num || (kind === 'ris' ? '1' : 'a'));
+  const j = await api('POST', 'doc/' + encodeURIComponent(DOC) + '/crop', {page: PN, box: [SEL.x0, SEL.y0, SEL.x1, SEL.y1], name});
+  return {rel: j.rel, name, kind, num};
+}
+$('cropGo').onclick = async () => {
+  try { const c = await doCrop(); const label = {tabl: 'Таблица', formula: 'формула', ris: 'Рисунок'}[c.kind] + (c.num ? ' ' + c.num : ''); insertAtCursor(`![${label}](${c.rel})\n`); }
+  catch(e) { alert(e.message); }
+};
+
+// ---------- формулы → LaTeX (нейросеть GLM-OCR на видеокарте этого компьютера; модель ~650 МБ скачивается один раз)
+let glm = null;
+async function getGlm(setMsg){
+  if (glm) return glm;
+  if (!window.isSecureContext && !['127.0.0.1','localhost'].includes(location.hostname)) throw new Error('WebGPU работает только по https или на 127.0.0.1');
+  if (!navigator.gpu) throw new Error('В этом браузере нет WebGPU');
+  if (!$('allowModelDownload').checked) throw new Error('Для необязательной нейросети формул разрешите загрузку модели. Без интернета впишите LaTeX вручную по вырезке.');
+  const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+  const id = 'onnx-community/GLM-OCR-ONNX';
+  const cb = e => { if (e.status === 'progress_total') setMsg('Загрузка модели: ' + Math.round(e.progress) + '%'); };
+  const [processor, model] = await Promise.all([
+    TX.AutoProcessor.from_pretrained(id, {progress_callback: cb}),
+    TX.AutoModelForImageTextToText.from_pretrained(id, {device: 'webgpu', dtype: 'q4f16', progress_callback: cb,
+      use_external_data_format: {'vision_encoder_q4f16.onnx': 1, 'embed_tokens_q4f16.onnx': 1, 'decoder_model_merged_q4f16.onnx': 1}})
+  ]);
+  glm = {TX, processor, model}; return glm;
+}
+$('glmGo').onclick = async () => {
+  const msg = $('saveMsg'); $('glmGo').disabled = true;
+  try {
+    $('cropKind').value = 'formula';
+    const c = await doCrop(); msg.textContent = 'Подготовка модели…';
+    const {TX, processor, model} = await getGlm(m => msg.textContent = m);
+    const image = await TX.RawImage.fromURL(furl(c.rel, true));
+    const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: 'Formula Recognition:'}]}], {add_generation_prompt: true});
+    const inputs = await processor(prompt, image); msg.textContent = 'Распознавание формулы…';
+    const out = await model.generate({...inputs, max_new_tokens: 600, do_sample: false});
+    const pl = inputs.input_ids.dims.at(-1);
+    let tex = processor.batch_decode(out.slice(null, [pl, null]), {skip_special_tokens: true})[0].trim().replace(/^\$\$?|\$\$?$/g, '').trim();
+    const tag = tex.match(/\\tag\s*\{([^}]*)\}/); tex = tex.replace(/\\tag\s*\{[^}]*\}/, '').replace(/\s+/g, ' ').trim();
+    const num = c.num ? ` (${c.num})` : (tag ? ` (${tag[1].replace(/\s+/g, '')})` : '');
+    insertAtCursor(`$$ ${tex} $$${num}\n[?LaTeX не сверен]<!-- latex-unverified -->\n![формула${c.num ? ' ' + c.num : ''}](${c.rel})\n`); msg.textContent = 'Формула вставлена — сверьте с вырезкой';
+  } catch(e) { msg.textContent = 'Ошибка: ' + e.message; } finally { $('glmGo').disabled = !SEL; }
+};
+
+$('h_save').onclick = async () => { try { await api('PUT', 'doc/' + encodeURIComponent(DOC) + '/meta', {'обозначение': $('h_oz').value, 'название': $('h_nm').value, 'редакция': $('h_rd').value, 'дата_введения': $('h_dt').value}); show('Шапка сохранена, document.md пересобран'); } catch(e) { show(e.message); } };
+
+// ---------- сборка и проверка
+const show = t => { const o = $('out'); o.hidden = false; o.textContent = t; };
+$('asm').onclick = async () => { try { const j = await api('POST', 'doc/' + encodeURIComponent(DOC) + '/assemble'); show('Документ собран: document.md. Сомнительных мест: ' + j.doubts); await loadDocs(); } catch(e) { show(e.message); } };
+$('chk').onclick = async () => { try { show((await api('POST', 'doc/' + encodeURIComponent(DOC) + '/check')).out || 'Нет вывода'); } catch(e) { show(e.message); } };
+$('opn').onclick = () => api('POST', 'doc/' + encodeURIComponent(DOC) + '/open').catch(e => show(e.message));
+$('rel').onclick = async () => {
+  const rels = ($('rrel').value.match(/"[^"]*"|\S+/g) || ['--cols']).map(s => s.replace(/^"|"$/g, ''));
+  try { show((await api('POST', 'doc/' + encodeURIComponent(DOC) + '/relcheck', {table: $('rtab').value.trim() || '1', rels})).out); } catch(e) { show(e.message); }
+};
+
+// ---------- встраивание в страницу сайта (iframe) и старт
+if (window.parent !== window) {
+  document.body.classList.add('emb');
+  const post = () => { try { parent.postMessage({rzHeight: document.documentElement.scrollHeight}, location.origin); } catch(e) {} };
+  new ResizeObserver(post).observe(document.body); window.addEventListener('load', post);
+}
+parseHash(); connect();
+})();
+</script>
+</body>
+</html>

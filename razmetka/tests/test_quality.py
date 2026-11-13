@@ -1,0 +1,99 @@
+import sys
+from pathlib import Path
+import unittest
+from unittest.mock import patch
+from types import SimpleNamespace
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from numeric import tokens, values
+from eval_core import score_page
+from table_data import shape, tables_in
+from strict_review import mark_numbers
+from quality import expression
+import engine
+import cells
+import ocr
+
+
+def word(text, y=0):
+    return dict(t=text, c=1., x0=10., x1=100., y0=float(y), y1=float(y+30), size=24., bold=False, it=False)
+
+
+class NumericSafety(unittest.TestCase):
+    def test_partial_doubt_retains_decimal(self):
+        self.assertEqual(tokens('1,[?3]'), [('1.3', True)])
+        self.assertNotEqual(values('-5'), values('5'))
+
+    def test_sign_difference_is_flagged(self):
+        ws = [word('-5')]
+        with patch.object(ocr, 'ocr_words', return_value=[word('5')]):
+            stats = engine.crosscheck(ws, None, [], strict=True)
+        self.assertEqual(stats['flagged'], 1)
+        self.assertEqual(ws[0]['t'], '-5')
+        self.assertEqual(ws[0]['alt'], '5')
+
+    def test_vote_never_replaces_value(self):
+        ws = [word('1,3')]
+        with patch.object(ocr, 'ocr_words', return_value=[word('1,8')]):
+            ocr.vote_numbers(None, ws)
+        self.assertEqual(ws[0]['t'], '1,3')
+        self.assertLess(ws[0]['c'], .85)
+
+    def test_page_detection_is_restored_after_cell_recognition(self):
+        class Stateful:
+            det = True
+            def __call__(self, img, **kwargs):
+                self.det = kwargs.get('use_det', self.det)
+                return SimpleNamespace(txts=('123',), scores=(1.,),
+                    boxes=[[[0, 0], [100, 0], [100, 30], [0, 30]]], word_results=None)
+        model = Stateful()
+        ocr.set_precise(False)
+        with patch.object(ocr, '_engine', return_value=model):
+            ocr.recognize_line(None)
+            self.assertFalse(model.det)
+            ocr.ocr_words(None)
+            self.assertTrue(model.det)
+
+    def test_cell_order_matters(self):
+        ws = [word('1'), word('2', 40)]
+        cells.compare_cell(ws, [word('2'), word('1', 40)])
+        self.assertTrue(all(w['c'] < .85 for w in ws))
+
+    def test_empty_thead_continuation_not_data(self):
+        html = '<table><thead><tr><th rowspan="2">n</th><th>x</th></tr><tr></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>'
+        self.assertEqual(shape(html), (1, 2, False))
+        self.assertEqual(engine.html_shape(html), (1, 2))
+
+    def test_cell_swap_is_two_errors(self):
+        ref = '| a | b |\n|---|---|\n|10|20|'
+        auto = '| a | b |\n|---|---|\n|20|10|'
+        self.assertEqual(score_page(ref, auto)['wrong_unflagged'], 2)
+
+    def test_expanded_rowspan_has_correct_position(self):
+        s = '<!-- стр. 1 -->\nТаблица 1\n<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td rowspan="2">5</td><td>10</td></tr><tr><td>20</td></tr></tbody></table>'
+        row = tables_in(s)[0]['rows'][1]
+        self.assertEqual([x['text'] for x in row], ['5', '20'])
+
+    def test_strict_markers_do_not_change_values_or_links(self):
+        s = '<!-- стр. 1 -->\nТаблица 1\n| a | b |\n|---|---|\n|-5|1,3|\n![Таблица 1](img/p001_tabl_1.png)'
+        marked = mark_numbers(s)
+        self.assertIn('(img/p001_tabl_1.png)', marked)
+        self.assertIn('<!-- стр. 1 -->', marked)
+        scored = score_page(s, marked)
+        self.assertEqual(scored['wrong'], 0)
+        self.assertEqual(scored['correct'], scored['found'])
+        self.assertEqual(scored['flagged'], scored['found'])
+
+    def test_relation_expression_not_python_execution(self):
+        self.assertEqual(expression('sqrt(c1/c2)', {'c1': 16, 'c2': 4}), 2)
+        with self.assertRaises(ValueError):
+            expression("__import__('os').system('echo bad')", {})
+
+    def test_inequalities_are_not_html_tags(self):
+        marked = mark_numbers('h < 120; 120 < h < 380; h > 680')
+        self.assertTrue(all(flagged for value, flagged in tokens(marked)))
+        self.assertEqual(score_page('h < 120; h > 680', 'h < 121; h > 681')['wrong_unflagged'], 2)
+
+
+if __name__ == '__main__':
+    unittest.main()

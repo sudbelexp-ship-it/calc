@@ -64,10 +64,11 @@ footer a,.info a{color:var(--accent)}
 <div class="wrap">
 <header>
   <div class="brand"><a href="index.html">← БИЛДИНФОТЕХ · калькуляторы</a></div>
-  <h1>Документы в Markdown</h1>
+  <h1>Разметка документов и OCR</h1>
   <p>Конвертер в духе <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener" style="color:var(--accent)">Microsoft MarkItDown</a>: PDF, Word, Excel, PowerPoint, HTML, CSV и изображения превращаются в чистый Markdown. Сканы и фото распознаются встроенным OCR (русский + английский). Файлы не покидают ваш браузер.</p>
 </header>
 
+<section class="card" style="margin-bottom:16px"><h2>Локальная разметка СП и ГОСТ — тестовая версия</h2><p>Обработка документов на вашем компьютере, проверка чисел по вырезкам, очередь и отчёты.</p><p><a href="razmetka.html">Открыть панель локальной программы →</a></p><p>Первый запуск: скачайте ветку ocr-local-test с GitHub, выполните razmetka/install.bat, затем start.bat. Ссылка из окна программы открывает основную локальную панель.</p></section>
 <main>
   <section class="card">
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файлы для конвертации">
@@ -689,3 +690,4 @@ $('clear').onclick = () => { results.innerHTML = ''; done.length = 0; bulk.hidde
 </script>
 </body>
 </html>
+
