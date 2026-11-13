@@ -2,6 +2,47 @@
 import os
 import time
 import ctypes
+import contextlib
+import threading
+from pathlib import Path
+
+_worker_local=threading.local()
+
+
+@contextlib.contextmanager
+def worker():
+    """Prevent separate browser/batch processes from competing for OCR resources."""
+    if getattr(_worker_local,'active',False):
+        yield
+        return
+    lock_path=Path(__file__).with_name('.worker.lock')
+    fd=os.open(lock_path,os.O_RDWR|os.O_CREAT,0o600)
+    f=os.fdopen(fd,'r+b')
+    try:
+        if os.fstat(f.fileno()).st_size==0:
+            f.write(b'0');f.flush()
+        f.seek(0)
+        try:
+            if os.name=='nt':
+                import msvcrt
+                msvcrt.locking(f.fileno(),msvcrt.LK_NBLCK,1)
+            else:
+                import fcntl
+                fcntl.flock(f.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+        except OSError as exc:
+            raise RuntimeError('Уже выполняется другое локальное задание OCR. Дождитесь завершения перед запуском второго процесса.') from exc
+        _worker_local.active=True
+        try:
+            yield
+        finally:
+            _worker_local.active=False
+            f.seek(0)
+            if os.name=='nt':
+                msvcrt.locking(f.fileno(),msvcrt.LK_UNLCK,1)
+            else:
+                fcntl.flock(f.fileno(),fcntl.LOCK_UN)
+    finally:
+        f.close()
 
 THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
 for key in ('OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS'):

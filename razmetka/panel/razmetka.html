@@ -162,7 +162,9 @@ footer a{color:var(--accent)}
         <input type="text" id="cropNum" placeholder="номер (6.1)" size="9">
         <button class="btn sec sm" id="cropGo" type="button" disabled>Вырезать и вставить</button>
         <label style="font-size:12px"><input type="checkbox" id="allowModelDownload">Разрешить загрузку необязательной модели формул (~650 МБ, нужен интернет)</label>
-        <button class="btn sec sm" id="glmGo" type="button" disabled title="Распознать выделенную формулу нейросетью на видеокарте этого компьютера">Формула → LaTeX</button>
+        <label>Модель формул <select id="formulaEngine"><option value="local">Локально, CPU / офлайн</option><option value="browser">GLM в браузере / WebGPU</option></select></label>
+        <button class="btn sec sm" id="glmGo" type="button" disabled title="Распознать выделенную формулу выбранной локальной моделью">Формула → LaTeX</button>
+        <span class="muted">Для офлайн-формул один раз выполните install-formulas.bat (~179 МБ моделей). Драйверы не нужны.</span>
       </div>
       <div class="work">
         <div class="imgbox" id="imgbox"><div class="inner"><img id="pimg" alt="Страница документа"><canvas id="cv"></canvas></div></div>
@@ -455,13 +457,21 @@ $('glmGo').onclick = async () => {
   try {
     $('cropKind').value = 'formula';
     const c = await doCrop(); msg.textContent = 'Подготовка модели…';
+    let tex;
+    if ($('formulaEngine').value === 'local') {
+      const job = await api('POST', 'doc/' + encodeURIComponent(DOC) + '/formula', {rel:c.rel});
+      const completed = await waitJob(job.id, 'Локальное распознавание формулы…');
+      if (completed.state !== 'done') throw new Error('Распознавание остановлено');
+      tex = completed.result.latex;
+    } else {
     const {TX, processor, model} = await getGlm(m => msg.textContent = m);
     const image = await TX.RawImage.fromURL(furl(c.rel, true));
     const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: 'Formula Recognition:'}]}], {add_generation_prompt: true});
     const inputs = await processor(prompt, image); msg.textContent = 'Распознавание формулы…';
     const out = await model.generate({...inputs, max_new_tokens: 600, do_sample: false});
     const pl = inputs.input_ids.dims.at(-1);
-    let tex = processor.batch_decode(out.slice(null, [pl, null]), {skip_special_tokens: true})[0].trim().replace(/^\$\$?|\$\$?$/g, '').trim();
+    tex = processor.batch_decode(out.slice(null, [pl, null]), {skip_special_tokens: true})[0].trim().replace(/^\$\$?|\$\$?$/g, '').trim();
+    }
     const tag = tex.match(/\\tag\s*\{([^}]*)\}/); tex = tex.replace(/\\tag\s*\{[^}]*\}/, '').replace(/\s+/g, ' ').trim();
     const num = c.num ? ` (${c.num})` : (tag ? ` (${tag[1].replace(/\s+/g, '')})` : '');
     insertAtCursor(`$$ ${tex} $$${num}\n[?LaTeX не сверен]<!-- latex-unverified -->\n![формула${c.num ? ' ' + c.num : ''}](${c.rel})\n`); msg.textContent = 'Формула вставлена — сверьте с вырезкой';

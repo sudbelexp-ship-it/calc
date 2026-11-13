@@ -56,7 +56,7 @@ def evaluate_text(reference, actual, pages=None):
                     out[(tb['name'], tb['start'] + i + 1, j + 1)] = (cell['page'], tokens(cell['text']))
         return out
     ri, ai = index(rt), index(at)
-    total, mismatches = Counter(), []
+    total, mismatches = score_tokens([], []), []
     for key in sorted(set(ri) | set(ai)):
         page = ri.get(key, ai.get(key))[0]
         if pages and page not in pages:
@@ -67,6 +67,8 @@ def evaluate_text(reference, actual, pages=None):
         if score['wrong'] or score['missing']:
             mismatches.append(dict(table=key[0], row=key[1], col=key[2], page=page,
                                    reference_tokens=a, actual_tokens=b, **dict(score)))
+    table_total = dict(total)
+    prose_total = score_tokens([], [])
     def prose(text, tables):
         for tb in reversed(tables):
             a, b = tb['span']
@@ -75,8 +77,11 @@ def evaluate_text(reference, actual, pages=None):
     mr, ar = prose(reference, rt), prose(actual, at)
     for page in sorted(set(mr) | set(ar)):
         if not pages or page in pages:
-            total.update(score_tokens(tokens(strip(mr.get(page, ''))), tokens(strip(ar.get(page, ''))), exact=False))
+            score=score_tokens(tokens(strip(mr.get(page, ''))), tokens(strip(ar.get(page, ''))), exact=False)
+            total.update(score)
+            prose_total.update(score)
     return dict(total=dict(total), mismatches=mismatches,
+                table_total=table_total, prose_total=dict(prose_total),
                 metric='table/name/row/column/token; prose sequence alignment; signs retained')
 
 

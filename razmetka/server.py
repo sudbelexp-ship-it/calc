@@ -273,6 +273,20 @@ class H(BaseHTTPRequestHandler):
                 n, box, nm = int(b['page']), b['box'], re.sub(r'[^A-Za-z0-9._\-]+', '_', b.get('name') or 'ris_1')
                 out, code = E.run_script('crop.py', d, n, *[f'{float(v):.4f}' for v in box], nm)
                 return self.send(200 if code == 0 else 400, {'rel': f'img/p{n:03d}_{nm}.png', 'out': out})
+            if rest == ['formula'] and method == 'POST':
+                b = self.body_json()
+                rel = str(b.get('rel', ''))
+                if not re.fullmatch(r'img/p\d{3,}_formula_[A-Za-z0-9._-]+\.png', rel):
+                    return self.send(400, {'error': 'Нужна вырезка формулы из этого документа'})
+                path = (d / rel).resolve()
+                if not path.is_relative_to((d / 'img').resolve()) or not path.is_file():
+                    return self.send(400, {'error': 'Вырезка формулы не найдена'})
+                if path.stat().st_size > 20 * 1024 * 1024:
+                    return self.send(400, {'error': 'Вырезка формулы слишком большая'})
+                def fn(job):
+                    import formulas
+                    return formulas.recognize(path)
+                return self.send(200, new_job('formula', name, fn))
             if rest == ['check'] and method == 'POST':
                 return self.send(200, {'out': E.do_check(name)})
             if rest == ['relcheck'] and method == 'POST':

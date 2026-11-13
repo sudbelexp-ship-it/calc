@@ -22,6 +22,9 @@ razmetka/validation.json
 *.bin
 assets-local/
 .models-ready.json
+.worker.lock
+.cache/
+razmetka/validation-*.json
 apply_updates.py
 integrate_runtime.py
 validation-run.log

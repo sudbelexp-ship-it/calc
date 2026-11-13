@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from numeric import tokens, values
-from eval_core import score_page
-from table_data import shape, tables_in
+from eval_core import score_page, evaluate_text
+from table_data import shape, tables_in, caption_id
 from strict_review import mark_numbers
 from quality import expression
 import engine
@@ -20,6 +20,50 @@ def word(text, y=0):
 
 
 class NumericSafety(unittest.TestCase):
+    def test_table_metric_is_separate_from_prose_numbers(self):
+        ref='<!-- стр. 1 -->\nText 2020\nТаблица 1\n| x |\n| --- |\n| 5 |'
+        score=evaluate_text(ref,ref.replace('| 5 |','| 6 |'))
+        self.assertEqual(score['table_total']['wrong_unflagged'],1)
+        self.assertEqual(score['table_total']['correct'],0)
+        self.assertEqual(score['prose_total']['wrong_unflagged'],0)
+        self.assertGreater(score['prose_total']['correct'],0)
+
+    def test_digits_in_multilevel_header_do_not_create_data_rows(self):
+        xs=[100*i for i in range(17)]
+        def cell(r,c,text,rs=1,cs=1,y=10):
+            w=word(text,y);w.update(x0=c*100+10,x1=c*100+70,y1=y+12,size=10)
+            return dict(r=r,c=c,rs=rs,cs=cs,bbox=[xs[c],r*30,xs[c+cs],(r+rs)*30],words=[w])
+        cc=[cell(0,0,'2',4),cell(0,1,'Размеры',1,6),cell(0,7,'2',4),
+            cell(0,8,'Масса',4),cell(0,9,'Справочные значения',1,7)]
+        for c in range(16):
+            b=cell(4,c,'10',y=140);b['bbox']=[xs[c],120,xs[c+1],700];b['words']=[]
+            for i in range(17):
+                w=word(str(10+i),140+i*30);w.update(x0=c*100+10,x1=c*100+70,y1=152+i*30,size=10)
+                b['words'].append(w)
+            cc.append(b)
+        html,rows,cols=engine.render_table(dict(xs=xs,ys=[0,30,60,90,120,700],nr=5,nc=16,cells=cc))
+        self.assertEqual((rows,cols),(17,16))
+        self.assertIn('<thead>',html)
+
+    def test_caption_spacing_does_not_guess_digits(self):
+        self.assertEqual(caption_id('Продолжениетаблицы А. [?1]'), 'А.1')
+        self.assertEqual(caption_id('Та б л и ца [?2]'), '2')
+        self.assertIsNone(caption_id('Окончание таблицы АЛ'))
+
+    def test_partial_doubt_table_number_does_not_inherit_previous(self):
+        text = 'Таблица 3\n| x |\n| --- |\n| 5 |\n\nТаблица А.[?1]\n| x |\n| --- |\n| 7 |'
+        tables = tables_in(text)
+        self.assertEqual([t['name'] for t in tables], ['3', 'А.1'])
+        self.assertEqual([t['start'] for t in tables], [0, 0])
+
+    def test_table_check_comment_identifies_caption_fragment(self):
+        text = 'Таблица a\n<table><tr><td>7</td></tr></table>\n<!-- таблица А.1: строк 1, столбцов 1 -->'
+        self.assertEqual(tables_in(text)[0]['name'], 'А.1')
+
+    def test_unknown_table_never_shifts_named_table_rows(self):
+        text = 'Таблица 3\n| x |\n| --- |\n| 5 |\n\n<table><tr><td>8</td></tr></table>'
+        self.assertNotEqual(tables_in(text)[0]['name'], tables_in(text)[1]['name'])
+
     def test_partial_doubt_retains_decimal(self):
         self.assertEqual(tokens('1,[?3]'), [('1.3', True)])
         self.assertNotEqual(values('-5'), values('5'))

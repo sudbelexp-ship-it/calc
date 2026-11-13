@@ -16,7 +16,7 @@ import lexicon as LEX
 import cells as CELLS
 from numeric import values as numeric_values, mark_word
 from strict_review import mark_numbers
-from table_data import shape as table_shape
+from table_data import shape as table_shape, caption_id
 import logging
 
 logging.basicConfig(filename=str(Path(__file__).resolve().parent / 'razmetka.log'), level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s', encoding='utf-8')
@@ -59,8 +59,20 @@ def load_json(p, default=None):
 
 
 def save_json(p, obj):
-    Path(p).parent.mkdir(parents=True, exist_ok=True)
-    Path(p).write_text(json.dumps(obj, ensure_ascii=False), encoding='utf-8')
+    import tempfile
+    p = Path(p)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = None
+    try:
+        with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=p.parent, suffix='.tmp', delete=False) as f:
+            tmp = Path(f.name)
+            json.dump(obj, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    finally:
+        if tmp is not None:
+            tmp.unlink(missing_ok=True)
 
 
 def run_script(script, *args, timeout=900):
@@ -84,6 +96,7 @@ def list_docs():
     return out
 
 
+@OCR.RES.worker()
 def prep(src, name):
     if not str(src).lower().endswith('.pdf'):
         raise ValueError('Фото с искажением не поддерживается, нужен скан в PDF. Сначала выровняйте перспективу и тени.')
@@ -422,6 +435,7 @@ def split_at_lines(words, tbls):
     return out
 
 
+@OCR.RES.worker()
 def extract(name, n, mode='auto'):
     """mode: auto | text | ocr | precise. Результат: auto/pNNN.json."""
     OCR.RES.checkpoint()
@@ -749,7 +763,9 @@ def render_table(tb):
     first_data = R
     for r in range(R):
         row = [c for c in cells if c['r'] == r]
-        if row and sum(_isnum_text(c['text']) for c in row) >= max(1, len(row) // 2):
+        # A merged multi-level header can have only five cells but two isolated
+        # OCR digits. Count against physical columns, not the few merged cells.
+        if row and sum(_isnum_text(c['text']) for c in row) >= max(1, (C + 1) // 2):
             first_data = r
             break
     if first_data == R:
@@ -946,12 +962,11 @@ def render_page(name, n, hf=None, write_crops=True):
             cnt['table'] += 1
             title = None
             for pi in range(len(paras) - 1, max(-1, len(paras) - 5), -1):
-                if re.match(r'^(Продолжение\s+|Окончание\s+)?[Тт]аблиц', re.sub(r'\[\?|\]', '', paras[pi]['t'])):
+                if caption_id(paras[pi]['t']) and len(paras[pi]['t']) < 160:
                     title = paras.pop(pi)['t']
                     break
             emit()
-            mt = re.search(r'[Тт]аблиц[аы]?\s*([A-Za-zА-Яа-я]?\.?\d+(?:\.\d+)*[*]?)', re.sub(r'\[\?|\]', '', title or ''))
-            tnum = mt.group(1).rstrip('*') if mt else chr(96 + min(cnt['table'], 26))
+            tnum = caption_id(title or '') or chr(96 + min(cnt['table'], 26))
             rel = crop_img(d, n, t['bbox'], f'tabl_{_slug(tnum)}', pad=12) if write_crops else f'img/p{n:03d}_tabl_{_slug(tnum)}.png'
             md, rows, cols = render_table(t)
             doubts += md.count('[?')
@@ -1006,7 +1021,7 @@ def assemble(name, overwrite=True):
     N = pr.get('pages', 0)
     pm = d / 'pages_md'
     pm.mkdir(exist_ok=True)
-    body, doubts = [], []
+    body, doubts, doubt_counts = [], {}, {}
     desig = ''
     for n in range(1, N + 1):
         f = pm / f'p{n:03d}.md'
@@ -1020,18 +1035,18 @@ def assemble(name, overwrite=True):
             if m:
                 desig = (m.group(1) + ' ' + m.group(2)).replace('—', '-').strip()
         for m in re.finditer(r'\[\?([^\]]{1,40})\]', t):
-            if len(doubts) < 400:
-                doubts.append((n, m.group(1)))
+            doubt_counts[n] = doubt_counts.get(n, 0) + 1
+            examples = doubts.setdefault(n, [])
+            if len(examples) < 12:
+                examples.append(m.group(1))
     hd = meta.get('head', {})
     head = ['---', f'обозначение: {hd.get("обозначение") or desig}', f'название: {hd.get("название", "")}', f'редакция: {hd.get("редакция", "")}', f'дата_введения: {hd.get("дата_введения", "")}', f'источник_скана: {meta.get("source", "")}', f'страниц: {N}',
             f'распознано: {datetime.date.today().isoformat()}', '---', '', MARK, '']
     tail = ['', '## Сомнительные места', '']
     if doubts:
-        by = {}
-        for n, w in doubts:
-            by.setdefault(n, []).append(w)
-        for n, ws in sorted(by.items()):
-            tail.append(f'- Стр. {n}: ' + ', '.join(f'«{w}»' for w in ws[:12]) + (f' и ещё {len(ws) - 12}' if len(ws) > 12 else '') + ' — проверить по картинке.')
+        for n, ws in sorted(doubts.items()):
+            more = doubt_counts[n] - len(ws)
+            tail.append(f'- Стр. {n}: ' + ', '.join(f'«{w}»' for w in ws) + (f' и ещё {more}' if more else '') + ' — проверить по картинке.')
     else:
         tail.append('нет')
     text = '\n'.join(head) + '\n\n'.join(body) + '\n' + '\n'.join(tail) + '\n'
@@ -1044,6 +1059,7 @@ def assemble(name, overwrite=True):
     if out.exists() and MARK not in out.read_text(encoding='utf-8', errors='ignore')[:600]:
         shutil.copy(out, d / 'document.manual.bak.md')
     out.write_text(text, encoding='utf-8')
+    quality.run_relcheck_cli(d, text, run_script)
     return {'doubts': sum(len(re.findall(r'\[\?[^\]]*\]', t)) for t in body), 'relations': len(issues)}
 
 
@@ -1053,6 +1069,7 @@ class Cancelled(Exception):
     pass
 
 
+@OCR.RES.worker()
 def recognize(name, pages, mode='auto', progress=None, cancel=None):
     d = docdir(name)
     pr = load_json(d / 'progress.json') or {}

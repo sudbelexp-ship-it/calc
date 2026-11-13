@@ -14,6 +14,12 @@
 как напечатано и записать в «Сомнительные места»).
 """
 import sys, os, re, glob, math
+from pathlib import Path
+_runtime = Path(__file__).resolve().parent.parent / 'razmetka'
+_tables_in = None
+if (_runtime / 'table_data.py').exists():
+    sys.path.insert(0, str(_runtime))
+    from table_data import tables_in as _tables_in
 for _s in (sys.stdout, sys.stderr):
     _s.reconfigure(encoding='utf-8', errors='replace')
 
@@ -24,6 +30,11 @@ def strip(html):
 
 def find_table(text, name):
     """Возвращает (заголовки столбцов, строки данных) таблицы с данным номером."""
+    if _tables_in:
+        fragments = [t for t in _tables_in(text) if t['name'] == name]
+        if not fragments:
+            return None
+        return [], [[c['text'] for c in row] for t in fragments for row in t['rows']]
     text = re.sub(r'\[\?([^\]]*)\]', r'\1', text)
     for m in re.finditer(r'^\s*Таблица\s+' + re.escape(name) + r'(?![\w.])[^\n]*$', text, flags=re.M):
         rest = text[m.end():]
@@ -83,7 +94,9 @@ if __name__ == '__main__':
     if len(sys.argv) < 4:
         sys.exit(__doc__)
     out, name, rels = sys.argv[1], sys.argv[2], sys.argv[3:]
-    text = '\n'.join(open(f, encoding='utf-8').read() for f in sorted(glob.glob(os.path.join(out, '*.md'))))
+    main = Path(out) / 'document.md'
+    files = [main] if main.exists() else [Path(f) for f in sorted(glob.glob(os.path.join(out, '*.md'))) if not f.endswith(('report.md', '.bak.md'))]
+    text = '\n'.join(f.read_text(encoding='utf-8') for f in files)
     found = find_table(text, name)
     if not found:
         sys.exit(f'Таблица {name} не найдена (нужна строка-заголовок «Таблица {name}» и тело таблицы под ней)')

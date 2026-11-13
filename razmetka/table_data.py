@@ -4,6 +4,16 @@ from html import unescape
 from html.parser import HTMLParser
 
 
+def caption_id(text):
+    """Read an explicit caption identifier, allowing letter spacing and doubt wrappers.
+
+    Never infer a missing digit (e.g. OCR «АЛ» must not become «А.1»).
+    """
+    plain = re.sub(r'\[\?|\]', '', text)
+    m = re.search(r'т\s*а\s*б\s*л\s*и\s*ц[аы][ \t]*([А-Яа-яA-Za-z][ \t]*\.[ \t]*\d+(?:\.\d+)*|\d+(?:\.\d+)*)', plain, re.I)
+    return re.sub(r'[ \t]+', '', m[1]) if m else None
+
+
 class Tables(HTMLParser):
     def __init__(self):
         super().__init__(convert_charrefs=True)
@@ -87,10 +97,18 @@ def tables_in(text):
     pattern = re.compile(r'<table\b.*?</table>|(?:^\s*\|[^\n]*\|\s*$\n?){2,}', re.S | re.M)
     result = []
     offsets = {}
+    previous_end = 0
     for match in pattern.finditer(text):
         before = text[:match.start()]
-        titles = list(re.finditer(r'^[ \t]*(?:Продолжение\s+|Окончание\s+)?(?:Таблица|таблицы)\s*(\[\?)?([А-Яа-яA-Za-z]?\.?\d+(?:\.\d+)*)', before, re.M | re.I))
-        name = titles[-1][2] if titles else 'unnamed'
+        # Doubt markers may wrap only the numeric part: «А.[?1]».
+        # Never inherit an unrelated caption from a preceding table.
+        caption_area = re.sub(r'\[\?|\]', '', text[previous_end:match.start()])
+        titles = [caption_id(line) for line in caption_area.splitlines() if len(line) < 160]
+        titles = [title for title in titles if title]
+        check = re.match(r'\s*<!--\s*таблица\s+([^:]+):\s*строк\s+\d+', text[match.end():], re.I)
+        name = check[1].strip() if check else (titles[-1] if titles else f'unnamed-{len(result)+1}')
+        # Slugging crops uses Latin A/B; actual captions remain unchanged.
+        name = name.translate(str.maketrans({'A': 'А', 'B': 'Б'})) if re.match(r'^[AB]\.\d', name) else name
         marks = list(re.finditer(r'<!--\s*стр\.\s*(\d+)', before))
         page = int(marks[-1][1]) if marks else 0
         raw = match.group()
@@ -112,4 +130,5 @@ def tables_in(text):
         offsets[name] = start + len(rows)
         result.append(dict(name=name, page=page, start=start, rows=rows, width=width,
                            span=(match.start(), match.end())))
+        previous_end = match.end()
     return result

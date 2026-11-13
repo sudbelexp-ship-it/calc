@@ -64,6 +64,27 @@ def relation_checks(text):
     return issues
 
 
+def run_relcheck_cli(folder, text, runner):
+    """Execute the skill's checker too; keep its diagnostics with private page data."""
+    rules=json.loads(Path(__file__).with_name('relations.json').read_text(encoding='utf-8'))
+    designation=re.search(r'^обозначение:\s*(.+)$',text,re.M)
+    key=designation[1].replace('—','-').replace('–','-').strip() if designation else ''
+    config=rules.get(key,{})
+    records=[]
+    widths={t['name']:t['width'] for t in tables_in(text)}
+    for name,spec in config.items():
+        if widths.get(name)!=spec['columns']:
+            continue
+        output,code=runner('relcheck.py',folder,name,*spec['rules'])
+        records.append(dict(table=name,returncode=code,output=output))
+        if code not in (0,1):
+            raise RuntimeError(f'relcheck.py failed for table {name}: {output}')
+    target=Path(folder)/'auto'
+    target.mkdir(exist_ok=True)
+    (target/'relcheck.json').write_text(json.dumps(records,ensure_ascii=False,indent=2),encoding='utf-8')
+    return records
+
+
 def report(folder, text, issues):
     folder = Path(folder)
     progress = json.loads((folder / 'progress.json').read_text(encoding='utf-8'))

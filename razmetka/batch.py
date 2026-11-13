@@ -51,6 +51,10 @@ def main(argv=None):
                         result = E.render_page(folder.name, n)
                         if result:
                             md.write_text(result['md'], encoding='utf-8')
+                pr['done'] = sorted(set(pr.get('done', [])) | {
+                    n for n in range(1, pr['pages'] + 1)
+                    if (folder / 'pages_md' / f'p{n:03d}.md').exists()})
+                E.save_json(folder / 'progress.json', pr)
                 E.assemble(folder.name)
             log.info('%s complete; report.md saved', folder.name)
         except KeyboardInterrupt:

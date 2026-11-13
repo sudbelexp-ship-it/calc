@@ -33,6 +33,42 @@ def _merge_close(vals, mind):
     return out
 
 
+def _outer_edges(horiz, x, y, width, height, xs):
+    """Use measured horizontal rule endpoints when outer vertical rules are absent."""
+    sub = horiz[y:y+height, x:x+width]
+    lengths = (sub > 0).sum(axis=1)
+    long = np.where(lengths >= max(40, lengths.max(initial=0) * .85))[0]
+    if not len(long):
+        return xs
+    ends = [np.flatnonzero(sub[row]) for row in long]
+    left = float(np.median([x+line[0] for line in ends]))
+    right = float(np.median([x+line[-1] for line in ends]))
+    if xs[0] - left >= 22:
+        xs = [left] + xs
+    if right - xs[-1] >= 22:
+        xs = xs + [right]
+    return xs
+
+
+def _join_header_body(tables, horiz, vert, page_height):
+    """Join an isolated multilevel header to an aligned, separately ruled body."""
+    out=[]
+    for table in tables:
+        if out:
+            top=out[-1]
+            gap=table['ys'][0]-top['ys'][-1]
+            aligned=len(top['xs'])==len(table['xs']) and all(abs(a-b)<7 for a,b in zip(top['xs'],table['xs']))
+            header=len(top['ys'])<=6 and any(c['cs']>1 for c in top['cells'])
+            body=len(table['ys'])>=7
+            if aligned and header and body and 0<gap<page_height*.07:
+                xs=top['xs']; ys=top['ys']+table['ys']
+                top.update(ys=ys, cells=_cells(horiz,vert,xs,ys),
+                           bbox=(int(xs[0]),int(ys[0]),int(xs[-1]),int(ys[-1])))
+                continue
+        out.append(table)
+    return out
+
+
 def find_tables(gray):
     """[{bbox:(x0,y0,x1,y1), xs:[...], ys:[...], cells:[{r,c,rs,cs,bbox}]}]"""
     h, w = gray.shape
@@ -51,6 +87,7 @@ def find_tables(gray):
         xs = _merge_close([x + v for v in _clusters(np.where(sub_v.sum(axis=0) / 255 >= bh_ * 0.18)[0], 3)], 22)
         if len(ys) < 2 or len(xs) < 2:
             continue
+        xs = _outer_edges(horiz, x, y, bw_, bh_, xs)
         # границы таблицы — по крайним линиям (даже если внешний контур неполон)
         x0, x1, y0, y1 = xs[0], xs[-1], ys[0], ys[-1]
         if (x1 - x0) < w * 0.12 or (y1 - y0) < 40:
@@ -65,7 +102,7 @@ def find_tables(gray):
         if any(k['bbox'][0] <= a[0] + 5 and k['bbox'][1] <= a[1] + 5 and k['bbox'][2] >= a[2] - 5 and k['bbox'][3] >= a[3] - 5 for k in keep):
             continue
         keep.append(t)
-    return keep
+    return _join_header_body(keep, horiz, vert, h)
 
 
 def _border_h(horiz, y, xa, xb):
