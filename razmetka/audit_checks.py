@@ -105,7 +105,7 @@ def checks():
            and n.value == 'Host' for n in ast.walk(handler)), 'Host header must be validated before routing')
 
     # Start a private test server with isolated token/inbox in this audit copy.
-    env = dict(os.environ, RAZMETKA_PORT='18865', PYTHONDONTWRITEBYTECODE='1')
+    env = dict(os.environ, RAZMETKA_PORT='18865', PYTHONDONTWRITEBYTECODE='1', PYTHONUTF8='1')
     log = (HERE / 'audit-server.log').open('w', encoding='utf-8')
     proc = subprocess.Popen([sys.executable, '-B', '-W', 'ignore', 'server.py'],
                             cwd=HERE, env=env, stdout=log, stderr=log)
@@ -121,6 +121,9 @@ def checks():
                 conn.close()
                 break
             except OSError:
+                if proc.poll() is not None:
+                    log.flush()
+                    raise RuntimeError('Test server exited: ' + (HERE / 'audit-server.log').read_text(encoding='utf-8', errors='replace'))
                 if time.monotonic() > deadline:
                     raise
                 time.sleep(.2)

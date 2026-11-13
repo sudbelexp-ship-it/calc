@@ -112,7 +112,7 @@ def erase_lines(img, tables):
     m = cv2.dilate(cv2.bitwise_or(horiz, vert), np.ones((3, 3), np.uint8))
     zone = np.zeros_like(m)
     for t in tables:
-        x0, y0, x1, y1 = t['bbox']
+        x0, y0, x1, y1 = map(int, t['bbox'])
         zone[max(0, y0 - 6):y1 + 7, max(0, x0 - 6):x1 + 7] = 255
     m = cv2.bitwise_and(m, zone)
     out = img.copy()
