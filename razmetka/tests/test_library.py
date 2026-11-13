@@ -65,7 +65,7 @@ class Library(unittest.TestCase):
 
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.addCleanup(self.temp.cleanup)
-        self.root=Path(self.temp.name)
+        self.root=Path(self.temp.name).resolve()
         for obj,attr,value in [(L,'CATALOG',self.root/'library.json'),(E.OCR.RES,'LOCK_PATH',self.root/'worker.lock')]:
             p=patch.object(obj,attr,value);p.start();self.addCleanup(p.stop)
 
@@ -127,6 +127,7 @@ class Library(unittest.TestCase):
         self.assertEqual(L.register(source)['ids'],[name])
         self.assertEqual(E.docdir(name),d)
         L.CATALOG.unlink() # reinstall/restart: discover existing output by identity
+        L.CATALOG.with_suffix('.bak.json').unlink(missing_ok=True)
         L.register(source)
         self.assertEqual(E.docdir(name),d)
 
