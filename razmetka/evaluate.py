@@ -2,49 +2,18 @@
 
   python evaluate.py <исходный_pdf> <папка_эталона> <имя_пробной_папки> [auto|ocr|text|precise] [стр ...]
 
-Главный показатель — «неверных чисел БЕЗ пометки [?…]» (цель — ноль). Числа сравниваются по порядку на странице
-(выравнивание последовательностей), а не мешком; мешковый показатель выводится дополнительно.
+Главный показатель — «неверных чисел БЕЗ пометки [?…]» (цель — ноль).
+Табличные числа сравниваются по таблице, строке и столбцу с сохранением знаков.
+Для текста вне таблиц применяется выравнивание последовательностей.
 Результат пишется в eval_results/<имя>_<режим>.json.
 """
-import sys, io, re, time, json, os
-from collections import Counter
-from difflib import SequenceMatcher
+import sys, time, json
 from pathlib import Path
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 sys.path.insert(0, str(Path(__file__).parent))
 import engine as E
-
-NUM = re.compile(r'\d+(?:[.,]\d+)?')
-WORD = re.compile(r'[А-Яа-яЁёA-Za-z]{3,}')
-
-
-def split_pages(md):
-    md = md.split('## Сомнительные места')[0]
-    parts = re.split(r'<!--\s*стр\.\s*(\d+)[^>]*-->', md)
-    out = {}
-    for i in range(1, len(parts), 2):
-        out[int(parts[i])] = out.get(int(parts[i]), '') + parts[i + 1]
-    return out
-
-
-def strip(t):
-    t = re.sub(r'<!--.*?-->', ' ', t, flags=re.S)
-    t = re.sub(r'!\[[^\]]*\]\([^)]*\)', ' ', t)
-    return re.sub(r'<[^>]+>', ' ', t)
-
-
-def tokens(text, keep_flags):
-    """[(число, помечено_ли)] в порядке следования."""
-    t = strip(text)
-    spans = [(m.start(), m.end()) for m in re.finditer(r'\[\?[^\]]*\]', t)] if keep_flags else []
-    out = []
-    for m in NUM.finditer(t):
-        fl = any(a <= m.start() < b for a, b in spans)
-        out.append((m.group().replace(',', '.'), fl))
-    return out
-
-
-from eval_core import evaluate_text, score_page
+from eval_core import evaluate_text, score_page, split_pages
 
 
 def run(src, ref, name, mode='auto', pages=None, quiet=False, cached=False):

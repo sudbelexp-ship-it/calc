@@ -19,6 +19,6 @@ class FormulaSafety(unittest.TestCase):
             path=Path(temp)/'formula.png'
             img=Image.new('RGB',(100,40),'white');ImageDraw.Draw(img).text((10,10),'x = -5',fill='black');img.save(path)
             with patch.object(formulas,'ready',return_value=[]), patch.object(formulas,'_model',return_value=('-5+x',.1)):
-                result=formulas.recognize(path)
+                result=formulas.recognize.__wrapped__(path)
             self.assertEqual(result['latex'],'-5+x')
             self.assertFalse(result['verified'])

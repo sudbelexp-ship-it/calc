@@ -8,6 +8,8 @@ if not exist venv\Scripts\python.exe (
 )
 venv\Scripts\python.exe -m pip install -r requirements-formulas.txt
 if errorlevel 1 exit /b 1
+venv\Scripts\python.exe -m pip check
+if errorlevel 1 exit /b 1
 venv\Scripts\python.exe formulas.py --prepare
 if errorlevel 1 exit /b 1
 echo Локальная модель формул установлена. Перезапустите start.bat.

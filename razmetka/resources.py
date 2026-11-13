@@ -7,6 +7,7 @@ import threading
 from pathlib import Path
 
 _worker_local=threading.local()
+LOCK_PATH=Path(os.environ.get('RZ_WORKER_LOCK') or Path(__file__).with_name('.worker.lock'))
 
 
 @contextlib.contextmanager
@@ -15,7 +16,7 @@ def worker():
     if getattr(_worker_local,'active',False):
         yield
         return
-    lock_path=Path(__file__).with_name('.worker.lock')
+    lock_path=LOCK_PATH
     fd=os.open(lock_path,os.O_RDWR|os.O_CREAT,0o600)
     f=os.fdopen(fd,'r+b')
     try:
@@ -81,7 +82,9 @@ def checkpoint():
         reserve = max(1536 * 1024 ** 2, int(stats['total'] * .20))
         if stats['available'] < reserve:
             raise RuntimeError('Недостаточно свободной памяти: оставляем системе 20% ОЗУ (не менее 1,5 ГБ). Закройте тяжёлые приложения и продолжите обработку.')
-    time.sleep(.05)
+    # Yield without imposing 50 ms on every tiny cell. Thread/priority limits
+    # enforce the CPU budget; a per-cell delay made overnight queues much slower.
+    time.sleep(0)
 
 
 def check_pixels(width, height):

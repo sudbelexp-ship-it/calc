@@ -14,6 +14,7 @@ import ocr as OCR
 import tables as TB
 import lexicon as LEX
 import cells as CELLS
+import layout as LAYOUT
 from numeric import values as numeric_values, mark_word
 from strict_review import mark_numbers
 from table_data import shape as table_shape, caption_id
@@ -493,7 +494,10 @@ def extract(name, n, mode='auto'):
         w.setdefault('bold', False)
         w.setdefault('it', False)
     # A grid may contain only the header; recover the aligned unruled numeric body.
+    tbls = LAYOUT.aligned_fragments(tbls, words, gray)
     CELLS.extend_header_tables(tbls, words, H)
+    for t in tbls:
+        LAYOUT.normalize(t, words)
     # --- таблицы: каждая ячейка распознаётся отдельно (только распознаватель строк)
     cw = {}
     cstat = {'cells': 0, 'agree': 0, 'flagged': 0, 'unverified': 0}
@@ -558,7 +562,7 @@ def extract(name, n, mode='auto'):
             if ws is None:
                 ws = [w for w in words if _center_in(w, c['bbox'])]
             cells.append({'r': c['r'], 'c': c['c'], 'rs': c['rs'], 'cs': c['cs'], 'bbox': [int(v) for v in c['bbox']], 'words': ws})
-        out_tables.append({'bbox': list(t['bbox']), 'nr': len(t['ys']) - 1, 'nc': len(t['xs']) - 1, 'ys': [float(v) for v in t['ys']], 'xs': [float(v) for v in t['xs']], 'cells': cells})
+        out_tables.append({'bbox': list(t['bbox']), 'nr': len(t['ys']) - 1, 'nc': len(t['xs']) - 1, 'ys': [float(v) for v in t['ys']], 'xs': [float(v) for v in t['xs']], 'cells': cells, **({'header_rows': t['header_rows']} if 'header_rows' in t else {})})
     rejected = [t['bbox'] for t in out_tables if not content_table(t)]
     figs.extend(rejected)
     rich.extend([False] * len(rejected))
@@ -770,6 +774,7 @@ def render_table(tb):
             break
     if first_data == R:
         first_data = 1 if R > 1 else 0
+    first_data = tb.get('header_rows', first_data)
     # --- строки без горизонтальных линий: общие полосы строк по всем столбцам
     ub = CELLS.unruled_body(tb, ys[first_data]) if first_data < R else None
     if ub:
@@ -798,7 +803,7 @@ def render_table(tb):
         matrix.append(line)
     CELLS.selfcheck_columns(matrix)
     spans = any(c['rs'] > 1 or c['cs'] > 1 for c in out_cells)
-    if not spans:
+    if not spans and first_data == 1:
         grid = [[''] * C for _ in range(R)]
         for c in out_cells:
             grid[c['r']][c['c']] = c['text'].replace('|', r'\|').replace('\n', ' ')

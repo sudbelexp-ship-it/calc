@@ -10,7 +10,7 @@ def caption_id(text):
     Never infer a missing digit (e.g. OCR «АЛ» must not become «А.1»).
     """
     plain = re.sub(r'\[\?|\]', '', text)
-    m = re.search(r'т\s*а\s*б\s*л\s*и\s*ц[аы][ \t]*([А-Яа-яA-Za-z][ \t]*\.[ \t]*\d+(?:\.\d+)*|\d+(?:\.\d+)*)', plain, re.I)
+    m = re.search(r'т\s*а\s*б\s*л(?:\s*и\s*ц[аы]|\.)[ \t]*([А-Яа-яA-Za-z][ \t]*\.[ \t]*\d+(?:\.\d+)*|\d+(?:\.\d+)*)', plain, re.I)
     return re.sub(r'[ \t]+', '', m[1]) if m else None
 
 
