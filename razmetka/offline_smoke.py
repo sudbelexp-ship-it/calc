@@ -11,7 +11,12 @@ def blocked(*args, **kwargs):
 
 
 def main():
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--formula',help='Optional local formula crop, after install-formulas.bat')
+    args=parser.parse_args()
     socket.socket.connect = blocked
+    socket.socket.connect_ex = blocked
     socket.create_connection = blocked
     doctor.check()
     image = np.full((160, 850, 3), 255, np.uint8)
@@ -26,6 +31,12 @@ def main():
     if not text:
         raise RuntimeError('Precise recognizer returned no text')
     print('PASS: standard and SERVER numeric recognizers work with sockets blocked')
+    if args.formula:
+        import formulas
+        result=formulas.recognize(args.formula)
+        if result['verified'] or not result['latex']:
+            raise RuntimeError('Invalid formula result state')
+        print(f"PASS: local formula recognizer with sockets blocked ({result['seconds']} s); LaTeX remains unverified")
 
 
 if __name__ == '__main__':

@@ -13,7 +13,7 @@ sys.path.insert(0, str(HERE))
 import engine as E
 
 PORT = int(os.environ.get('RAZMETKA_PORT', '8765'))
-VERSION = '2.0-test'
+VERSION = '2.1-test'
 MAX_UPLOAD_BYTES = 256 * 1024 * 1024
 MAX_JSON_BYTES = 4 * 1024 * 1024
 ALLOWED_HOSTS = {f'127.0.0.1:{PORT}', f'localhost:{PORT}'}

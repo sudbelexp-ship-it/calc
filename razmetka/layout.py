@@ -16,13 +16,17 @@ def aligned_fragments(tables, words, gray):
     for t in tables:
         if out:
             top=out[-1];gap=t['bbox'][1]-top['bbox'][3]
-            aligned=len(top['xs'])==len(t['xs']) and len(t['xs'])>=11 and all(abs(a-b)<9 for a,b in zip(top['xs'],t['xs']))
+            same_columns=len(top['xs'])==len(t['xs']) and len(t['xs'])>=11
+            interior=same_columns and all(abs(a-b)<9 for a,b in zip(top['xs'][1:-1],t['xs'][1:-1]))
+            edge_tolerance=float(np.median(np.diff(t['xs'])))*.6
+            aligned=interior and abs(top['xs'][0]-t['xs'][0])<edge_tolerance and abs(top['xs'][-1]-t['xs'][-1])<edge_tolerance
             between=[w for w in words if top['bbox'][3]<(w['y0']+w['y1'])/2<t['bbox'][1] and top['bbox'][0]<(w['x0']+w['x1'])/2<top['bbox'][2]]
             caption=any(caption_id(' '.join(w['t'] for w in band)) for cy,band in row_bands(between))
             nums=sum(numeric_word(w['t']) for w in between)
             if aligned and 0<=gap<gray.shape[0]*.18 and not caption and nums>=len(t['xs'])//2:
-                ys=top['ys']+t['ys'];xs=top['xs']
-                top.update(ys=ys,cells=_cells(horiz,vert,xs,ys),bbox=(xs[0],ys[0],xs[-1],ys[-1]))
+                ys=top['ys']+t['ys'];xs=list(top['xs'])
+                xs[0]=min(xs[0],t['xs'][0]);xs[-1]=max(xs[-1],t['xs'][-1])
+                top.update(xs=xs,ys=ys,cells=_cells(horiz,vert,xs,ys),bbox=tuple(int(round(v)) for v in (xs[0],ys[0],xs[-1],ys[-1])))
                 continue
         out.append(t)
     return out
@@ -52,7 +56,7 @@ def normalize(table, words):
         tail.append((cy,band))
     if tail:
         y1=max(w['y1'] for cy,band in tail for w in band)+5
-        table['bbox']=(x0,y0,x1,y1)
+        table['bbox']=tuple(int(round(v)) for v in (x0,y0,x1,y1))
     ws=[w for w in words if x0<=(w['x0']+w['x1'])/2<=x1 and y0<=(w['y0']+w['y1'])/2<=y1]
     candidates=row_bands([w for w in ws if numeric_word(w['t'])])
     bands=[(cy,band) for cy,band in candidates if len({column(xs,w) for w in band})>=max(3,int(np.ceil(C*.30)))]
@@ -66,7 +70,7 @@ def normalize(table, words):
     for cy,band in row_bands([w for w in ws if (w['y0']+w['y1'])/2>=start]):
         letters=sum(len(re.findall('[А-Яа-яЁё]',w['t'])) for w in band)
         left=min(w['x0'] for w in band);right=max(w['x1'] for w in band)
-        if letters>=10 and not any(re.search(r'\d',w['t']) for w in band) and left>x0+(x1-x0)*.12 and right<x1-(x1-x0)*.08:
+        if letters>=10 and sum(numeric_word(w['t']) for w in band)<=1 and left>x0+(x1-x0)*.12 and right<x1-(x1-x0)*.08:
             if min(abs(cy-b[0]) for b in bands)>np.median([w['y1']-w['y0'] for w in band]):
                 groups.append((cy,band))
     entries=sorted([(cy,'number',band) for cy,band in bands]+[(cy,'section',band) for cy,band in groups])

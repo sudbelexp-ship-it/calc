@@ -2,12 +2,12 @@
 import re
 from decimal import Decimal, InvalidOperation
 
-NUMBER = re.compile(r'(?<!\d)[+−–-]?\d+(?:[.,]\d+)?(?:[eE][+−-]?\d+)?')
+NUMBER = re.compile(r'(?<!\d)(?:[+−–—±-][ \t]*)?\d+(?:[.,]\d+)?(?:[eE][+−-]?\d+)?')
 DOUBT = re.compile(r'\[\?[^\]]*\]')
 
 
 def normalize(text):
-    return text.replace(',', '.').replace('−', '-').replace('–', '-').replace(' ', '')
+    return re.sub(r'[ \t]+', '', text.replace(',', '.').replace('−', '-').replace('–', '-'))
 
 
 def tokens(text):

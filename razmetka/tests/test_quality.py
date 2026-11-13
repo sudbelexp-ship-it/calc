@@ -20,6 +20,14 @@ def word(text, y=0):
 
 
 class NumericSafety(unittest.TestCase):
+    def test_plus_minus_and_spaced_signs_are_not_discarded(self):
+        self.assertEqual(values('− 0,5'),['-0.5'])
+        self.assertEqual(tokens('± [?1,0]'),[('±1.0',True)])
+        self.assertNotEqual(values('±1'),values('1'))
+        ref='Таблица 1\n<table><tr><td>± 1,0</td></tr></table>'
+        actual=ref.replace('± 1,0','1,0')
+        self.assertEqual(score_page(ref,actual)['wrong_unflagged'],1)
+
     def test_table_metric_is_separate_from_prose_numbers(self):
         ref='<!-- стр. 1 -->\nText 2020\nТаблица 1\n| x |\n| --- |\n| 5 |'
         score=evaluate_text(ref,ref.replace('| 5 |','| 6 |'))

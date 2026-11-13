@@ -94,12 +94,28 @@ GLM-OCR остаётся дополнительным вариантом в бр
 ссылки позволяют размещение в `/c/`. Сам Python-сервер на хостинг переносить не нужно.
 
 
-## Resource budget
+## Ресурсы компьютера
 
-The browser is a panel; Python, dependencies and OCR model weights are installed locally once by install.bat. Ordinary OCR is offline after installation; no graphics drivers are installed. Model files occupy about 150 MB, in addition to Python, packages, PDFs and output images. Optional browser GLM downloads are separate.
+Браузер показывает панель. Python, библиотеки и OCR-модели устанавливаются один раз
+через install.bat. Около 150 МБ занимают основные модели, ещё около 179 МБ —
+необязательные локальные модели формул. Отдельно нужны место для Python, библиотек,
+PDF и изображений страниц. Видеодрайверы программа не устанавливает.
 
-CPU: at most half the logical CPUs, capped at four threads per inference session; one recognition job runs at a time. OpenCV has the same limit; Windows process priority is below normal. This is not a hard CPU percentage quota.
+OCR и OpenCV используют не более половины логических ядер, максимум четыре потока.
+На Windows процесс дополнительно закреплён за этим количеством доступных логических
+ядер и имеет пониженный приоритет. Межпроцессная блокировка не даёт панели и отдельной
+ночной очереди выполнять два OCR-задания одновременно. После аварийного завершения
+блокировка снимается операционной системой. Браузерный GLM работает отдельным приложением:
+эти CPU-ограничения на него не распространяются.
 
-RAM: check before pages and cell recognition; stop when available system RAM falls below 20% or 1.5 GB, whichever is larger. Before PDF rendering, estimate 40 bytes per pixel and reject pages over 45 MP. These are preventive checks, not a hard process memory cap; other applications can still change available RAM during a step. Completed pages remain on disk for resuming.
+Перед страницами и распознаванием ячеек проверяется свободная память. Обработка
+останавливается, когда системе остаётся меньше 20% ОЗУ или 1,5 ГБ — выбирается больший
+резерв. До рендера PDF применяется оценка 40 байт на пиксель; листы свыше 45 Мп отклоняются.
+Это предупредительные проверки, а не жёсткий лимит памяти процесса. Другие программы
+могут изменить доступную память во время операции. Готовые страницы сохраняются для продолжения.
 
-Resource smoke test (this workstation, 20 logical CPUs, synthetic 900x1200 page): 4 threads; 1.829 s wall time; 6.234 s CPU time; average 17.04% of total machine CPU; peak process working set 255.7 MiB. Includes model loading and one cell recognition; not a worst-case guarantee for large PDFs or precise mode. Run `python razmetka/resource_probe.py` to repeat.
+Проверка OCR на синтетическом листе 900×1200: 20 логических CPU, бюджет 4 потока,
+2,257 с, средняя загрузка всей машины 16,09%, пик рабочего набора процесса 256,2 МиБ.
+Включает загрузку моделей и одну ячейку. Это не худший случай для больших PDF или precise.
+Повторить: `python razmetka/resource_probe.py`. Локальные формулы имеют предел 45 секунд
+и 512 токенов; достижение предела сообщает об ошибке, а не выдаёт обрезанный LaTeX как готовый.

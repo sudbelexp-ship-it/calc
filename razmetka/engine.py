@@ -7,7 +7,7 @@ import os, re, sys, json, subprocess, datetime, shutil, threading, html as _html
 from pathlib import Path
 import numpy as np
 import cv2
-import fitz
+import pymupdf as fitz
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ocr as OCR
@@ -247,7 +247,7 @@ def find_figures(img, words, tbls):
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     ink = (gray < 190).astype(np.uint8) * 255
     for t in tbls:
-        x0, y0, x1, y1 = t['bbox']
+        x0, y0, x1, y1 = map(int, t['bbox'])
         cv2.rectangle(ink, (x0 - 4, y0 - 4), (x1 + 4, y1 + 4), 0, -1)
     longw = [w for w in words if len(w['t']) > 2 and not re.fullmatch(r'[\d.,]+', w['t'])]
     for w in longw:
@@ -776,7 +776,7 @@ def render_table(tb):
         first_data = 1 if R > 1 else 0
     first_data = tb.get('header_rows', first_data)
     # --- строки без горизонтальных линий: общие полосы строк по всем столбцам
-    ub = CELLS.unruled_body(tb, ys[first_data]) if first_data < R else None
+    ub = CELLS.unruled_body(tb, ys[first_data]) if first_data < R and 'header_rows' not in tb else None
     if ub:
         xs, rows = ub
         head = _hdr_cells(cells, first_data, by=ys[first_data] - 2)

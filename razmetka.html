@@ -454,9 +454,10 @@ async function getGlm(setMsg){
 }
 $('glmGo').onclick = async () => {
   const msg = $('saveMsg'); $('glmGo').disabled = true;
+  let c = null;
   try {
     $('cropKind').value = 'formula';
-    const c = await doCrop(); msg.textContent = 'Подготовка модели…';
+    c = await doCrop(); msg.textContent = 'Подготовка модели…';
     let tex;
     if ($('formulaEngine').value === 'local') {
       const job = await api('POST', 'doc/' + encodeURIComponent(DOC) + '/formula', {rel:c.rel});
@@ -475,7 +476,12 @@ $('glmGo').onclick = async () => {
     const tag = tex.match(/\\tag\s*\{([^}]*)\}/); tex = tex.replace(/\\tag\s*\{[^}]*\}/, '').replace(/\s+/g, ' ').trim();
     const num = c.num ? ` (${c.num})` : (tag ? ` (${tag[1].replace(/\s+/g, '')})` : '');
     insertAtCursor(`$$ ${tex} $$${num}\n[?LaTeX не сверен]<!-- latex-unverified -->\n![формула${c.num ? ' ' + c.num : ''}](${c.rel})\n`); msg.textContent = 'Формула вставлена — сверьте с вырезкой';
-  } catch(e) { msg.textContent = 'Ошибка: ' + e.message; } finally { $('glmGo').disabled = !SEL; }
+  } catch(e) {
+    if (c && !$('md').value.includes('](' + c.rel + ')')) {
+      insertAtCursor(`$$ [нечитаемо: формулу нужно сверить по вырезке] $$${c.num ? ' (' + c.num + ')' : ''}\n![формула${c.num ? ' ' + c.num : ''}](${c.rel})\n`);
+    }
+    msg.textContent = 'Ошибка: ' + e.message;
+  } finally { $('glmGo').disabled = !SEL; }
 };
 
 $('h_save').onclick = async () => { try { await api('PUT', 'doc/' + encodeURIComponent(DOC) + '/meta', {'обозначение': $('h_oz').value, 'название': $('h_nm').value, 'редакция': $('h_rd').value, 'дата_введения': $('h_dt').value}); show('Шапка сохранена, document.md пересобран'); } catch(e) { show(e.message); } };

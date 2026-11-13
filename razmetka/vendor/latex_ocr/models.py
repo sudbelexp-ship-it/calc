@@ -87,6 +87,9 @@ class Decoder:
             ):
                 break
 
+        else:
+            raise RuntimeError('Formula token limit reached; select a smaller formula crop')
+
         out = out[:, t:]
         if num_dims == 1:
             out = out.squeeze(0)

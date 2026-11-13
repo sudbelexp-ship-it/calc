@@ -74,6 +74,15 @@ def configure():
         kernel.SetPriorityClass.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
         if not kernel.SetPriorityClass(kernel.GetCurrentProcess(), 0x4000):
             raise OSError('Cannot set background process priority')
+        kernel.GetProcessAffinityMask.argtypes=[ctypes.c_void_p,ctypes.POINTER(ctypes.c_size_t),ctypes.POINTER(ctypes.c_size_t)]
+        allowed,system=ctypes.c_size_t(),ctypes.c_size_t()
+        if not kernel.GetProcessAffinityMask(kernel.GetCurrentProcess(),ctypes.byref(allowed),ctypes.byref(system)):
+            raise OSError('Cannot read process CPU affinity')
+        cores=[i for i in range(ctypes.sizeof(ctypes.c_size_t)*8) if allowed.value & (1<<i)]
+        mask=sum(1<<i for i in cores[:THREADS])
+        kernel.SetProcessAffinityMask.argtypes=[ctypes.c_void_p,ctypes.c_size_t]
+        if not mask or not kernel.SetProcessAffinityMask(kernel.GetCurrentProcess(),mask):
+            raise OSError('Cannot apply process CPU budget')
 
 
 def checkpoint():
