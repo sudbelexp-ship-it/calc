@@ -1,7 +1,9 @@
 """Обёртка над RapidOCR (PP-OCR, русский + латиница): слова с рамками и достоверностью, определение поворота страницы."""
+import resources as RES
 import threading
 import numpy as np
 import cv2
+RES.configure()
 import logging
 LOG = logging.getLogger("razmetka.ocr")
 
@@ -22,13 +24,14 @@ def _server_engine():
         from rapidocr import RapidOCR, LangRec, OCRVersion, ModelType
         # PP-OCRv5 has no Cyrillic SERVER export. SERVER is used for numeric cells;
         # Cyrillic MOBILE remains the Russian full-page reader and second opinion.
-        _server = RapidOCR(params={'Rec.lang_type': LangRec.CH,
+        _server = RapidOCR(params={**RES.onnx_params(), 'Rec.lang_type': LangRec.CH,
             'Rec.ocr_version': OCRVersion.PPOCRV5, 'Rec.model_type': ModelType.SERVER,
             'Global.log_level': 'error'})
     return _server
 
 
 def recognize_line(img):
+    RES.checkpoint()
     engines = [_server_engine(), _engine(), _alt_engine('latin')] if _precise else [_engine()]
     variants = []
     for engine in engines:
@@ -45,7 +48,7 @@ def _engine():
     global _eng
     if _eng is None:
         from rapidocr import RapidOCR, LangRec, OCRVersion, ModelType
-        _eng = RapidOCR(params={
+        _eng = RapidOCR(params={**RES.onnx_params(), 
             "Rec.lang_type": LangRec.CYRILLIC,
             "Rec.ocr_version": OCRVersion.PPOCRV5,
             "Rec.model_type": ModelType.MOBILE,
@@ -64,13 +67,14 @@ def _alt_engine(kind):
     if kind not in _alt:
         from rapidocr import RapidOCR, LangRec, OCRVersion, ModelType
         lang = {'latin': LangRec.LATIN, 'ch': LangRec.CH}[kind]
-        _alt[kind] = RapidOCR(params={"Rec.lang_type": lang, "Rec.ocr_version": OCRVersion.PPOCRV5, "Rec.model_type": ModelType.MOBILE, "Global.log_level": "error", "Global.max_side_len": 3800, "Det.unclip_ratio": 1.3})
+        _alt[kind] = RapidOCR(params={**RES.onnx_params(), "Rec.lang_type": lang, "Rec.ocr_version": OCRVersion.PPOCRV5, "Rec.model_type": ModelType.MOBILE, "Global.log_level": "error", "Global.max_side_len": 3800, "Det.unclip_ratio": 1.3})
     return _alt[kind]
 
 
 def ocr_words(img, engine=None, cls=True):
     """Возвращает список слов {t, x0, y0, x1, y1, c} в пикселях картинки.
     Текст строк берётся целиком (так не теряются строки), границы слов — по точным рамкам, а если их нет — пропорционально."""
+    RES.checkpoint()
     with _lock:
         try:
             r = (_engine() if engine is None else _alt_engine(engine))(img, return_word_box=True, use_det=True, use_cls=cls, use_rec=True)

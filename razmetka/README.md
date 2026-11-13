@@ -86,3 +86,14 @@ LaTeX нейросети отмечен как несверенный до яв�
 
 Файлы для нового хостинга: `markitdown.html`, `razmetka.html`, `theme.js`. Относительные
 ссылки позволяют размещение в `/c/`. Сам Python-сервер на хостинг переносить не нужно.
+
+
+## Resource budget
+
+The browser is a panel; Python, dependencies and OCR model weights are installed locally once by install.bat. Ordinary OCR is offline after installation; no graphics drivers are installed. Model files occupy about 150 MB, in addition to Python, packages, PDFs and output images. Optional browser GLM downloads are separate.
+
+CPU: at most half the logical CPUs, capped at four threads per inference session; one recognition job runs at a time. OpenCV has the same limit; Windows process priority is below normal. This is not a hard CPU percentage quota.
+
+RAM: check before pages and cell recognition; stop when available system RAM falls below 20% or 1.5 GB, whichever is larger. Before PDF rendering, estimate 40 bytes per pixel and reject pages over 45 MP. These are preventive checks, not a hard process memory cap; other applications can still change available RAM during a step. Completed pages remain on disk for resuming.
+
+Resource smoke test (this workstation, 20 logical CPUs, synthetic 900x1200 page): 4 threads; 1.829 s wall time; 6.234 s CPU time; average 17.04% of total machine CPU; peak process working set 255.7 MiB. Includes model loading and one cell recognition; not a worst-case guarantee for large PDFs or precise mode. Run `python razmetka/resource_probe.py` to repeat.

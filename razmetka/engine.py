@@ -220,6 +220,7 @@ def text_words(pdf, n):
         r.normalize()
         words.append({'t': t, 'x0': r.x0, 'y0': r.y0, 'x1': r.x1, 'y1': r.y1, 'c': 1.0,
                       'size': (info[1] if info else (y1 - y0) * 0.85) * SCALE, 'bold': bool(info and info[2]), 'it': bool(info and info[3])})
+    OCR.RES.check_pixels(page.rect.width * SCALE, page.rect.height * SCALE)
     pix = page.get_pixmap(matrix=fitz.Matrix(SCALE, SCALE))
     img = cv2.cvtColor(np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3], cv2.COLOR_RGB2BGR)
     return words, img, extra, why
@@ -423,12 +424,14 @@ def split_at_lines(words, tbls):
 
 def extract(name, n, mode='auto'):
     """mode: auto | text | ocr | precise. Результат: auto/pNNN.json."""
+    OCR.RES.checkpoint()
     d = docdir(name)
     meta = load_json(d / 'meta.json') or {}
     pdf = meta.get('source') if meta.get('kind') == 'pdf' else None
     img = imread(d / 'pages' / f'p{n:03d}.jpg')
     if mode == 'precise' and pdf:
         with fitz.open(pdf) as pd:
+            OCR.RES.check_pixels(pd[n-1].rect.width * 400/72, pd[n-1].rect.height * 400/72)
             pix = pd[n - 1].get_pixmap(dpi=400)
             img = cv2.cvtColor(np.frombuffer(pix.samples, np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3], cv2.COLOR_RGB2BGR)
     OCR.set_precise(mode == 'precise')
