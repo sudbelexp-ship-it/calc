@@ -5,9 +5,17 @@
   python prep.py --status <папка документа>                        — показать, что осталось
 """
 import sys, os, json, glob
+from pathlib import Path
+_runtime = Path(__file__).resolve().parent.parent / 'razmetka'
+RES = None
+if (_runtime / 'resources.py').exists():
+    sys.path.insert(0, str(_runtime))
+    import resources as RES
 for _s in (sys.stdout, sys.stderr):
     _s.reconfigure(encoding='utf-8', errors='replace')   # консоль Windows по умолчанию не UTF-8
 import numpy as np, cv2
+if RES:
+    RES.configure()
 
 VIEW_W = 1500        # ширина половинки для чтения, px
 OVERLAP = 0.10       # половинки перекрываются: верх 0–0,55, низ 0,45–1
@@ -36,6 +44,9 @@ def pages_of(src):
         import pymupdf
         doc = pymupdf.open(src)
         for page in doc:
+            if RES:
+                RES.checkpoint()
+                RES.check_pixels(page.rect.width * 300/72, page.rect.height * 300/72)
             pm = page.get_pixmap(dpi=300)
             yield cv2.imdecode(np.frombuffer(pm.tobytes('png'), np.uint8), cv2.IMREAD_COLOR)
     elif src.lower().endswith(IMG_EXT):
