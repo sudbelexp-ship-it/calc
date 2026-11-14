@@ -72,7 +72,7 @@ footer a,.info a{color:var(--accent)}
 <main>
 <section class="card"><b>Только браузер · версия 3.0</b>
 <p>Без установки программ, Python и локального сервера. При первом запуске браузер загружает библиотеки и модели из интернета. Документы обрабатываются на вашем устройстве. Для формул нужна видеокарта с WebGPU; обычный OCR работает на процессоре в Worker.</p>
-<p>Числа автоматически помечаются [?…]. Таблицы и LaTeX — черновик, сверяйте по сохранённым страницам. Фото с перспективой и тенями не поддерживаются: нужен скан.</p>
+<p>Числа вне LaTeX автоматически помечаются [?…]. Формулы целиком считаются несверенными. Таблицы и LaTeX — черновик, сверяйте по сохранённым страницам. Фото с перспективой и тенями не поддерживаются: нужен скан.</p>
 <div class="acts"><button class="btn sec" id="sourceFolder">Выбрать папку документов</button><button class="btn sec" id="outputFolder">Папка результата</button><button class="btn sec" id="pause">Пауза после страницы</button></div>
 <p id="storageInfo" role="status">Результат сохраняется по страницам в браузере. Для продолжения после закрытия выберите исходный файл повторно с тем же режимом. При выборе папки внутри неё создаётся «Распознанные документы».</p>
 <p>За один раз обрабатывается одна страница; максимум 4 млн пикселей, один OCR Worker. Видеопамять управляется браузером: режим формул может быть тяжёлым. Закрытая вкладка не продолжает распознавание.</p></section>
@@ -97,14 +97,14 @@ footer a,.info a{color:var(--accent)}
       <label>Режим
         <select id="mode">
           <option value="fast" selected>Быстрый (Tesseract, без формул)</option>
-          <option value="math">С формулами → LaTeX (нейросеть GLM-OCR)</option>
+          <option value="math">Нейросетевой OCR: текст и формулы (GLM-OCR)</option>
         </select>
       </label>
       <label id="pagesRow" hidden>Страницы PDF
         <input type="text" id="pages" placeholder="все, либо 1-3,5" size="14" style="font:inherit;font-size:14px;color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px">
       </label>
     </div>
-    <div class="note" id="mathNote" hidden>Режим формул работает на видеокарте вашего устройства (WebGPU): при первом запуске скачивается модель ~650 МБ, далее она берётся из кэша браузера. Скорость зависит от устройства; при нехватке видеопамяти выберите обычный OCR. Формулы выходят в LaTeX ($…$), но нейросеть иногда искажает слова — сверяйте с оригиналом.</div>
+    <div class="note" id="mathNote" hidden>Режим формул работает на видеокарте вашего устройства (WebGPU): при первом запуске скачивается модель ~650 МБ, далее она берётся из кэша браузера. Скорость зависит от устройства; при нехватке видеопамяти выберите обычный OCR. Формулы могут вернуться в LaTeX или обычными символами. Нейросеть может искажать текст и числа — сверяйте с оригиналом.</div>
   </section>
 
   <div id="results" style="display:flex;flex-direction:column;gap:16px"></div>
@@ -118,7 +118,7 @@ footer a,.info a{color:var(--accent)}
     <ul>
       <li>Текст из PDF извлекается с сохранением абзацев и заголовков; страницы без текстового слоя (сканы) автоматически отправляются на OCR.</li>
       <li>Word → заголовки, списки, таблицы и ссылки; формулы Word (OMML) переводятся в LaTeX для ручной сверки; рисунки в документе распознаются OCR и вставляются цитатой.</li>
-      <li>Формулы в PDF и на сканах (СП, ГОСТ) обычный OCR не читает. Режим «С формулами» распознаёт страницу нейросетью и выдаёт текст с формулами в LaTeX.</li>
+      <li>Формулы в PDF и на сканах (СП, ГОСТ) обычный OCR не читает. Режим «С формулами» распознаёт страницу нейросетью выдаёт черновой текст; LaTeX для каждой формулы не гарантируется.</li>
       <li>Excel и CSV → таблицы Markdown по листам; PowerPoint → заголовки слайдов, текст, таблицы и заметки докладчика.</li>
       <li>В оригинальном MarkItDown OCR работает только через облачную LLM или Azure; здесь он локальный (Tesseract), ничего не отправляется на серверы. Модули и языковые данные OCR один раз скачиваются из интернета.</li>
     </ul>
@@ -213,7 +213,7 @@ async function gpuSupport(){if(!window.isSecureContext)return 'Нужен HTTPS'
 async function glmRecognize(cv,ctx){
   const bad=await gpuSupport();if(bad)throw new Error(bad);
   if(ocrWorker){await ocrWorker.terminate();ocrWorker=null;ocrLang=null;}
-  if(!glmWorker)glmWorker=new Worker('browser-glm-worker.js?v=3.0');
+  if(!glmWorker)glmWorker=new Worker('browser-glm-worker.js?v=a3590ef12c8e');
   const img=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);
   return new Promise((res,rej)=>{ctx.abort=()=>{glmWorker?.terminate();glmWorker=null;ctx.abort=null;rej(new Error('Распознавание отменено'));};glmWorker.onmessage=e=>{if(e.data.status)ctx.status(e.data.status);else if(e.data.error){ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.data.error));}else {ctx.abort=null;res(e.data.text);}};glmWorker.onerror=e=>{ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.message||'Ошибка WebGPU Worker'));};glmWorker.postMessage({pixels:img.data,width:cv.width,height:cv.height},[img.data.buffer]);});
 }

@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import hashlib
 
 root=Path(__file__).parent
 s=(root/'browser-source-before.html').read_text(encoding='utf-8')
@@ -8,13 +9,16 @@ s=s.replace('Документы в Markdown —', 'Разметка докуме
 s=s.replace('<main>', '''<main>
 <section class="card"><b>Только браузер · версия 3.0</b>
 <p>Без установки программ, Python и локального сервера. При первом запуске браузер загружает библиотеки и модели из интернета. Документы обрабатываются на вашем устройстве. Для формул нужна видеокарта с WebGPU; обычный OCR работает на процессоре в Worker.</p>
-<p>Числа автоматически помечаются [?…]. Таблицы и LaTeX — черновик, сверяйте по сохранённым страницам. Фото с перспективой и тенями не поддерживаются: нужен скан.</p>
+<p>Числа вне LaTeX автоматически помечаются [?…]. Формулы целиком считаются несверенными. Таблицы и LaTeX — черновик, сверяйте по сохранённым страницам. Фото с перспективой и тенями не поддерживаются: нужен скан.</p>
 <div class="acts"><button class="btn sec" id="sourceFolder">Выбрать папку документов</button><button class="btn sec" id="outputFolder">Папка результата</button><button class="btn sec" id="pause">Пауза после страницы</button></div>
 <p id="storageInfo" role="status">Результат сохраняется по страницам в браузере. Для продолжения после закрытия выберите исходный файл повторно с тем же режимом. При выборе папки внутри неё создаётся «Распознанные документы».</p>
 <p>За один раз обрабатывается одна страница; максимум 4 млн пикселей, один OCR Worker. Видеопамять управляется браузером: режим формул может быть тяжёлым. Закрытая вкладка не продолжает распознавание.</p></section>''',1)
 s=s.replace('Один лист занимает 20–60 с.', 'Скорость зависит от устройства; при нехватке видеопамяти выберите обычный OCR.')
 s=s.replace('формулы Word (OMML) переводятся в LaTeX без потерь', 'формулы Word (OMML) переводятся в LaTeX для ручной сверки')
 s=s.replace('>c.bit-exp.ru</a>', '>bit-exp.ru/c/</a>')
+s=s.replace('С формулами → LaTeX (нейросеть GLM-OCR)', 'Нейросетевой OCR: текст и формулы (GLM-OCR)')
+s=s.replace('Формулы выходят в LaTeX ($…$), но нейросеть иногда искажает слова — сверяйте с оригиналом.', 'Формулы могут вернуться в LaTeX или обычными символами. Нейросеть может искажать текст и числа — сверяйте с оригиналом.')
+s=s.replace('и выдаёт текст с формулами в LaTeX.', 'выдаёт черновой текст; LaTeX для каждой формулы не гарантируется.')
 s=s.replace("const done = []; // {name, md}", "const done = []; // {name, md}\n"+(root/'browser-storage.js').read_text(encoding='utf-8'))
 # Mark numeric tokens outside image links and math: preserve valid LaTeX and paths.
 s=s.replace('return fixUnits(text.replace', 'return (text.replace')
@@ -28,6 +32,8 @@ gend=s.index('\nfunction fitCanvas',gstart)
 worker=s[gstart:gend].replace('window.isSecureContext','self.isSecureContext').replace('location.host','self.location.host').replace('location.pathname','self.location.pathname')
 worker=worker.replace("if (ocrWorker) { await ocrWorker.terminate(); ocrWorker = null; ocrLang = null; }",'')
 worker=worker.replace("const c2 = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);",'const c2 = canvas;')
+worker=worker.replace('glmDl(e.progress);','glmDl(e.progress,e.file);')
+worker=worker.replace("glmDl = p => ctx.status('Загрузка модели GLM-OCR: ' + Math.round(p) + '%');", "glmDl = (p,file) => ctx.status('Загрузка '+(file||'GLM-OCR')+': ' + Math.round(p) + '%');")
 worker=worker.replace('const out = await model.generate(', 'let out;try { out = await model.generate(')
 worker=worker.replace("return (text.replace(/^<think>[\\s\\S]*?<\\/think>/, '').trim());", "return (text.replace(/^<think>[\\s\\S]*?<\\/think>/, '').trim()) + (cut!==-1 || end-pl>=4096 ? '\\n\\n[?Генерация остановлена: возможен пропуск текста, сверьте страницу]' : '');} finally {out?.dispose?.();for(const v of Object.values(inputs))v?.dispose?.();}")
 worker += '''
@@ -95,4 +101,5 @@ s=s.replace("  ctx.status('Конвертация…');\n  try {", "  ctx.status
 s=s.replace("    if (ctx.warn)", "    if(ctx.cached)badge.textContent += ' · из сохранения: '+ctx.cached+' стр.';\n    if (ctx.warn)")
 s=s.replace("function addFiles(files){\n  for (const f of files) queue = queue.then(() => handle(f));\n}", "function addFiles(files){\n  for (const f of files){let release;const previous=queue;queue=new Promise(r=>release=r);handle(f,previous).catch(e=>console.error(e)).finally(release);}\n}")
 s=s.replace("$('clear').onclick = () => { results.innerHTML = ''; done.length = 0; bulk.hidden = true; };", "$('clear').onclick = () => { for(const b of results.querySelectorAll('.fhead button'))b.click(); done.length = 0; bulk.hidden = true; };")
+s=s.replace("browser-glm-worker.js?v=3.0",'browser-glm-worker.js?v='+hashlib.sha256(worker.encode()).hexdigest()[:12])
 (root/'markitdown.html').write_text(s,encoding='utf-8')

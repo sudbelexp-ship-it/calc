@@ -20,7 +20,7 @@ async function getGlm(){
     const bad = await gpuSupport();
     if (bad) throw new Error(bad);
     const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
-    const cb = e => { if (e.progress != null && glmDl) glmDl(e.progress); };
+    const cb = e => { if (e.progress != null && glmDl) glmDl(e.progress,e.file); };
     const [processor, model] = await Promise.all([
       TX.AutoProcessor.from_pretrained(GLM_ID, {progress_callback: cb}),
       TX.AutoModelForImageTextToText.from_pretrained(GLM_ID, {
@@ -53,7 +53,7 @@ function fixUnits(t){
 
 async function glmRecognize(canvas, ctx){
   ctx.status('Загрузка модели…');
-  glmDl = p => ctx.status('Загрузка модели GLM-OCR: ' + Math.round(p) + '%');
+  glmDl = (p,file) => ctx.status('Загрузка '+(file||'GLM-OCR')+': ' + Math.round(p) + '%');
   const {TX, processor, model} = await getGlm();
   glmDl = null;
   const c2 = canvas;
