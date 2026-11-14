@@ -1,0 +1,18 @@
+const {readFileSync}=require('fs');
+const vm=require('vm'),assert=require('node:assert/strict');
+const code=readFileSync('browser-storage.js','utf8');
+const source=code.slice(code.indexOf('function flagNumbers'),code.indexOf('async function savePage'));
+const ctx={};vm.createContext(ctx);vm.runInContext(source,ctx);
+assert.equal(ctx.flagNumbers('25,0 -3.2 ГОСТ 8509-93'),'[?25,0] [?−3.2] ГОСТ [?8509][?-93]'.replace('−','-'));
+assert.equal(ctx.flagNumbers('[?25,0]'), '[?25,0]');
+assert.equal(ctx.flagNumbers('![p1](pages/p001.jpg) <!-- стр. 1 -->'), '![p1](pages/p001.jpg) <!-- стр. 1 -->');
+assert.equal(ctx.flagNumbers('$$ x^2 = 25 $$ и $a_1$ 12'), '$$ x^2 = 25 $$ и $a_1$ [?12]');
+assert.equal(ctx.flagNumbers('<td rowspan="2">12</td>'), '<td rowspan="2">[?12]</td>');
+const md=ctx.pageMarkdown('25,0',2);assert(md.includes('<!-- стр. 2 -->'));assert(md.includes('pages/p002.jpg'));assert(md.includes('[?25,0]'));
+const html=readFileSync('markitdown.html','utf8');
+assert(!/127\.0\.0\.1|install\.bat|start\.bat|ocr-local-2\.2/.test(html));
+assert(html.includes('new Worker(\'browser-glm-worker.js'));
+const pdf=readFileSync('browser-pdf.js','utf8');assert(pdf.indexOf('await loadPage')<pdf.indexOf('await pdf.getPage'));assert(pdf.includes('await pdf.destroy()'));assert(pdf.includes('page.cleanup()'));
+new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
+new vm.Script(readFileSync('browser-glm-worker.js','utf8'));
+console.log('Passed: numeric flags, LaTeX/image paths, page markers, browser-only links, cache-before-render, cleanup, JS syntax');

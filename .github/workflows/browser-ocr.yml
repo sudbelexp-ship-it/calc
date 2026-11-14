@@ -1,0 +1,20 @@
+name: Browser OCR checks
+on:
+  push:
+    branches: [ocr-local-test]
+    paths: ['browser-*', 'build-browser.py', 'markitdown.html', '.github/workflows/browser-ocr.yml']
+  workflow_dispatch:
+jobs:
+  browser-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: python build-browser.py
+      - run: node browser-tests.cjs
+      - run: node browser-recovery-tests.cjs

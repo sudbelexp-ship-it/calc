@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Документы в Markdown — БИЛДИНФОТЕХ</title>
+<title>Разметка документов и OCR — БИЛДИНФОТЕХ</title>
 <meta name="description" content="Конвертер документов в Markdown в духе Microsoft MarkItDown: PDF, Word, Excel, PowerPoint, HTML, CSV, изображения. Встроенный OCR для сканов. Всё работает в браузере.">
 <script src="theme.js"></script>
 <style>
@@ -68,8 +68,14 @@ footer a,.info a{color:var(--accent)}
   <p>Конвертер в духе <a href="https://github.com/microsoft/markitdown" target="_blank" rel="noopener" style="color:var(--accent)">Microsoft MarkItDown</a>: PDF, Word, Excel, PowerPoint, HTML, CSV и изображения превращаются в чистый Markdown. Сканы и фото распознаются встроенным OCR (русский + английский). Файлы не покидают ваш браузер.</p>
 </header>
 
-<section class="card" style="margin-bottom:16px"><h2>Локальная разметка СП и ГОСТ — тестовая версия</h2><p>Обработка документов на вашем компьютере, проверка чисел по вырезкам, очередь и отчёты.</p><p><a href="razmetka.html">Открыть панель локальной программы →</a></p><p>Первый запуск: скачайте ветку ocr-local-test с GitHub, выполните razmetka/install.bat, затем start.bat. Ссылка из окна программы открывает основную локальную панель.</p></section>
+
 <main>
+<section class="card"><b>Только браузер · версия 3.0</b>
+<p>Без установки программ, Python и локального сервера. При первом запуске браузер загружает библиотеки и модели из интернета. Документы обрабатываются на вашем устройстве. Для формул нужна видеокарта с WebGPU; обычный OCR работает на процессоре в Worker.</p>
+<p>Числа автоматически помечаются [?…]. Таблицы и LaTeX — черновик, сверяйте по сохранённым страницам. Фото с перспективой и тенями не поддерживаются: нужен скан.</p>
+<div class="acts"><button class="btn sec" id="sourceFolder">Выбрать папку документов</button><button class="btn sec" id="outputFolder">Папка результата</button><button class="btn sec" id="pause">Пауза после страницы</button></div>
+<p id="storageInfo" role="status">Результат сохраняется по страницам в браузере. Для продолжения после закрытия выберите исходный файл повторно с тем же режимом. При выборе папки внутри неё создаётся «Распознанные документы».</p>
+<p>За один раз обрабатывается одна страница; максимум 4 млн пикселей, один OCR Worker. Видеопамять управляется браузером: режим формул может быть тяжёлым. Закрытая вкладка не продолжает распознавание.</p></section>
   <section class="card">
     <div class="drop" id="drop" tabindex="0" role="button" aria-label="Выбрать файлы для конвертации">
       <b>Перетащите файлы сюда или нажмите для выбора</b>
@@ -98,7 +104,7 @@ footer a,.info a{color:var(--accent)}
         <input type="text" id="pages" placeholder="все, либо 1-3,5" size="14" style="font:inherit;font-size:14px;color:var(--text);background:var(--sunk);border:1px solid var(--line);border-radius:8px;padding:6px 8px">
       </label>
     </div>
-    <div class="note" id="mathNote" hidden>Режим формул работает на видеокарте вашего устройства (WebGPU): при первом запуске скачивается модель ~650 МБ, далее она берётся из кэша браузера. Один лист занимает 20–60 с. Формулы выходят в LaTeX ($…$), но нейросеть иногда искажает слова — сверяйте с оригиналом.</div>
+    <div class="note" id="mathNote" hidden>Режим формул работает на видеокарте вашего устройства (WebGPU): при первом запуске скачивается модель ~650 МБ, далее она берётся из кэша браузера. Скорость зависит от устройства; при нехватке видеопамяти выберите обычный OCR. Формулы выходят в LaTeX ($…$), но нейросеть иногда искажает слова — сверяйте с оригиналом.</div>
   </section>
 
   <div id="results" style="display:flex;flex-direction:column;gap:16px"></div>
@@ -111,7 +117,7 @@ footer a,.info a{color:var(--accent)}
     <b>Как это работает</b>
     <ul>
       <li>Текст из PDF извлекается с сохранением абзацев и заголовков; страницы без текстового слоя (сканы) автоматически отправляются на OCR.</li>
-      <li>Word → заголовки, списки, таблицы и ссылки; формулы Word (OMML) переводятся в LaTeX без потерь; рисунки в документе распознаются OCR и вставляются цитатой.</li>
+      <li>Word → заголовки, списки, таблицы и ссылки; формулы Word (OMML) переводятся в LaTeX для ручной сверки; рисунки в документе распознаются OCR и вставляются цитатой.</li>
       <li>Формулы в PDF и на сканах (СП, ГОСТ) обычный OCR не читает. Режим «С формулами» распознаёт страницу нейросетью и выдаёт текст с формулами в LaTeX.</li>
       <li>Excel и CSV → таблицы Markdown по листам; PowerPoint → заголовки слайдов, текст, таблицы и заметки докладчика.</li>
       <li>В оригинальном MarkItDown OCR работает только через облачную LLM или Azure; здесь он локальный (Tesseract), ничего не отправляется на серверы. Модули и языковые данные OCR один раз скачиваются из интернета.</li>
@@ -119,7 +125,7 @@ footer a,.info a{color:var(--accent)}
   </section>
 </main>
 
-<footer>Результат конвертации носит справочный характер; сканы проверяйте глазами. Главная: <a href="index.html">c.bit-exp.ru</a>.</footer>
+<footer>Результат конвертации носит справочный характер; сканы проверяйте глазами. Главная: <a href="index.html">bit-exp.ru/c/</a>.</footer>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -135,6 +141,31 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
+const MAX_PX=4000000, PIPELINE='browser-3.0';
+let outputHandle=null, paused=false;
+const dbPromise=new Promise((resolve,reject)=>{
+  const req=indexedDB.open('bitexp-browser-ocr',1);
+  req.onupgradeneeded=()=>req.result.createObjectStore('pages');
+  req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);
+});
+dbPromise.catch(()=>{});
+async function dbGet(key){const db=await dbPromise;return new Promise((res,rej)=>{const q=db.transaction('pages').objectStore('pages').get(key);q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);});}
+async function dbPut(key,value){const db=await dbPromise;return new Promise((res,rej)=>{const tx=db.transaction('pages','readwrite');tx.objectStore('pages').put(value,key);tx.oncomplete=()=>res();tx.onerror=()=>rej(tx.error);tx.onabort=()=>rej(tx.error||new Error('Не удалось сохранить страницу'));});}
+function safeName(name){return name.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}_.-]+/gu,'_').slice(0,100)||'document';}
+async function fileKey(file,ctx){const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());const h=Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,'0')).join('');return h+':'+[PIPELINE,ctx.math,ctx.ocr,ctx.ocrAll,ctx.lang,ctx.pages].join(':');}
+async function resultLabel(file,key){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key));return safeName(file.name)+'_'+Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('').slice(0,16);}
+function canvasBlob(cv){return new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('Не удалось сохранить изображение')),'image/jpeg',0.92));}
+async function writeFile(dir,name,data){const h=await dir.getFileHandle(name,{create:true});const w=await h.createWritable();try{await w.write(data);await w.close();}catch(e){await w.abort().catch(()=>{});throw e;}}
+function flagNumbers(text){return text.split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]]*\]\([^\n]*?\)|<!--[\s\S]*?-->|<[^>]+>)/g).map((part,i)=>i%2?part:part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');}
+function pageMarkdown(text,i){return '<!-- стр. '+i+' -->\n\n'+flagNumbers(text)+'\n\n![Оригинал страницы '+i+'](pages/p'+String(i).padStart(3,'0')+'.jpg)\n\n> Числа [?…], таблицы и LaTeX этой страницы не сверены.\n';}
+async function savePage(ctx,i,text,image){const p={version:PIPELINE,text,image};await dbPut(ctx.key+':'+i,p);await exportPage(ctx,i,p);}
+async function exportPage(ctx,i,p){if(ctx.dir){const n='p'+String(i).padStart(3,'0');const pages=await ctx.dir.getDirectoryHandle('pages',{create:true});await writeFile(pages,n+'.jpg',p.image);await writeFile(ctx.dir,n+'.md',pageMarkdown(p.text,i));const auto=await ctx.dir.getDirectoryHandle('auto',{create:true});await writeFile(auto,n+'.json',JSON.stringify({version:PIPELINE,key:ctx.key,page:i,text:p.text}));}}
+async function loadPage(ctx,i){let p=await dbGet(ctx.key+':'+i);if(p?.version===PIPELINE&&p.image&&typeof p.text==='string')return p;if(!ctx.dir)return null;try{const n='p'+String(i).padStart(3,'0');const auto=await ctx.dir.getDirectoryHandle('auto');const f=await(await auto.getFileHandle(n+'.json')).getFile();const j=JSON.parse(await f.text());if(j.key!==ctx.key||j.page!==i||j.version!==PIPELINE||typeof j.text!=='string')return null;const pages=await ctx.dir.getDirectoryHandle('pages');const image=await(await pages.getFileHandle(n+'.jpg')).getFile();if(!image.size)return null;p={version:PIPELINE,text:j.text,image};await dbPut(ctx.key+':'+i,p);return p;}catch(e){if(e.name==='NotFoundError'||e instanceof SyntaxError)return null;throw e;}}
+async function waitResume(ctx){while(paused){if(ctx.isRemoved())throw new Error('Документ удалён из очереди');ctx.status('Пауза — страница сохранена');await new Promise(r=>setTimeout(r,250));}if(ctx.isRemoved())throw new Error('Документ удалён из очереди');}
+$('pause').onclick=()=>{paused=!paused;$('pause').textContent=paused?'Продолжить':'Пауза после страницы';};
+$('outputFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Выбор папки доступен в Chrome/Edge. Используйте скачивание ZIP.');outputHandle=await showDirectoryPicker({mode:'readwrite'});$('storageInfo').textContent='Сохранение в папку: '+outputHandle.name;}catch(e){if(e.name!=='AbortError')alert(e.message);}};
+$('sourceFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Для выбора папки используйте Chrome/Edge. Файлы можно выбрать кнопкой ниже.');const source=await showDirectoryPicker({mode:'readwrite'});outputHandle=await source.getDirectoryHandle('Распознанные документы',{create:true});const files=[];for await(const h of source.values()){if(h.kind==='file'&&/\.(pdf|png|jpe?g|webp|bmp)$/i.test(h.name))files.push(await h.getFile());}files.sort((a,b)=>a.name.localeCompare(b.name,'ru'));$('storageInfo').textContent='Найдено документов: '+files.length+'. Результат: '+source.name+'/Распознанные документы';addFiles(files);}catch(e){if(e.name!=='AbortError')alert(e.message);}};
+
 
 /* ---------- утилиты ---------- */
 const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -158,6 +189,7 @@ function extOf(name){ const m = /\.([^.]+)$/.exec(name); return m ? m[1].toLower
 /* ---------- OCR ---------- */
 let ocrWorker = null, ocrLang = null, ocrCb = null;
 async function getOcr(lang){
+  if(glmWorker){glmWorker.terminate();glmWorker=null;}
   if (ocrWorker && ocrLang === lang) return ocrWorker;
   if (ocrWorker) { await ocrWorker.terminate(); ocrWorker = null; }
   ocrWorker = await Tesseract.createWorker(lang, 1, {
@@ -167,90 +199,23 @@ async function getOcr(lang){
   return ocrWorker;
 }
 async function ocrImage(src, ctx){
-  const w = await getOcr($('lang').value);
+  const w = await getOcr(ctx.lang || $('lang').value);
   ocrCb = m => { if (m.status === 'recognizing text' && ctx.onProgress) ctx.onProgress(m.progress); };
-  const { data } = await w.recognize(src);
-  ocrCb = null;
+  let cancel; const abort=new Promise((_,reject)=>cancel=reject);ctx.abort=()=>{w.terminate();ocrWorker=null;ocrLang=null;cancel(new Error('Распознавание отменено'));};
+  let data;try{({data}=await Promise.race([w.recognize(src),abort]));}finally{ctx.abort=null;ocrCb=null;}
   return (data.text || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
 /* ---------- GLM-OCR (WebGPU): текст + формулы в LaTeX ---------- */
-const GLM_ID = 'onnx-community/GLM-OCR-ONNX';
-const GLM_PX = 2200000;
-let glm = null, glmLoading = null, glmDl = null;
-
-async function gpuSupport(){
-  if (!window.isSecureContext) return 'Страница открыта по http, а WebGPU работает только по https. Откройте https://' + location.host + (location.pathname || '/') + ' (если не открывается — сертификат ещё выпускается).';
-  if (!navigator.gpu) return 'В этом браузере нет WebGPU. Нужен свежий Chrome или Edge.';
-  try {
-    const a = await navigator.gpu.requestAdapter();
-    if (!a) return 'WebGPU не нашёл видеокарту.';
-    if (!a.features.has('shader-f16')) return 'Видеокарта не поддерживает shader-f16.';
-  } catch (e) { return 'WebGPU недоступен: ' + e.message; }
-  return '';
-}
-
-async function getGlm(){
-  if (glm) return glm;
-  if (!glmLoading) glmLoading = (async () => {
-    const bad = await gpuSupport();
-    if (bad) throw new Error(bad);
-    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
-    const cb = e => { if (e.status === 'progress_total' && glmDl) glmDl(e.progress); };
-    const [processor, model] = await Promise.all([
-      TX.AutoProcessor.from_pretrained(GLM_ID, {progress_callback: cb}),
-      TX.AutoModelForImageTextToText.from_pretrained(GLM_ID, {
-        device: 'webgpu', dtype: 'q4f16', progress_callback: cb,
-        use_external_data_format: {'vision_encoder_q4f16.onnx': 1, 'embed_tokens_q4f16.onnx': 1, 'decoder_model_merged_q4f16.onnx': 1}
-      })
-    ]);
-    glm = {TX, processor, model};
-    return glm;
-  })().catch(e => { glmLoading = null; throw e; });
-  return glmLoading;
-}
-
-function loopCut(g){
-  for (const L of [12, 24, 48]) {
-    if (g.length < 3 * L) continue;
-    let same = true;
-    for (let i = 1; i <= L && same; i++) if (g[g.length - i] !== g[g.length - L - i] || g[g.length - i] !== g[g.length - 2 * L - i]) same = false;
-    if (same) return g.length - 2 * L;
-  }
-  return -1;
-}
-
-function fixUnits(t){
-  const cyr = (t.match(/[А-Яа-яЁё]/g) || []).length;
-  if (cyr < 20) return t;
-  const map = {kH: 'кН', kr: 'кг', cm: 'см', mm: 'мм', m: 'м'};
-  return t.replace(/\\mathrm\{([A-Za-z]+)\}/g, (all, u) => map[u] ? '\\mathrm{' + map[u] + '}' : all);
-}
-
-async function glmRecognize(canvas, ctx){
-  ctx.status('Загрузка модели…');
-  glmDl = p => ctx.status('Загрузка модели GLM-OCR: ' + Math.round(p) + '%');
-  const {TX, processor, model} = await getGlm();
-  glmDl = null;
-  const c2 = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
-  const image = new TX.RawImage(new Uint8ClampedArray(c2.data), canvas.width, canvas.height, 4);
-  const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: 'Text Recognition:'}]}], {add_generation_prompt: true});
-  const inputs = await processor(prompt, image);
-  const pl = inputs.input_ids.dims.at(-1);
-  const stopper = new TX.InterruptableStoppingCriteria();
-  const gen = []; let n = 0, cut = -1;
-  const streamer = new TX.TextStreamer(processor.tokenizer, {
-    skip_prompt: true, skip_special_tokens: true, callback_function: () => {},
-    token_callback_function: ids => {
-      n++; for (const id of ids) gen.push(Number(id));
-      if (n % 8 === 0) ctx.status((ctx.stage || 'GLM-OCR') + ': ' + n + ' токенов');
-      if (n % 16 === 0) { cut = loopCut(gen); if (cut !== -1) stopper.interrupt(); }
-    }
-  });
-  const out = await model.generate({...inputs, max_new_tokens: 4096, do_sample: false, streamer, stopping_criteria: stopper});
-  const end = cut === -1 ? out.dims.at(-1) : pl + cut;
-  const text = processor.batch_decode(out.slice(null, [pl, end]), {skip_special_tokens: true})[0];
-  return fixUnits(text.replace(/^<think>[\s\S]*?<\/think>/, '').trim());
+const GLM_PX=2200000;
+let glmWorker=null;
+async function gpuSupport(){if(!window.isSecureContext)return 'Нужен HTTPS';if(!navigator.gpu)return 'WebGPU недоступен. Выберите обычный OCR.';try{const a=await navigator.gpu.requestAdapter();return !a?'Видеокарта недоступна':!a.features.has('shader-f16')?'Нет shader-f16: выберите обычный OCR.':'';}catch(e){return e.message;}}
+async function glmRecognize(cv,ctx){
+  const bad=await gpuSupport();if(bad)throw new Error(bad);
+  if(ocrWorker){await ocrWorker.terminate();ocrWorker=null;ocrLang=null;}
+  if(!glmWorker)glmWorker=new Worker('browser-glm-worker.js?v=3.0');
+  const img=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);
+  return new Promise((res,rej)=>{ctx.abort=()=>{glmWorker?.terminate();glmWorker=null;ctx.abort=null;rej(new Error('Распознавание отменено'));};glmWorker.onmessage=e=>{if(e.data.status)ctx.status(e.data.status);else if(e.data.error){ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.data.error));}else {ctx.abort=null;res(e.data.text);}};glmWorker.onerror=e=>{ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.message||'Ошибка WebGPU Worker'));};glmWorker.postMessage({pixels:img.data,width:cv.width,height:cv.height},[img.data.buffer]);});
 }
 
 function fitCanvas(src, w, h, maxPx){
@@ -533,62 +498,57 @@ function pageToMarkdown(items){
 
 async function convPdf(buf, ctx){
   await initPdf();
-  const pdf = await pdfjsLib.getDocument({data: buf.slice(0)}).promise;
-  const pages = [];
-  let ocrPages = 0;
-  const mathSet = ctx.math ? parsePages(ctx.pages, pdf.numPages) : null;
-  for (let i = 1; i <= pdf.numPages; i++) {
-    ctx.status('Страница ' + i + ' из ' + pdf.numPages);
-    ctx.progress((i - 1) / pdf.numPages);
-    const page = await pdf.getPage(i);
-    if (mathSet && mathSet.has(i)) {
-      const v1 = page.getViewport({scale: 1});
-      const sc = Math.min(3, Math.max(1.5, Math.sqrt(GLM_PX / (v1.width * v1.height))));
-      const vp = page.getViewport({scale: sc});
-      const cv = document.createElement('canvas');
-      cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
-      const c = cv.getContext('2d', {willReadFrequently: true});
-      c.fillStyle = '#fff'; c.fillRect(0, 0, cv.width, cv.height);
-      await page.render({canvasContext: c, viewport: vp}).promise;
-      ctx.stage = 'Стр. ' + i + '/' + pdf.numPages;
-      pages.push(await glmRecognize(cv, ctx));
-      ocrPages++;
-      continue;
+  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  ctx.total=pdf.numPages;
+  const parts=[];
+  const mathSet=ctx.math?parsePages(ctx.pages,pdf.numPages):null;
+  try {
+    for(let i=1;i<=pdf.numPages;i++){
+      await waitResume(ctx);
+      ctx.status('Страница '+i+' из '+pdf.numPages);ctx.progress((i-1)/pdf.numPages);
+      const cached=await loadPage(ctx,i);
+      if(cached?.version===PIPELINE&&cached.image&&typeof cached.text==='string'){
+        ctx.cached=(ctx.cached||0)+1;
+        await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));continue;
+      }
+      const page=await pdf.getPage(i);
+      let cv=null;
+      try{
+        const base=page.getViewport({scale:1});
+        const math=mathSet?.has(i);
+        const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
+        const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
+        await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+        let text=pageToMarkdown((await page.getTextContent()).items);
+        if(math){text=await glmRecognize(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+        else if(ctx.ocr&&(ctx.ocrAll||text.replace(/\s/g,'').length<20)){
+          ctx.status('OCR страницы '+i+' из '+pdf.numPages);
+          text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;
+        }
+        if(!text.trim())text='[нечитаемо]';
+        await savePage(ctx,i,text,await canvasBlob(cv));
+        parts.push(pageMarkdown(text,i));
+        if(ctx.dir)await writeFile(ctx.dir,'document.md',parts.join('\n\n'));
+      }finally{if(cv)cv.width=cv.height=1;page.cleanup();}
+      await new Promise(r=>setTimeout(r,100));
     }
-    const tc = await page.getTextContent();
-    let text = pageToMarkdown(tc.items);
-    const scan = text.replace(/\s/g, '').length < 20;
-    if (ctx.ocr && (scan || ctx.ocrAll)) {
-      const vp = page.getViewport({scale: 2.5});
-      const cv = document.createElement('canvas');
-      cv.width = vp.width; cv.height = vp.height;
-      await page.render({canvasContext: cv.getContext('2d'), viewport: vp}).promise;
-      ctx.status('OCR страницы ' + i + ' из ' + pdf.numPages);
-      ctx.onProgress = p => ctx.progress((i - 1 + p) / pdf.numPages);
-      const ot = await ocrImage(cv, ctx);
-      ctx.onProgress = null;
-      if (ot) { text = ot; ocrPages++; }
-    }
-    pages.push(text);
-  }
-  ctx.ocrPages = ocrPages;
-  if (!pages.some(Boolean) && !ctx.ocr) ctx.warn = 'В PDF нет текстового слоя (скан). Включите OCR и повторите.';
-  return pages.map((t, i) => pages.length > 1 ? '<!-- Страница ' + (i + 1) + ' -->\n\n' + t : t).join('\n\n').trim();
+    ctx.progress(1);return parts.join('\n\n');
+  }finally{await pdf.destroy();}
 }
 
 async function convImage(file, ctx){
-  if (!ctx.ocr) { ctx.warn = 'Для изображений нужен OCR — включите опцию выше.'; return ''; }
-  if (ctx.math) { ctx.ocrPages = 1; return glmImage(file, ctx); }
-  const url = URL.createObjectURL(file);
+  if (!ctx.ocr) throw new Error('Для изображения включите OCR.');
+  const cached=await loadPage(ctx,1);
+  if(cached?.version===PIPELINE&&cached.image&&typeof cached.text==='string'){await exportPage(ctx,1,cached);ctx.cached=1;return pageMarkdown(cached.text,1);}
+  const bmp = await createImageBitmap(file);
+  const cv = fitCanvas(bmp, bmp.width, bmp.height, ctx.math ? GLM_PX : MAX_PX); bmp.close();
   try {
-    ctx.status('Распознавание текста…');
-    ctx.onProgress = p => ctx.progress(p);
-    const t = await ocrImage(url, ctx);
-    ctx.onProgress = null;
-    ctx.ocrPages = 1;
-    if (!t) ctx.warn = 'Текст на изображении не найден.';
-    return t;
-  } finally { URL.revokeObjectURL(url); }
+    const text = ctx.math ? await glmRecognize(cv,ctx) : await ocrImage(cv,ctx);
+    const blob=await canvasBlob(cv);
+    await savePage(ctx,1,text,blob);
+    ctx.ocrPages=1;
+    return pageMarkdown(text,1);
+  } finally {cv.width=cv.height=1;}
 }
 
 async function convert(file, ctx){
@@ -618,25 +578,41 @@ function download(name, text){
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
 
-async function handle(file){
+async function handle(file,previous){
   const card = document.createElement('section');
   card.className = 'card';
   card.innerHTML = '<div class="fhead"><h2>' + esc(file.name) + '</h2><span class="badge">В очереди…</span></div><div class="bar"><i></i></div>';
   results.appendChild(card);
   const badge = card.querySelector('.badge'), bar = card.querySelector('.bar i');
   const ctx = {
-    math: $('mode').value === 'math', pages: $('pages').value,
+    math: $('mode').value === 'math', pages: $('pages').value, lang: $('lang').value,
     ocr: $('ocr').checked || $('mode').value === 'math', ocrAll: $('ocrAll').checked,
     status: s => { badge.textContent = s; },
     progress: p => { bar.style.width = Math.round(p * 100) + '%'; },
     onProgress: null
   };
-  ctx.status('Конвертация…');
+  let removed=false;
+  const remove=document.createElement('button');remove.className='btn sm sec';remove.textContent='Удалить из списка';
+  card.querySelector('.fhead').appendChild(remove);
+  remove.onclick=()=>{removed=true;ctx.abort?.();card.remove();const j=done.findIndex(x=>x.card===card);if(j>=0)done.splice(j,1);};
+  ctx.isRemoved=()=>removed;
+  ctx.status('В очереди…');
+  await previous;
   try {
-    const md = await convert(file, ctx);
+    if(file.size>250*1024*1024)throw new Error('Лимит файла 250 МБ. Разделите PDF.');
+    await waitResume(ctx);
+    ctx.key=await fileKey(file,ctx);
+    ctx.output=outputHandle;
+    ctx.label=await resultLabel(file,ctx.key);
+    if(ctx.output)ctx.dir=await ctx.output.getDirectoryHandle(ctx.label,{create:true});
+    const raw = await convert(file, ctx);
+    const md = ['---','обозначение:','название:','редакция:','дата_введения:','источник_скана: '+JSON.stringify(file.name),'страниц: '+(ctx.total||1),'распознано: '+new Date().toISOString().slice(0,10),'---','','> Автоматический черновик. Числа [?…] и формулы не сверены.','',ctx.total ? raw : flagNumbers(raw)].join('\n');
+    if(ctx.dir)await writeFile(ctx.dir,'document.md',md);
+    if(removed)return;
     bar.parentNode.remove();
     badge.className = 'badge ok';
     badge.textContent = (ctx.ocrPages ? 'Готово · ' + (ctx.math ? 'GLM-OCR' : 'OCR') + ': ' + ctx.ocrPages + ' стр./изобр.' : 'Готово') + (ctx.formulas ? ' · формул Word: ' + ctx.formulas : '');
+    if(ctx.cached)badge.textContent += ' · из сохранения: '+ctx.cached+' стр.';
     if (ctx.warn) { const n = document.createElement('div'); n.className = 'note'; n.textContent = ctx.warn; card.appendChild(n); }
     const ta = document.createElement('textarea');
     ta.value = md; ta.spellcheck = false;
@@ -651,14 +627,16 @@ async function handle(file){
     };
     bd.onclick = () => download(file.name.replace(/\.[^.]+$/, '') + '.md', ta.value);
     card.append(ta, acts);
-    const rec = {name: file.name, ta};
+    const zipBtn=document.createElement('button');zipBtn.className='btn sm sec';zipBtn.textContent='Скачать с изображениями (.zip)';acts.appendChild(zipBtn);
+    zipBtn.onclick=async()=>{zipBtn.disabled=true;try{const z=new JSZip();z.file('document.md',ta.value);for(let i=1;i<=(ctx.total||1);i++){const p=await dbGet(ctx.key+':'+i);if(p?.image)z.file('pages/p'+String(i).padStart(3,'0')+'.jpg',p.image);}const a=document.createElement('a');a.href=URL.createObjectURL(await z.generateAsync({type:'blob',compression:'STORE'}));a.download=ctx.label+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}catch(e){alert('Не удалось собрать архив: '+e.message);}finally{zipBtn.disabled=false;}};
+    const rec = {name: file.name, ta,card};
     done.push(rec);
     bulk.hidden = false;
   } catch (e) {
     console.error(e);
     bar.parentNode.remove();
     badge.className = 'badge bad';
-    badge.textContent = 'Ошибка';
+    badge.textContent = removed ? 'Удалено' : 'Прервано / ошибка';
     const n = document.createElement('div'); n.className = 'note';
     n.textContent = e && e.message ? e.message : String(e);
     card.appendChild(n);
@@ -667,7 +645,7 @@ async function handle(file){
 
 let queue = Promise.resolve();
 function addFiles(files){
-  for (const f of files) queue = queue.then(() => handle(f));
+  for (const f of files){let release;const previous=queue;queue=new Promise(r=>release=r);handle(f,previous).catch(e=>console.error(e)).finally(release);}
 }
 
 drop.onclick = () => fileInp.click();
@@ -685,7 +663,7 @@ $('mode').onchange = async () => {
   }
 };
 $('dlAll').onclick = () => download('converted.md', done.map(d => '# ' + d.name + '\n\n' + d.ta.value).join('\n\n---\n\n'));
-$('clear').onclick = () => { results.innerHTML = ''; done.length = 0; bulk.hidden = true; };
+$('clear').onclick = () => { for(const b of results.querySelectorAll('.fhead button'))b.click(); done.length = 0; bulk.hidden = true; };
 })();
 </script>
 </body>
