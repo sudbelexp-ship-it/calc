@@ -1,0 +1,10 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const OPS={save:1,restore:2,transform:3,setTextRenderingMode:4,paintImageXObject:5,paintInlineImageXObject:6};
+const transform=(a,b)=>[a[0]*b[0]+a[2]*b[1],a[1]*b[0]+a[3]*b[1],a[0]*b[2]+a[2]*b[3],a[1]*b[2]+a[3]*b[3],a[0]*b[4]+a[2]*b[5]+a[4],a[1]*b[4]+a[3]*b[5]+a[5]];
+const c={pdfjsLib:{OPS,Util:{transform}}};vm.createContext(c);vm.runInContext(fs.readFileSync('browser-pdf.js','utf8'),c);
+assert(c.hasScanLayer({fnArray:[4],argsArray:[[3]]},10000));
+assert(c.hasScanLayer({fnArray:[3,5],argsArray:[[100,0,0,100,0,0],['image']]},10000));
+assert(!c.hasScanLayer({fnArray:[3,5],argsArray:[[10,0,0,10,0,0],['small-figure']]},10000));
+assert(!c.hasScanLayer({fnArray:[1,3,2,5],argsArray:[[],[100,0,0,100,0,0],[],['small-figure']]},10000));
+assert(c.hasScanLayer({fnArray:[],argsArray:[]},10000,{f:{fontFamily:'GlyphLessFont'}}));
+console.log('PASS: old OCR layer, full-page scan, small figure exclusion, graphics-state restore');

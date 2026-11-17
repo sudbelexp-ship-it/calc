@@ -6,7 +6,7 @@ const ctx={};vm.createContext(ctx);vm.runInContext(source,ctx);
 assert.equal(ctx.flagNumbers('25,0 -3.2 ГОСТ 8509-93'),'[?25,0] [?−3.2] ГОСТ [?8509][?-93]'.replace('−','-'));
 assert.equal(ctx.flagNumbers('[?25,0]'), '[?25,0]');
 assert.equal(ctx.flagNumbers('![p1](pages/p001.jpg) <!-- стр. 1 -->'), '![p1](pages/p001.jpg) <!-- стр. 1 -->');
-assert.equal(ctx.flagNumbers('$$ x^2 = 25 $$ и $a_1$ 12'), '$$ x^2 = 25 $$ и $a_1$ [?12]');
+assert.equal(ctx.flagNumbers('$$ x^2 = 25 $$ и $a_1$ 12'), '[?$$ x^2 = 25 $$] и [?$a_1$] [?12]');
 assert.equal(ctx.flagNumbers('<td rowspan="2">12</td>'), '<td rowspan="2">[?12]</td>');
 const md=ctx.pageMarkdown('25,0',2);assert(md.includes('<!-- стр. 2 -->'));assert(md.includes('pages/p002.jpg'));assert(md.includes('[?25,0]'));
 const html=readFileSync('markitdown.html','utf8');

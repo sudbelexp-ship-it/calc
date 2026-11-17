@@ -78,7 +78,7 @@ async function glmRecognize(canvas, ctx){
   glmDl = null;
   const c2 = canvas;
   const image = new TX.RawImage(new Uint8ClampedArray(c2.data), canvas.width, canvas.height, 4);
-  const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: 'Text Recognition:'}]}], {add_generation_prompt: true});
+  const prompt = processor.apply_chat_template([{role: 'user', content: [{type: 'image'}, {type: 'text', text: ctx.task || 'Text Recognition:'}]}], {add_generation_prompt: true});
   const inputs = await processor(prompt, image);
   const pl = inputs.input_ids.dims.at(-1);
   const stopper = new TX.InterruptableStoppingCriteria();
@@ -97,4 +97,4 @@ async function glmRecognize(canvas, ctx){
   return (text.replace(/^<think>[\s\S]*?<\/think>/, '').trim()) + (cut!==-1 || end-pl>=4096 ? '\n\n[?Генерация остановлена: возможен пропуск текста, сверьте страницу]' : '');} finally {out?.dispose?.();for(const v of Object.values(inputs))v?.dispose?.();}
 }
 
-self.onmessage=async e=>{const {pixels,width,height}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};
+self.onmessage=async e=>{const {pixels,width,height,task}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{task,status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};

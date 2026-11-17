@@ -40,11 +40,12 @@ worker=worker.replace("glmDl = p => ctx.status('Загрузка модели GL
 worker=worker.replace("const cb = e =>", "await configureModelCache(TX);\n    const cb = e =>")
 worker=worker.replace("ctx.status('Загрузка модели…');", "ctx.status(glm?'Модель в памяти · распознавание…':'Чтение модели / подготовка GPU…');")
 worker=worker.replace('if (n % 8 === 0)', 'if (n % 64 === 0)')
+worker=worker.replace("text: 'Text Recognition:'", "text: ctx.task || 'Text Recognition:'")
 worker=(root/'browser-model-cache.js').read_text(encoding='utf-8')+'\n'+worker
 worker=worker.replace('const out = await model.generate(', 'let out;try { out = await model.generate(')
 worker=worker.replace("return (text.replace(/^<think>[\\s\\S]*?<\\/think>/, '').trim());", "return (text.replace(/^<think>[\\s\\S]*?<\\/think>/, '').trim()) + (cut!==-1 || end-pl>=4096 ? '\\n\\n[?Генерация остановлена: возможен пропуск текста, сверьте страницу]' : '');} finally {out?.dispose?.();for(const v of Object.values(inputs))v?.dispose?.();}")
 worker += '''
-self.onmessage=async e=>{const {pixels,width,height}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};
+self.onmessage=async e=>{const {pixels,width,height,task}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{task,status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};
 '''
 (root/'browser-glm-worker.js').write_text(worker,encoding='utf-8')
 s=s[:gstart]+'''const GLM_PX=2200000;
@@ -111,6 +112,8 @@ s=s.replace("$('clear').onclick = () => { results.innerHTML = ''; done.length = 
 worker_name='browser-glm-worker-'+hashlib.sha256(worker.encode()).hexdigest()[:12]+'.js'
 (root/worker_name).write_text(worker,encoding='utf-8')
 s=s.replace("browser-glm-worker.js?v=3.0",worker_name)
+s=s.replace('pixels:img.data,width:cv.width,height:cv.height}', 'pixels:img.data,width:cv.width,height:cv.height,task:ctx.task}')
+s=s.replace('async function convPdf(buf, ctx){',(root/'browser-layout.js').read_text(encoding='utf-8')+'\n'+(root/'browser-formulas.js').read_text(encoding='utf-8')+'\nasync function convPdf(buf, ctx){',1)
 # Replace the legacy Promise chain with an explicit, user-controlled queue.
 start=s.index('async function handle(')
 end=s.index('\ndrop.onclick',start)

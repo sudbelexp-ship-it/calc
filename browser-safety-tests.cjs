@@ -1,0 +1,11 @@
+const fs=require('fs'),vm=require('vm'),assert=require('assert/strict');
+const c={};vm.createContext(c);let s=fs.readFileSync('browser-storage.js','utf8');vm.runInContext(s.slice(s.indexOf('function flagNumbers'),s.indexOf('async function savePage')),c);
+const bad='<OCR garbage 29,9 >';
+const flagged=c.flagNumbers(bad);
+assert(flagged.includes('[?29,9]'));
+assert(!c.pageComplete('[?Генерация остановлена: достигнут предел токенов]'));
+assert(c.pageComplete('Число 25,0'));
+assert(!c.pageComplete('[нечитаемо]'));
+assert.equal(c.flagNumbers('<garbage 123 > 45'),' <garbage [?123] > [?45]'.trimStart());
+assert.equal(c.flagNumbers('$ 25 $'),'[?$ 25 $]');
+console.log('PASS: malformed OCR markup marks 29,9; arbitrary markup cannot hide numbers; truncated GLM page rejected');

@@ -58,12 +58,12 @@ async function runJob(job){
     const md=header(job.file,ctx.total)+'\n'+(ctx.total?raw:flagNumbers(raw));
     if(ctx.dir)await writeFile(ctx.dir,'document.md',md);
     if(job.state==='removed')return;
-    job.state='done';job.complete=job.total=ctx.total||1;job.badge.className='badge ok';job.badge.textContent='Готово'+(ctx.cached?' · из сохранения: '+ctx.cached+' стр.':'');
+    job.state=ctx.incomplete?'error':'done';job.complete=job.total=ctx.total||1;job.badge.className='badge '+(ctx.incomplete?'bad':'ok');job.badge.textContent=(ctx.incomplete?'Неполный результат: '+ctx.incomplete+' стр. — повторите распознавание':'Готово')+(ctx.cached?' · из сохранения: '+ctx.cached+' стр.':'');
     const ta=document.createElement('textarea');ta.value=md;ta.spellcheck=false;ta.setAttribute('aria-label','Markdown для '+job.file.name);
     const acts=document.createElement('div');acts.className='acts';
     const copy=jobButton('Копировать',()=>navigator.clipboard.writeText(ta.value).catch(e=>alert(e.message)));
     const dl=jobButton('Скачать .md',()=>download(safeName(job.file.name)+'.md',ta.value));
-    const zip=jobButton('Скачать с изображениями (.zip)',async()=>{zip.disabled=true;try{const z=new JSZip();z.file('document.md',ta.value);z.file('Промпт для ИИ.txt',AI_PROMPT);for(let i=1;i<=(ctx.total||1);i++){const p=await loadPage(ctx,i);if(p?.image)z.file('pages/p'+String(i).padStart(3,'0')+'.jpg',p.image);}const a=document.createElement('a');a.href=URL.createObjectURL(await z.generateAsync({type:'blob',compression:'STORE'}));a.download=ctx.label+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}catch(e){alert(e.message);}finally{zip.disabled=false;}});
+    const zip=jobButton('Скачать с изображениями (.zip)',async()=>{zip.disabled=true;try{const z=new JSZip();z.file('document.md',ta.value);z.file('Промпт для ИИ.txt',AI_PROMPT);for(let i=1;i<=(ctx.total||1);i++){const p=await dbGet(ctx.key+':'+i);if(p?.image)z.file('pages/p'+String(i).padStart(3,'0')+'.jpg',p.image);for(const [path,blob]of Object.entries(p?.assets||{}))z.file(path,blob);}const a=document.createElement('a');a.href=URL.createObjectURL(await z.generateAsync({type:'blob',compression:'STORE'}));a.download=ctx.label+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}catch(e){alert(e.message);}finally{zip.disabled=false;}});
     const prompt=jobButton('Промпт для ИИ',()=>navigator.clipboard.writeText(AI_PROMPT).catch(e=>alert(e.message)));
     acts.append(copy,dl,zip,prompt);job.result.append(ta,acts);done.push({name:job.file.name,ta,card:job.card});bulk.hidden=false;
   }catch(e){if(job.state!=='removed'){job.state=e.name==='PauseError'?'paused':'error';job.badge.className='badge '+(job.state==='error'?'bad':'');job.badge.textContent=e.message;}}
