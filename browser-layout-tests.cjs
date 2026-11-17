@@ -34,4 +34,22 @@ assert.equal(c.tableCaption('Т а б л и ц а  2').id,'2');
 assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,'6.8');
 assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
 assert.equal(c.tableCaption('см. таблицу 2'),null);
-console.log('PASS: grid, grey rules, skew, close text rows, centered merged cells, multilevel header spans, false-rule rejection, table captions');
+const sparseImage={width:211,height:130,data:new Uint8ClampedArray(211*130*4).fill(255)};
+for(const top of [29,79]){
+  for(let y=top;y<top+12;y++){
+    for(const left of [25,95]){
+      for(let x=left;x<left+14;x++){
+        const offset=(y*sparseImage.width+x)*4;
+        sparseImage.data.fill(0,offset,offset+3);
+      }
+    }
+  }
+}
+const sparseGrid={columns:[10,80,150,200],lines:[],bottom:115};
+const sparse=c.bodyCells(sparseImage,sparseGrid,[23,43,63,83,103],13,12);
+for(const column of [0,1]){
+  assert.equal(sparse[0][column].span,2);
+  assert.equal(sparse[2][column].span,3);
+  assert(sparse[1][column].skip&&sparse[3][column].skip&&sparse[4][column].skip);
+}
+console.log('PASS: grid, skew, merged cells, aligned sparse rows, multilevel headers, false rules, table captions');

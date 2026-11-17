@@ -43,6 +43,18 @@ async function convPdf(buf, ctx){
         };
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
+        ctx.positionedProfiles=aligned=>items.flatMap(item=>{
+          const text=item.str?.trim();
+          if(!/^\d+[А-Яа-яЁё]\d+$/.test(text||''))return [];
+          const m=pdfjsLib.Util.transform(vp.transform,item.transform);
+          const direction=Math.hypot(m[0],m[1]);
+          if(!direction)return [];
+          const halfWidth=(item.width||0)*vp.scale/2;
+          const x=m[4]+m[0]/direction*halfWidth+m[2]*.35;
+          const y=m[5]+m[1]/direction*halfWidth+m[3]*.35;
+          const a=aligned.pageMatrix;
+          return [a?{text,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,x,y}];
+        });
         let text=pageToMarkdown(items);
         ctx.sourceText=text;
         let foreignLayer=false;
