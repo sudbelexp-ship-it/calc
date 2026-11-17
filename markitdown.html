@@ -168,7 +168,7 @@ async function writeFile(dir,name,data){const h=await dir.getFileHandle(name,{cr
 function flagNumbers(text){
   // OCR is untrusted. Only explicit doubt wrappers and narrowly validated
   // generated markup may bypass flags; arbitrary <...> and $...$ may not.
-  return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
+  return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<!--\s*таблица\s+\d+(?:\.\d+)*:\s*строк\s+\d+,\s*столбцов\s+\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
 }
 function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
 function pageMarkdown(text,i){return '<!-- стр. '+i+' -->\n\n'+flagNumbers(text)+'\n\n![Оригинал страницы '+i+'](pages/p'+String(i).padStart(3,'0')+'.jpg)\n\n> Числа [?…], таблицы и LaTeX этой страницы не сверены.\n';}

@@ -8,6 +8,8 @@ assert.equal(ctx.flagNumbers('[?25,0]'), '[?25,0]');
 assert.equal(ctx.flagNumbers('![p1](pages/p001.jpg) <!-- стр. 1 -->'), '![p1](pages/p001.jpg) <!-- стр. 1 -->');
 assert.equal(ctx.flagNumbers('$$ x^2 = 25 $$ и $a_1$ 12'), '[?$$ x^2 = 25 $$] и [?$a_1$] [?12]');
 assert.equal(ctx.flagNumbers('<td rowspan="2">12</td>'), '<td rowspan="2">[?12]</td>');
+assert.equal(ctx.flagNumbers('<!-- таблица 6.8: строк 6, столбцов 24 -->'),'<!-- таблица 6.8: строк 6, столбцов 24 -->');
+assert.equal(ctx.flagNumbers('<!-- OCR 25 -->'),'<!-- OCR [?25] -->');
 const md=ctx.pageMarkdown('25,0',2);assert(md.includes('<!-- стр. 2 -->'));assert(md.includes('pages/p002.jpg'));assert(md.includes('[?25,0]'));
 const html=readFileSync('markitdown.html','utf8');
 assert(!/127\.0\.0\.1|install\.bat|start\.bat|ocr-local-2\.2/.test(html));
