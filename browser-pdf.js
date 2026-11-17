@@ -12,7 +12,7 @@ function hasScanLayer(ops,area,styles={}){
 }
 async function convPdf(buf, ctx){
   await initPdf();
-  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const pdf=await pdfjsLib.getDocument({data:buf,isEvalSupported:false}).promise;
   ctx.total=pdf.numPages;
   ctx.pageProgress?.(0,pdf.numPages);
   const parts=[];
@@ -28,13 +28,13 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.assets={};ctx.pageIssue='';
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
-        const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
+        let vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
         ctx.renderTablePatch=async(aligned,box)=>{
           const high=page.getViewport({scale:400/72}),k=high.width/vp.width,m=aligned.pageMatrix||[1,0,0,1,0,0];
           const patch=document.createElement('canvas');patch.width=Math.max(1,Math.ceil((box[2]-box[0])*k));patch.height=Math.max(1,Math.ceil((box[3]-box[1])*k));
@@ -53,17 +53,33 @@ async function convPdf(buf, ctx){
         if(ctx.ocr){const upright=rotatePageCanvas(cv,items,vp);if(upright!==cv){cv.width=cv.height=1;cv=upright;}}
         // Native text can still lose table positions. Detect the structure before
         // deciding that a readable layer is sufficient.
-        const structuredLayer=ctx.ocr&&!ctx.ocrAll&&!foreignLayer&&text.trim()&&(lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height))?.columns.length||0)>=7;
-        const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||text.replace(/\s/g,'').length<20);
+        const needsGrid=ctx.ocr&&(math||(!ctx.ocrAll&&!foreignLayer&&text.trim()));
+        const grid=needsGrid?lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height)):null;
+        const structuredLayer=Boolean(grid&&grid.columns.length>=4);
+        if(math&&structuredLayer&&grid.columns.length<7){
+          const detailScale=Math.min(3,Math.sqrt(MAX_PX/(base.width*base.height)));
+          if(detailScale>scale){
+            vp=page.getViewport({scale:detailScale});
+            cv.width=Math.floor(vp.width);cv.height=Math.floor(vp.height);delete cv.pageMatrix;
+            await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
+            const upright=rotatePageCanvas(cv,items,vp);if(upright!==cv){cv.width=cv.height=1;cv=upright;}
+          }
+        }
+        const formulaFirst=math&&formulaRegions(items,vp,cv.width,cv.height,cv.pageMatrix).length>0;
+        const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||formulaFirst||text.replace(/\s/g,'').length<20);
         if(needsOcr){
           ctx.assets={};
-          const formulaFirst=math&&formulaRegions(items,vp,cv.width,cv.height).length>1;
-          const formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
-          const table=!formulas?await recognizeCellTable(cv,ctx,i):null;
+          let formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
+          const previousMath=ctx.math;ctx.math=!!math;
+          let table;
+          try{table=!formulas?await recognizeCellTable(cv,ctx,i):null;}finally{ctx.math=previousMath;}
+          if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
           if(table||formulas){text=table||formulas;ctx.ocrPages=(ctx.ocrPages||0)+1;}
-          else if(math){text=await glmRecognize(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          else if(math){text=await glmRecognize(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
         }
+        if(ctx.pageIssue)text+='\n\n[?НЕПОЛНАЯ СТРАНИЦА: '+ctx.pageIssue+']';
         if(!text.trim())text='[нечитаемо]';
         await savePage(ctx,i,text,await canvasBlob(cv));
         parts.push(pageMarkdown(text,i));

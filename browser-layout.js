@@ -31,7 +31,7 @@ function lineGrid(image){
   let columns=clusterPositions(vertical.map(r=>r[0]),4);const lines=clusterPositions(ys.filter(y=>y>=tableTop-3),4);
   const gaps=columns.slice(1).map((v,i)=>v-columns[i]).sort((a,b)=>a-b);
   if(gaps.length){const tolerance=gaps[Math.floor(gaps.length/2)]*.30;columns=clusterPositions(columns,tolerance);}
-  if(columns.length<4||lines.length<3)return null;
+  if(columns.length<3||lines.length<3)return null;
   let left=Math.min(columns[0],...major.map(r=>r[0])),right=Math.max(columns.at(-1),...major.map(r=>r[2]));
   const yt=Math.min(...vertical.map(r=>r[1])),yb=Math.max(...vertical.map(r=>r[2]));
   const coverage=x=>{let ink=0,total=0;for(let y=Math.ceil(yt+(yb-yt)*.12);y<yb-5;y+=3){total++;if([-4,-2,0,2,4].some(dx=>x+dx>=0&&x+dx<w&&dark(Math.round(x+dx),y)))ink++;}return ink/Math.max(1,total);};
@@ -81,8 +81,8 @@ function regionLines(image,box,height){
   const groups=[];for(const y of active){const g=groups.at(-1);if(g&&y-g.at(-1)<=1)g.push(y);else groups.push([y]);}
   return groups.filter(g=>g.at(-1)-g[0]>=Math.max(3,height*.35));
 }
-function bodyCells(image,grid,body,first,height,words=[]){
-  const edges=[first+1,...body.slice(1).map((y,i)=>{const mid=(body[i]+y)/2,inside=grid.lines.filter(v=>v>body[i]+height*.35&&v<y-height*.35),near=inside.reduce((a,b)=>Math.abs(b-mid)<Math.abs(a-mid)?b:a,Infinity);return Number.isFinite(near)?near:mid;}),Math.min(grid.bottom,body.at(-1)+height)];
+function bodyCells(image,grid,body,first,height,words=[],ruledEdges=null){
+  const edges=ruledEdges||[first+1,...body.slice(1).map((y,i)=>{const mid=(body[i]+y)/2,inside=grid.lines.filter(v=>v>body[i]+height*.35&&v<y-height*.35),near=inside.reduce((a,b)=>Math.abs(b-mid)<Math.abs(a-mid)?b:a,Infinity);return Number.isFinite(near)?near:mid;}),Math.min(grid.bottom,body.at(-1)+height)];
   const matrix=body.map((_,r)=>grid.columns.slice(1).map((x,c)=>({r,c,span:1,colspan:1,bbox:[grid.columns[c],edges[r],x,edges[r+1]],skip:false})));
   for(let c=0;c<grid.columns.length-1;c++){
     let start=0;
@@ -92,16 +92,18 @@ function bodyCells(image,grid,body,first,height,words=[]){
       // A single line printed anywhere in a ruled group belongs to the entire
       // physical cell, including rows above its visual baseline.
       const bands=regionLines(image,box,height);
-      const textual=words.filter(w=>w.bbox&&/[А-Яа-яЁё]{3,}/.test(w.text)&&(w.bbox.x0+w.bbox.x1)/2>box[0]&&(w.bbox.x0+w.bbox.x1)/2<box[2]&&(w.bbox.y0+w.bbox.y1)/2>box[1]&&(w.bbox.y0+w.bbox.y1)/2<box[3]).length>=2;
-      if(end-start>1&&(bands.length<=1||textual)){const root=matrix[start][c];root.span=end-start;root.bbox=box;root.multiline=textual;for(let r=start+1;r<end;r++)matrix[r][c].skip=true;}
-      else if(textual&&end-start===1)matrix[start][c].multiline=true;
+      const groupWords=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>box[0]&&(w.bbox.x0+w.bbox.x1)/2<box[2]&&(w.bbox.y0+w.bbox.y1)/2>box[1]&&(w.bbox.y0+w.bbox.y1)/2<box[3]);
+      const proseWords=groupWords.filter(w=>/^[А-Яа-яЁё]{3,}$/.test(w.text)).length;
+      const textual=proseWords>=2&&proseWords>groupWords.length/2;
+      if(end-start>1&&(ruledEdges||bands.length<=1||textual)){const root=matrix[start][c];root.span=end-start;root.bbox=box;root.multiline=Boolean(ruledEdges)||textual;for(let r=start+1;r<end;r++)matrix[r][c].skip=true;}
+      else if((ruledEdges||textual)&&end-start===1)matrix[start][c].multiline=true;
       start=end;
     }
   }return matrix;
 }
-function headerCells(image,grid,first){
+function headerCells(image,grid,first,minRuleRun=18){
   const top=Math.max(0,grid.headerTop??grid.top),bottom=first; if(bottom-top<12)return {rows:[],cells:[]};
-  const {width:w,data}=image,minRun=Math.max(18,Math.min(...grid.columns.slice(1).map((x,i)=>x-grid.columns[i]))*.7),yy=[];
+  const {width:w,data}=image,minRun=Math.max(minRuleRun,Math.min(...grid.columns.slice(1).map((x,i)=>x-grid.columns[i]))*.7),yy=[];
   for(let y=Math.ceil(top+5);y<bottom-5;y++){let run=0,best=0;for(let x=Math.ceil(grid.left);x<grid.right;x++){const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){run++;best=Math.max(best,run);}else run=0;}if(best>=minRun)yy.push(y);}
   const rows=[top,...clusterPositions(yy,4).filter(y=>y>top+6&&y<bottom-6),bottom];
   const n=grid.columns.length-1,m=rows.length-1,parent=Array.from({length:n*m},(_,i)=>i);
@@ -130,6 +132,10 @@ function localBoundaryX(image,x,y0,y1){
   for(let xx=Math.max(0,Math.round(x)-8);xx<=Math.min(w-1,Math.round(x)+8);xx++){let n=0,total=0;for(let y=Math.max(0,Math.ceil(y0+2));y<Math.min(h,Math.floor(y1-2));y++){total++;const k=(y*w+xx)*4;if(data[k]+data[k+1]+data[k+2]<660)n++;}const s=n/Math.max(1,total);if(s>score||s===score&&Math.abs(xx-x)<Math.abs(best-x)){score=s;best=xx;}}
   return score>.7?best:x;
 }
+function tableCaption(text){
+  const match=String(text).match(/(п\s*р\s*о\s*д\s*о\s*л\s*ж\s*е\s*н\s*и\s*е\s*)?т\s*а\s*б\s*л(?:\s*и\s*ц\s*[аы]|\.)\s*(?:№\s*)?(\d+(?:\s*\.\s*\d+)*)/i);
+  return match?{id:match[2].replace(/\s/g,''),continued:Boolean(match[1])}:null;
+}
 async function recognizeCellTable(canvas,ctx,pageIndex){
   const aligned=deskewCanvas(canvas);
   try{return await recognizeAlignedTable(aligned,ctx,pageIndex);}finally{if(aligned!==canvas)aligned.width=aligned.height=1;}
@@ -137,19 +143,44 @@ async function recognizeCellTable(canvas,ctx,pageIndex){
 async function recognizeAlignedTable(canvas,ctx,pageIndex){
   ctx.status('Поиск сетки таблицы…');
   const image=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),grid=lineGrid(image);
-  if(!grid||grid.columns.length<7)return null;
+  if(!grid||grid.columns.length<4)return null;
   const worker=await getOcr(ctx.lang||'rus+eng');await worker.setParameters({tessedit_pageseg_mode:'3'});
   const whole=await worker.recognize(canvas),words=whole.data.words||[],candidates=[];
   for(const word of words){const b=word.bbox;if(b&&/^[−+-]?\d+(?:[.,]\d+)?[*%]?$/.test(word.text)&&b.x0>=grid.left&&b.x1<=grid.right&&b.y0>grid.top&&b.y1<grid.bottom)candidates.push({y:(b.y0+b.y1)/2,x:(b.x0+b.x1)/2,h:b.y1-b.y0});}
   const height=candidates.length?candidates.map(v=>v.h).sort((a,b)=>a-b)[Math.floor(candidates.length/2)]:10;
   const bands=clusterPositions(candidates.map(v=>v.y),Math.max(3,height*.5)).filter(y=>new Set(candidates.filter(v=>Math.abs(v.y-y)<height*.6).map(v=>grid.columns.findIndex(x=>x>v.x))).size>=Math.max(3,(grid.columns.length-1)*.35));
   const first=grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||(bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
-  const body=pixelRows(canvas,grid,first,height);if(body.length<2||body.length*(grid.columns.length-1)>1400)return null;
-  const matrix=bodyCells(image,grid,body,first,height,words),headers=headerCells(image,grid,first);
+  let caption=tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
+  const top=Math.min(grid.top,grid.headerTop);
+  if(!caption&&top>12){
+    const captionImage=imageCrop(canvas,Math.max(0,grid.left-30),Math.max(0,top-canvas.height*.09),Math.min(canvas.width,grid.right+30),top-1,2);
+    try{
+      await worker.setParameters({tessedit_pageseg_mode:'11'});
+      caption=tableCaption((await worker.recognize(captionImage)).data.text);
+    }finally{
+      captionImage.width=captionImage.height=1;
+      await worker.setParameters({tessedit_pageseg_mode:'3'});
+    }
+  }
+  const narrow=grid.columns.length<=6;
+  const dividers=narrow?clusterPositions(grid.horizontal
+    .filter(([left,y,right])=>y>first+5&&y<grid.bottom-5&&left<=grid.columns[1]+6&&right>=grid.right-6)
+    .map(line=>line[1]),4):[];
+  const ruledEdges=dividers.length>=2?[first,...dividers,grid.bottom]:null;
+  const body=ruledEdges?ruledEdges.slice(1).map((edge,i)=>(ruledEdges[i]+edge)/2):pixelRows(canvas,grid,first,height);
+  if(body.length<2||body.length*(grid.columns.length-1)>1400){
+    if(caption)ctx.pageIssue='Не удалось восстановить ячейки таблицы '+caption.id;
+    return null;
+  }
+  const matrix=bodyCells(image,grid,body,first,height,words,ruledEdges);
+  const headerGrid=caption?.continued?{...grid,headerTop:grid.top}:grid;
+  const headers=headerCells(image,headerGrid,first,caption?.continued?(grid.right-grid.left)*.075:18);
   ctx.tableStats={rows:body.length,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
   const crop=imageCrop(canvas,grid.left,Math.min(grid.top,grid.headerTop),grid.right,grid.bottom),name='img/p'+String(pageIndex).padStart(3,'0')+'_tabl_1.jpg';
   ctx.assets??={};ctx.assets[name]=await canvasBlob(crop);crop.width=crop.height=1;
-  const match=((ctx.sourceText||'')+'\n'+(whole.data.text||'')).match(/т\s*а\s*б\s*л(?:\s*и\s*ц\s*а|\.)\s*(\d+(?:\.\d+)?)/i),id=match?match[1]:'[?номер не распознан]';
+  const id=caption?.id||'[?номер не распознан]';
+  if(caption)ctx.tableStats.caption=caption;
+  else ctx.pageIssue='Не определён номер таблицы';
   const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
   const read=async(patch,header=false)=>{
     const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
@@ -166,7 +197,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   try{
     for(let n=0;n<headers.cells.length;n++){
       await waitResume(ctx);const cell=headers.cells[n];ctx.status('Шапка: ячейка '+(n+1)+'/'+headers.cells.length);
-      const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3],patch=await render(box);
+      const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3];
+      if(box[2]<=box[0]||box[3]<=box[1])continue;
+      const patch=await render(box);
       try{Object.assign(cell,await read(patch.canvas,true));}finally{patch.canvas.width=patch.canvas.height=1;}
     }
     for(let r=0;r<matrix.length;r++){
@@ -185,11 +218,12 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.
   if(ctx.math){for(let n=0;n<headers.cells.length;n++){
-    await waitResume(ctx);const cell=headers.cells[n];if(cell.empty)continue;
+    await waitResume(ctx);const cell=headers.cells[n];if(cell.empty||cell.confidence==null)continue;
     ctx.status('Нейросеть: шапка '+(n+1)+'/'+headers.cells.length);
     const b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+3,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-3],patch=await render(box);let input=patch.canvas;
     try{
       if(cell.turn){input=document.createElement('canvas');input.width=patch.canvas.height;input.height=patch.canvas.width;const c=input.getContext('2d');c.translate(input.width/2,input.height/2);c.rotate(cell.turn*Math.PI/2);c.drawImage(patch.canvas,-patch.canvas.width/2,-patch.canvas.height/2);}
+      if(Math.max(input.width,input.height)>100*Math.min(input.width,input.height))continue;
       const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=384;
       let text;try{text=await glmRecognize(input,ctx);const compact=text.trim().replace(/[$\s]/g,'');if(compact.length<8&&!/[A-Za-zА-Яа-яЁё]/.test(compact)){ctx.task='Formula Recognition:';ctx.maxTokens=64;const math=await glmRecognize(input,ctx);cell.neuralMath=math;if(math.trim()&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'').trim();}}finally{ctx.task=task;ctx.maxTokens=limit;}
       cell.tesseract=cell.text;cell.neural=text;
@@ -201,12 +235,15 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
     const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
     for(let n=0;n<review.length;n++){
-      await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2],patch=await render(box);
+      await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
+      if(box[2]<=box[0]||box[3]<=box[1])continue;
+      const patch=await render(box);
+      if(Math.max(patch.canvas.width,patch.canvas.height)>100*Math.min(patch.canvas.width,patch.canvas.height)){patch.canvas.width=patch.canvas.height=1;continue;}
       ctx.status('Нейросеть: проверка ячейки '+(n+1)+'/'+review.length);const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=128;
       try{const text=await glmRecognize(patch.canvas,ctx);cell.tesseract=cell.text;cell.neural=text;if(text.trim()&&!/Генерация остановлена/.test(text)&&text.length<400){cell.text=text.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/^\$\$?|\$\$?$/g,'').trim().replace(/\s+/g,' ');cell.engine='GLM';}}finally{ctx.task=task;ctx.maxTokens=limit;patch.canvas.width=patch.canvas.height=1;}
     }
   }
-  let out='Таблица '+id+'\n\n![Таблица]('+name+')\n\n<table><thead>';
+  let out='Таблица '+id+'\n\n'+(caption?.continued?'Продолжение таблицы '+id+'\n\n':'')+'![Таблица]('+name+')\n\n<table><thead>';
   for(let r=0;r<headers.rows.length-1;r++){out+='<tr>';for(const cell of headers.cells.filter(c=>c.r===r).sort((a,b)=>a.c-b.c))out+='<th'+(cell.span>1?' rowspan="'+cell.span+'"':'')+(cell.colspan>1?' colspan="'+cell.colspan+'"':'')+'>'+htmlEscape(cell.text?'[?'+cell.text+']':cell.empty?'':'[?непрочитанная шапка]')+'</th>';out+='</tr>';}
   out+='</thead><tbody>';
   for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]')+'</td>';}out+='</tr>';}

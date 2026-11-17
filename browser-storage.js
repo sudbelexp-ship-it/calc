@@ -1,4 +1,4 @@
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.6';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.9';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -18,9 +18,20 @@ function flagNumbers(text){
   // generated markup may bypass flags; arbitrary <...> and $...$ may not.
   return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<!--\s*таблица\s+\d+(?:\.\d+)*:\s*строк\s+\d+,\s*столбцов\s+\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
 }
-function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
+function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|непрочитанная шапка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
+function pageAssetsComplete(page,index){
+  if(!page?.image?.size)return false;
+  const references=Array.from(page.text.matchAll(/!\[[^\]]*\]\((img\/[^)]+)\)/g),match=>match[1]);
+  const prefix='img/p'+String(index).padStart(3,'0')+'_';
+  const belongs=path=>path.startsWith(prefix)&&/^img\/p\d+_(?:tabl|formula)_\d+\.jpg$/.test(path);
+  const assets=Object.keys(page.assets||{});
+  if(!assets.every(path=>belongs(path)&&page.assets[path]?.size>0))return false;
+  if(page.table&&!references.some(path=>path.includes('_tabl_')))return false;
+  if(page.formulas&&references.filter(path=>path.includes('_formula_')).length!==page.formulas.count)return false;
+  return references.every(path=>belongs(path)&&page.assets?.[path]?.size>0);
+}
 function pageMarkdown(text,i){return '<!-- стр. '+i+' -->\n\n'+flagNumbers(text)+'\n\n![Оригинал страницы '+i+'](pages/p'+String(i).padStart(3,'0')+'.jpg)\n\n> Числа [?…], таблицы и LaTeX этой страницы не сверены.\n';}
-async function savePage(ctx,i,text,image){const p={version:PIPELINE,text,image,assets:ctx.assets||{},table:ctx.tableStats||null,formulas:ctx.formulaStats||null,complete:pageComplete(text)};await dbPut(ctx.key+':'+i,p);if(!p.complete)ctx.incomplete=(ctx.incomplete||0)+1;await ctx.observePage?.(text,i);await exportPage(ctx,i,p);}
+async function savePage(ctx,i,text,image){const p={version:PIPELINE,text,image,assets:ctx.assets||{},table:ctx.tableStats||null,formulas:ctx.formulaStats||null,complete:pageComplete(text)};p.complete=p.complete&&pageAssetsComplete(p,i);await dbPut(ctx.key+':'+i,p);if(!p.complete)ctx.incomplete=(ctx.incomplete||0)+1;await ctx.observePage?.(text,i);await exportPage(ctx,i,p);}
 async function exportPage(ctx,i,p){
   if(!ctx.dir)return;
   const n='p'+String(i).padStart(3,'0');const pages=await ctx.dir.getDirectoryHandle('pages',{create:true});
@@ -35,12 +46,12 @@ async function exportPage(ctx,i,p){
 }
 async function loadPage(ctx,i){
   let p=await dbGet(ctx.key+':'+i);
-  if(p?.version===PIPELINE&&p.image&&pageComplete(p.text)&&p.complete!==false)return p;
+  if(p?.version===PIPELINE&&pageComplete(p.text)&&p.complete!==false&&pageAssetsComplete(p,i))return p;
   for(const dir of [ctx.dir,ctx.legacyDir].filter(Boolean)){
     try{const n='p'+String(i).padStart(3,'0');const auto=await dir.getDirectoryHandle('auto');const f=await(await auto.getFileHandle(n+'.json')).getFile();const j=JSON.parse(await f.text());
       if(j.key!==ctx.key||j.page!==i||j.version!==PIPELINE||!pageComplete(j.text)||j.complete===false)continue;
       const pages=await dir.getDirectoryHandle('pages');const image=await(await pages.getFileHandle(n+'.jpg')).getFile();if(!image.size)continue;
-      const assets={};for(const path of j.assets||[]){if(!/^img\/p[0-9]+_(?:tabl|formula)_[0-9]+\.jpg$/.test(path))throw new Error('Недопустимое имя вырезки');const img=await dir.getDirectoryHandle('img');assets[path]=await(await img.getFileHandle(path.slice(4))).getFile();}p={version:PIPELINE,text:j.text,image,assets,table:j.table||null,formulas:j.formulas||null,complete:true};await dbPut(ctx.key+':'+i,p);return p;
+      const assets={};for(const path of j.assets||[]){if(!/^img\/p[0-9]+_(?:tabl|formula)_[0-9]+\.jpg$/.test(path))throw new Error('Недопустимое имя вырезки');const img=await dir.getDirectoryHandle('img');assets[path]=await(await img.getFileHandle(path.slice(4))).getFile();}p={version:PIPELINE,text:j.text,image,assets,table:j.table||null,formulas:j.formulas||null,complete:true};if(!pageAssetsComplete(p,i))continue;await dbPut(ctx.key+':'+i,p);return p;
     }catch(e){if(e.name!=='NotFoundError'&&!(e instanceof SyntaxError))throw e;}
   }return null;
 }

@@ -141,8 +141,7 @@ footer a,.info a{color:var(--accent)}
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/lib/turndown.browser.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 (function(){
@@ -150,7 +149,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.6';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.9';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -170,9 +169,20 @@ function flagNumbers(text){
   // generated markup may bypass flags; arbitrary <...> and $...$ may not.
   return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<!--\s*таблица\s+\d+(?:\.\d+)*:\s*строк\s+\d+,\s*столбцов\s+\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
 }
-function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
+function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|непрочитанная шапка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
+function pageAssetsComplete(page,index){
+  if(!page?.image?.size)return false;
+  const references=Array.from(page.text.matchAll(/!\[[^\]]*\]\((img\/[^)]+)\)/g),match=>match[1]);
+  const prefix='img/p'+String(index).padStart(3,'0')+'_';
+  const belongs=path=>path.startsWith(prefix)&&/^img\/p\d+_(?:tabl|formula)_\d+\.jpg$/.test(path);
+  const assets=Object.keys(page.assets||{});
+  if(!assets.every(path=>belongs(path)&&page.assets[path]?.size>0))return false;
+  if(page.table&&!references.some(path=>path.includes('_tabl_')))return false;
+  if(page.formulas&&references.filter(path=>path.includes('_formula_')).length!==page.formulas.count)return false;
+  return references.every(path=>belongs(path)&&page.assets?.[path]?.size>0);
+}
 function pageMarkdown(text,i){return '<!-- стр. '+i+' -->\n\n'+flagNumbers(text)+'\n\n![Оригинал страницы '+i+'](pages/p'+String(i).padStart(3,'0')+'.jpg)\n\n> Числа [?…], таблицы и LaTeX этой страницы не сверены.\n';}
-async function savePage(ctx,i,text,image){const p={version:PIPELINE,text,image,assets:ctx.assets||{},table:ctx.tableStats||null,formulas:ctx.formulaStats||null,complete:pageComplete(text)};await dbPut(ctx.key+':'+i,p);if(!p.complete)ctx.incomplete=(ctx.incomplete||0)+1;await ctx.observePage?.(text,i);await exportPage(ctx,i,p);}
+async function savePage(ctx,i,text,image){const p={version:PIPELINE,text,image,assets:ctx.assets||{},table:ctx.tableStats||null,formulas:ctx.formulaStats||null,complete:pageComplete(text)};p.complete=p.complete&&pageAssetsComplete(p,i);await dbPut(ctx.key+':'+i,p);if(!p.complete)ctx.incomplete=(ctx.incomplete||0)+1;await ctx.observePage?.(text,i);await exportPage(ctx,i,p);}
 async function exportPage(ctx,i,p){
   if(!ctx.dir)return;
   const n='p'+String(i).padStart(3,'0');const pages=await ctx.dir.getDirectoryHandle('pages',{create:true});
@@ -187,12 +197,12 @@ async function exportPage(ctx,i,p){
 }
 async function loadPage(ctx,i){
   let p=await dbGet(ctx.key+':'+i);
-  if(p?.version===PIPELINE&&p.image&&pageComplete(p.text)&&p.complete!==false)return p;
+  if(p?.version===PIPELINE&&pageComplete(p.text)&&p.complete!==false&&pageAssetsComplete(p,i))return p;
   for(const dir of [ctx.dir,ctx.legacyDir].filter(Boolean)){
     try{const n='p'+String(i).padStart(3,'0');const auto=await dir.getDirectoryHandle('auto');const f=await(await auto.getFileHandle(n+'.json')).getFile();const j=JSON.parse(await f.text());
       if(j.key!==ctx.key||j.page!==i||j.version!==PIPELINE||!pageComplete(j.text)||j.complete===false)continue;
       const pages=await dir.getDirectoryHandle('pages');const image=await(await pages.getFileHandle(n+'.jpg')).getFile();if(!image.size)continue;
-      const assets={};for(const path of j.assets||[]){if(!/^img\/p[0-9]+_(?:tabl|formula)_[0-9]+\.jpg$/.test(path))throw new Error('Недопустимое имя вырезки');const img=await dir.getDirectoryHandle('img');assets[path]=await(await img.getFileHandle(path.slice(4))).getFile();}p={version:PIPELINE,text:j.text,image,assets,table:j.table||null,formulas:j.formulas||null,complete:true};await dbPut(ctx.key+':'+i,p);return p;
+      const assets={};for(const path of j.assets||[]){if(!/^img\/p[0-9]+_(?:tabl|formula)_[0-9]+\.jpg$/.test(path))throw new Error('Недопустимое имя вырезки');const img=await dir.getDirectoryHandle('img');assets[path]=await(await img.getFileHandle(path.slice(4))).getFile();}p={version:PIPELINE,text:j.text,image,assets,table:j.table||null,formulas:j.formulas||null,complete:true};if(!pageAssetsComplete(p,i))continue;await dbPut(ctx.key+':'+i,p);return p;
     }catch(e){if(e.name!=='NotFoundError'&&!(e instanceof SyntaxError))throw e;}
   }return null;
 }
@@ -526,11 +536,11 @@ async function convPptx(buf){
 }
 
 let pdfReady = false;
+let pdfjsLib;
 async function initPdf(){
   if (pdfReady) return;
-  const r = await fetch('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
-  const blob = new Blob([await r.text()], {type: 'text/javascript'});
-  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
   pdfReady = true;
 }
 
@@ -615,7 +625,7 @@ function lineGrid(image){
   let columns=clusterPositions(vertical.map(r=>r[0]),4);const lines=clusterPositions(ys.filter(y=>y>=tableTop-3),4);
   const gaps=columns.slice(1).map((v,i)=>v-columns[i]).sort((a,b)=>a-b);
   if(gaps.length){const tolerance=gaps[Math.floor(gaps.length/2)]*.30;columns=clusterPositions(columns,tolerance);}
-  if(columns.length<4||lines.length<3)return null;
+  if(columns.length<3||lines.length<3)return null;
   let left=Math.min(columns[0],...major.map(r=>r[0])),right=Math.max(columns.at(-1),...major.map(r=>r[2]));
   const yt=Math.min(...vertical.map(r=>r[1])),yb=Math.max(...vertical.map(r=>r[2]));
   const coverage=x=>{let ink=0,total=0;for(let y=Math.ceil(yt+(yb-yt)*.12);y<yb-5;y+=3){total++;if([-4,-2,0,2,4].some(dx=>x+dx>=0&&x+dx<w&&dark(Math.round(x+dx),y)))ink++;}return ink/Math.max(1,total);};
@@ -665,8 +675,8 @@ function regionLines(image,box,height){
   const groups=[];for(const y of active){const g=groups.at(-1);if(g&&y-g.at(-1)<=1)g.push(y);else groups.push([y]);}
   return groups.filter(g=>g.at(-1)-g[0]>=Math.max(3,height*.35));
 }
-function bodyCells(image,grid,body,first,height,words=[]){
-  const edges=[first+1,...body.slice(1).map((y,i)=>{const mid=(body[i]+y)/2,inside=grid.lines.filter(v=>v>body[i]+height*.35&&v<y-height*.35),near=inside.reduce((a,b)=>Math.abs(b-mid)<Math.abs(a-mid)?b:a,Infinity);return Number.isFinite(near)?near:mid;}),Math.min(grid.bottom,body.at(-1)+height)];
+function bodyCells(image,grid,body,first,height,words=[],ruledEdges=null){
+  const edges=ruledEdges||[first+1,...body.slice(1).map((y,i)=>{const mid=(body[i]+y)/2,inside=grid.lines.filter(v=>v>body[i]+height*.35&&v<y-height*.35),near=inside.reduce((a,b)=>Math.abs(b-mid)<Math.abs(a-mid)?b:a,Infinity);return Number.isFinite(near)?near:mid;}),Math.min(grid.bottom,body.at(-1)+height)];
   const matrix=body.map((_,r)=>grid.columns.slice(1).map((x,c)=>({r,c,span:1,colspan:1,bbox:[grid.columns[c],edges[r],x,edges[r+1]],skip:false})));
   for(let c=0;c<grid.columns.length-1;c++){
     let start=0;
@@ -676,16 +686,18 @@ function bodyCells(image,grid,body,first,height,words=[]){
       // A single line printed anywhere in a ruled group belongs to the entire
       // physical cell, including rows above its visual baseline.
       const bands=regionLines(image,box,height);
-      const textual=words.filter(w=>w.bbox&&/[А-Яа-яЁё]{3,}/.test(w.text)&&(w.bbox.x0+w.bbox.x1)/2>box[0]&&(w.bbox.x0+w.bbox.x1)/2<box[2]&&(w.bbox.y0+w.bbox.y1)/2>box[1]&&(w.bbox.y0+w.bbox.y1)/2<box[3]).length>=2;
-      if(end-start>1&&(bands.length<=1||textual)){const root=matrix[start][c];root.span=end-start;root.bbox=box;root.multiline=textual;for(let r=start+1;r<end;r++)matrix[r][c].skip=true;}
-      else if(textual&&end-start===1)matrix[start][c].multiline=true;
+      const groupWords=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>box[0]&&(w.bbox.x0+w.bbox.x1)/2<box[2]&&(w.bbox.y0+w.bbox.y1)/2>box[1]&&(w.bbox.y0+w.bbox.y1)/2<box[3]);
+      const proseWords=groupWords.filter(w=>/^[А-Яа-яЁё]{3,}$/.test(w.text)).length;
+      const textual=proseWords>=2&&proseWords>groupWords.length/2;
+      if(end-start>1&&(ruledEdges||bands.length<=1||textual)){const root=matrix[start][c];root.span=end-start;root.bbox=box;root.multiline=Boolean(ruledEdges)||textual;for(let r=start+1;r<end;r++)matrix[r][c].skip=true;}
+      else if((ruledEdges||textual)&&end-start===1)matrix[start][c].multiline=true;
       start=end;
     }
   }return matrix;
 }
-function headerCells(image,grid,first){
+function headerCells(image,grid,first,minRuleRun=18){
   const top=Math.max(0,grid.headerTop??grid.top),bottom=first; if(bottom-top<12)return {rows:[],cells:[]};
-  const {width:w,data}=image,minRun=Math.max(18,Math.min(...grid.columns.slice(1).map((x,i)=>x-grid.columns[i]))*.7),yy=[];
+  const {width:w,data}=image,minRun=Math.max(minRuleRun,Math.min(...grid.columns.slice(1).map((x,i)=>x-grid.columns[i]))*.7),yy=[];
   for(let y=Math.ceil(top+5);y<bottom-5;y++){let run=0,best=0;for(let x=Math.ceil(grid.left);x<grid.right;x++){const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){run++;best=Math.max(best,run);}else run=0;}if(best>=minRun)yy.push(y);}
   const rows=[top,...clusterPositions(yy,4).filter(y=>y>top+6&&y<bottom-6),bottom];
   const n=grid.columns.length-1,m=rows.length-1,parent=Array.from({length:n*m},(_,i)=>i);
@@ -714,6 +726,10 @@ function localBoundaryX(image,x,y0,y1){
   for(let xx=Math.max(0,Math.round(x)-8);xx<=Math.min(w-1,Math.round(x)+8);xx++){let n=0,total=0;for(let y=Math.max(0,Math.ceil(y0+2));y<Math.min(h,Math.floor(y1-2));y++){total++;const k=(y*w+xx)*4;if(data[k]+data[k+1]+data[k+2]<660)n++;}const s=n/Math.max(1,total);if(s>score||s===score&&Math.abs(xx-x)<Math.abs(best-x)){score=s;best=xx;}}
   return score>.7?best:x;
 }
+function tableCaption(text){
+  const match=String(text).match(/(п\s*р\s*о\s*д\s*о\s*л\s*ж\s*е\s*н\s*и\s*е\s*)?т\s*а\s*б\s*л(?:\s*и\s*ц\s*[аы]|\.)\s*(?:№\s*)?(\d+(?:\s*\.\s*\d+)*)/i);
+  return match?{id:match[2].replace(/\s/g,''),continued:Boolean(match[1])}:null;
+}
 async function recognizeCellTable(canvas,ctx,pageIndex){
   const aligned=deskewCanvas(canvas);
   try{return await recognizeAlignedTable(aligned,ctx,pageIndex);}finally{if(aligned!==canvas)aligned.width=aligned.height=1;}
@@ -721,19 +737,44 @@ async function recognizeCellTable(canvas,ctx,pageIndex){
 async function recognizeAlignedTable(canvas,ctx,pageIndex){
   ctx.status('Поиск сетки таблицы…');
   const image=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),grid=lineGrid(image);
-  if(!grid||grid.columns.length<7)return null;
+  if(!grid||grid.columns.length<4)return null;
   const worker=await getOcr(ctx.lang||'rus+eng');await worker.setParameters({tessedit_pageseg_mode:'3'});
   const whole=await worker.recognize(canvas),words=whole.data.words||[],candidates=[];
   for(const word of words){const b=word.bbox;if(b&&/^[−+-]?\d+(?:[.,]\d+)?[*%]?$/.test(word.text)&&b.x0>=grid.left&&b.x1<=grid.right&&b.y0>grid.top&&b.y1<grid.bottom)candidates.push({y:(b.y0+b.y1)/2,x:(b.x0+b.x1)/2,h:b.y1-b.y0});}
   const height=candidates.length?candidates.map(v=>v.h).sort((a,b)=>a-b)[Math.floor(candidates.length/2)]:10;
   const bands=clusterPositions(candidates.map(v=>v.y),Math.max(3,height*.5)).filter(y=>new Set(candidates.filter(v=>Math.abs(v.y-y)<height*.6).map(v=>grid.columns.findIndex(x=>x>v.x))).size>=Math.max(3,(grid.columns.length-1)*.35));
   const first=grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||(bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
-  const body=pixelRows(canvas,grid,first,height);if(body.length<2||body.length*(grid.columns.length-1)>1400)return null;
-  const matrix=bodyCells(image,grid,body,first,height,words),headers=headerCells(image,grid,first);
+  let caption=tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
+  const top=Math.min(grid.top,grid.headerTop);
+  if(!caption&&top>12){
+    const captionImage=imageCrop(canvas,Math.max(0,grid.left-30),Math.max(0,top-canvas.height*.09),Math.min(canvas.width,grid.right+30),top-1,2);
+    try{
+      await worker.setParameters({tessedit_pageseg_mode:'11'});
+      caption=tableCaption((await worker.recognize(captionImage)).data.text);
+    }finally{
+      captionImage.width=captionImage.height=1;
+      await worker.setParameters({tessedit_pageseg_mode:'3'});
+    }
+  }
+  const narrow=grid.columns.length<=6;
+  const dividers=narrow?clusterPositions(grid.horizontal
+    .filter(([left,y,right])=>y>first+5&&y<grid.bottom-5&&left<=grid.columns[1]+6&&right>=grid.right-6)
+    .map(line=>line[1]),4):[];
+  const ruledEdges=dividers.length>=2?[first,...dividers,grid.bottom]:null;
+  const body=ruledEdges?ruledEdges.slice(1).map((edge,i)=>(ruledEdges[i]+edge)/2):pixelRows(canvas,grid,first,height);
+  if(body.length<2||body.length*(grid.columns.length-1)>1400){
+    if(caption)ctx.pageIssue='Не удалось восстановить ячейки таблицы '+caption.id;
+    return null;
+  }
+  const matrix=bodyCells(image,grid,body,first,height,words,ruledEdges);
+  const headerGrid=caption?.continued?{...grid,headerTop:grid.top}:grid;
+  const headers=headerCells(image,headerGrid,first,caption?.continued?(grid.right-grid.left)*.075:18);
   ctx.tableStats={rows:body.length,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
   const crop=imageCrop(canvas,grid.left,Math.min(grid.top,grid.headerTop),grid.right,grid.bottom),name='img/p'+String(pageIndex).padStart(3,'0')+'_tabl_1.jpg';
   ctx.assets??={};ctx.assets[name]=await canvasBlob(crop);crop.width=crop.height=1;
-  const match=((ctx.sourceText||'')+'\n'+(whole.data.text||'')).match(/т\s*а\s*б\s*л(?:\s*и\s*ц\s*а|\.)\s*(\d+(?:\.\d+)?)/i),id=match?match[1]:'[?номер не распознан]';
+  const id=caption?.id||'[?номер не распознан]';
+  if(caption)ctx.tableStats.caption=caption;
+  else ctx.pageIssue='Не определён номер таблицы';
   const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
   const read=async(patch,header=false)=>{
     const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
@@ -750,7 +791,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   try{
     for(let n=0;n<headers.cells.length;n++){
       await waitResume(ctx);const cell=headers.cells[n];ctx.status('Шапка: ячейка '+(n+1)+'/'+headers.cells.length);
-      const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3],patch=await render(box);
+      const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3];
+      if(box[2]<=box[0]||box[3]<=box[1])continue;
+      const patch=await render(box);
       try{Object.assign(cell,await read(patch.canvas,true));}finally{patch.canvas.width=patch.canvas.height=1;}
     }
     for(let r=0;r<matrix.length;r++){
@@ -769,11 +812,12 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.
   if(ctx.math){for(let n=0;n<headers.cells.length;n++){
-    await waitResume(ctx);const cell=headers.cells[n];if(cell.empty)continue;
+    await waitResume(ctx);const cell=headers.cells[n];if(cell.empty||cell.confidence==null)continue;
     ctx.status('Нейросеть: шапка '+(n+1)+'/'+headers.cells.length);
     const b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+3,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-3],patch=await render(box);let input=patch.canvas;
     try{
       if(cell.turn){input=document.createElement('canvas');input.width=patch.canvas.height;input.height=patch.canvas.width;const c=input.getContext('2d');c.translate(input.width/2,input.height/2);c.rotate(cell.turn*Math.PI/2);c.drawImage(patch.canvas,-patch.canvas.width/2,-patch.canvas.height/2);}
+      if(Math.max(input.width,input.height)>100*Math.min(input.width,input.height))continue;
       const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=384;
       let text;try{text=await glmRecognize(input,ctx);const compact=text.trim().replace(/[$\s]/g,'');if(compact.length<8&&!/[A-Za-zА-Яа-яЁё]/.test(compact)){ctx.task='Formula Recognition:';ctx.maxTokens=64;const math=await glmRecognize(input,ctx);cell.neuralMath=math;if(math.trim()&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'').trim();}}finally{ctx.task=task;ctx.maxTokens=limit;}
       cell.tesseract=cell.text;cell.neural=text;
@@ -785,12 +829,15 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
     const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
     for(let n=0;n<review.length;n++){
-      await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2],patch=await render(box);
+      await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
+      if(box[2]<=box[0]||box[3]<=box[1])continue;
+      const patch=await render(box);
+      if(Math.max(patch.canvas.width,patch.canvas.height)>100*Math.min(patch.canvas.width,patch.canvas.height)){patch.canvas.width=patch.canvas.height=1;continue;}
       ctx.status('Нейросеть: проверка ячейки '+(n+1)+'/'+review.length);const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=128;
       try{const text=await glmRecognize(patch.canvas,ctx);cell.tesseract=cell.text;cell.neural=text;if(text.trim()&&!/Генерация остановлена/.test(text)&&text.length<400){cell.text=text.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/^\$\$?|\$\$?$/g,'').trim().replace(/\s+/g,' ');cell.engine='GLM';}}finally{ctx.task=task;ctx.maxTokens=limit;patch.canvas.width=patch.canvas.height=1;}
     }
   }
-  let out='Таблица '+id+'\n\n![Таблица]('+name+')\n\n<table><thead>';
+  let out='Таблица '+id+'\n\n'+(caption?.continued?'Продолжение таблицы '+id+'\n\n':'')+'![Таблица]('+name+')\n\n<table><thead>';
   for(let r=0;r<headers.rows.length-1;r++){out+='<tr>';for(const cell of headers.cells.filter(c=>c.r===r).sort((a,b)=>a.c-b.c))out+='<th'+(cell.span>1?' rowspan="'+cell.span+'"':'')+(cell.colspan>1?' colspan="'+cell.colspan+'"':'')+'>'+htmlEscape(cell.text?'[?'+cell.text+']':cell.empty?'':'[?непрочитанная шапка]')+'</th>';out+='</tr>';}
   out+='</thead><tbody>';
   for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]')+'</td>';}out+='</tr>';}
@@ -798,39 +845,101 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+prose;
 }
 
-function formulaRegions(items,viewport,w,h){
+function formulaRegions(items,viewport,w,h,alignment){
   const found=[];
-  for(const it of items){const match=it.str.match(/\(\s*\d+[. ]\d+\s*\)\s*$/);if(!match)continue;const label=match[0].trim();
-    const m=pdfjsLib.Util.transform(viewport.transform,it.transform);const fh=Math.max(8,Math.hypot(m[2],m[3]));
+  for(const it of items){const match=it.str?.match(/\(\s*\d+\s*[. ,]\s*\d+\s*\)[.,]?\s*$/);if(!match)continue;const label=match[0].match(/\([^)]+\)/)[0];
+    const base=pdfjsLib.Util.transform(viewport.transform,it.transform);
+    const m=alignment?pdfjsLib.Util.transform(alignment,base):base;const fh=Math.max(8,Math.hypot(m[2],m[3]));
     const tagX=m[4]+(it.width||0)*viewport.scale*match.index/it.str.length;if(tagX<w*.70)continue;
-    found.push({label,x0:w*.12,x1:w*.98,y0:Math.max(0,m[5]-fh*2.0),y1:Math.min(h,m[5]+fh*1.5)});
+    found.push({label,right:m[4]+(it.width||0)*viewport.scale,baseline:m[5],height:fh,x0:w*.12,x1:w*.98,y0:Math.max(0,m[5]-fh*2.0),y1:Math.min(h,m[5]+fh*1.5)});
   }
-  return found.sort((a,b)=>a.y0-b.y0).filter((r,i,a)=>!i||r.y0-a[i-1].y0>5);
+  const cluster=found.map(candidate=>found.filter(other=>Math.abs(candidate.right-other.right)<w*.014))
+    .sort((a,b)=>b.length-a.length||b[0].right-a[0].right)[0];
+  const aligned=cluster?.length>=2?cluster:found;
+  return aligned.sort((a,b)=>a.y0-b.y0).filter((r,i,a)=>!i||r.y0-a[i-1].y0>5);
 }
 async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
-  const regions=formulaRegions(items,viewport,canvas.width,canvas.height);if(!regions.length)return null;
+  const regions=formulaRegions(items,viewport,canvas.width,canvas.height,canvas.pageMatrix);
   const detector=await getOcr(ctx.lang||'rus+eng');await detector.setParameters({tessedit_pageseg_mode:'3'});
   const detected=await detector.recognize(canvas);
-  for(const word of detected.data.words||[]){const b=word.bbox;if(!b||b.x0<canvas.width*.70||!/^\(\s*\d+[.,]\d+\s*\)$/.test(word.text))continue;const y=(b.y0+b.y1)/2,fh=Math.max(8,b.y1-b.y0);if(regions.some(r=>y>=r.y0&&y<=r.y1))continue;regions.push({label:word.text,x0:canvas.width*.12,x1:canvas.width*.98,y0:Math.max(0,b.y1-fh*2),y1:Math.min(canvas.height,b.y1+fh*1.5)});}
+  const words=detected.data.words||[];
+  const inline=(right,baseline,height)=>words.some(word=>{
+    const box=word.bbox;
+    return box&&/[А-Яа-яЁё]{3,}/.test(word.text)&&Math.abs(box.y1-baseline)<height*.65
+      &&box.x1>right-height*7&&box.x0<right+height*4;
+  });
+  for(let n=regions.length-1;n>=0;n--){
+    const region=regions[n];
+    if(inline(region.right,region.baseline,region.height))regions.splice(n,1);
+  }
+  const alignedRight=regions.length>=2?regions[0].right:null;
+  const nearRight=x=>alignedRight===null||Math.abs(x-alignedRight)<canvas.width*.02;
+  for(const word of words){const b=word.bbox;if(!b||b.x0<canvas.width*.70||!nearRight(b.x1)||!/^\(\s*\d+[.,]\d+\s*\)$/.test(word.text))continue;const y=(b.y0+b.y1)/2,fh=Math.max(8,b.y1-b.y0);if(inline(b.x1,b.y1,fh)||regions.some(r=>y>=r.y0&&y<=r.y1))continue;regions.push({label:word.text,x0:canvas.width*.12,x1:canvas.width*.98,y0:Math.max(0,b.y1-fh*2),y1:Math.min(canvas.height,b.y1+fh*1.5)});}
+  if(regions.length<4){
+    const left=Math.floor(canvas.width*.86);
+    const margin=imageCrop(canvas,left,0,canvas.width,canvas.height,2);
+    try{
+      await detector.setParameters({tessedit_pageseg_mode:'11'});
+      const result=await detector.recognize(margin);
+      for(const word of result.data.words||[]){
+        const b=word.bbox;
+        if(!b||!nearRight(left+b.x1/2)||!/^\(\d+[.,]\d+\)$/.test(word.text))continue;
+        const y=b.y1/2,fh=Math.max(8,(b.y1-b.y0)/2);
+        if(inline(left+b.x1/2,y,fh)||regions.some(r=>y>=r.y0&&y<=r.y1))continue;
+        regions.push({label:word.text,x0:canvas.width*.12,x1:canvas.width*.98,y0:Math.max(0,y-fh*2),y1:Math.min(canvas.height,y+fh*1.5)});
+      }
+    }finally{
+      margin.width=margin.height=1;
+      await detector.setParameters({tessedit_pageseg_mode:'3'});
+    }
+  }
+  if(!regions.length)return null;
   regions.sort((a,b)=>a.y0-b.y0);
   ctx.formulaStats={count:regions.length};
   const body=imageCrop(canvas,0,0,canvas.width,canvas.height);const c=body.getContext('2d');c.fillStyle='#fff';for(const r of regions)c.fillRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0);
   let text;try{text=await ocrImage(body,ctx);}finally{body.width=body.height=1;}
   ctx.assets??={};
   for(let n=0;n<regions.length;n++){
-    await waitResume(ctx);const r=regions[n];const vp=page.getViewport({scale:400/72});const k=vp.width/viewport.width;
-    const patch=document.createElement('canvas');patch.width=Math.ceil((r.x1-r.x0)*k);patch.height=Math.ceil((Math.min(canvas.height,r.y1+canvas.height*.012)-r.y0)*k);
-    if(patch.width*patch.height>4000000)throw new Error('Вырезка формулы превышает лимит 4 Мп');
+    await waitResume(ctx);const r=regions[n];
+    const {canvas:patch,scale:k}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,Math.min(canvas.height,r.y1+canvas.height*.012)]);
     try{
-      await page.render({canvasContext:patch.getContext('2d'),viewport:vp,transform:[1,0,0,1,-r.x0*k,-r.y0*k],intent:'print'}).promise;
       ctx.status('Формула '+r.label+' · 400 dpi');const task=ctx.task;ctx.task='Formula Recognition:';
       // Keep extra margins in the human reference, but exclude the next prose
       // line from the model input: it can otherwise paraphrase it as mathematics.
       const input=imageCrop(patch,0,0,patch.width,Math.ceil((r.y1-r.y0)*k));
-      let latex;try{latex=await glmRecognize(input,ctx);}finally{ctx.task=task;input.width=input.height=1;}
+      let latex,caseNote='';
+      try{
+        latex=(await glmRecognize(input,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+        const variable=latex.match(/^\s*([A-Z])\s*=/)?.[1];
+        if(variable&&r.baseline!=null){
+          const positions=items.filter(item=>item.str?.trim()).map(item=>{
+            const base=pdfjsLib.Util.transform(viewport.transform,item.transform);
+            const m=canvas.pageMatrix?pdfjsLib.Util.transform(canvas.pageMatrix,base):base;
+            return {text:item.str.trim(),x:m[4],y:m[5]};
+          });
+          const head=positions.filter(item=>item.x>=r.x0&&item.x<canvas.width*.72&&Math.abs(item.y-r.baseline)<r.height*.45).sort((a,b)=>a.x-b.x).slice(0,2).map(item=>item.text).join(' ');
+          const printed=head.match(/^([a-zа-я])\s*=/)?.[1];
+          const lookalikes={а:'a',с:'c',е:'e',о:'o',р:'p',х:'x',у:'y',к:'k',м:'m',т:'t',в:'b',н:'h'};
+          if(printed&&(lookalikes[printed]||printed)===variable.toLowerCase()){
+            const alternate=imageCrop(canvas,r.x0,r.y0,r.x1,r.y1,2);
+            try{
+              const reading=(await glmRecognize(alternate,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+              if(reading.match(/^([a-z])\s*=/)?.[1]===variable.toLowerCase()){
+                latex=variable.toLowerCase()+latex.slice(1);
+                caseNote='\n\n[?Первое чтение начиналось с '+variable+' =]';
+              }else{
+                caseNote='\n\n[?Проверьте регистр первой переменной по вырезке]';
+              }
+            }finally{alternate.width=alternate.height=1;}
+          }
+        }
+      }finally{ctx.task=task;input.width=input.height=1;}
       const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';ctx.assets[name]=await canvasBlob(patch);
       latex=latex.replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
-      text+='\n\n$$'+latex+'$$ '+r.label+'\n\n![Формула '+r.label+']('+name+')\n\n[?LaTeX не сверен с вырезкой]';
+      const inferred=latex.match(/\\tag\s*\{\s*(\d+\s*\.\s*\d+)\s*\}/);
+      const label=inferred?'('+inferred[1].replace(/\s/g,'')+')':r.label;
+      const conflict=r.label.replace(/[(),.\s]/g,'')!==label.replace(/[(),.\s]/g,'');
+      text+='\n\n$$'+latex+'$$ '+label+'\n\n![Формула '+label+']('+name+')\n\n[?LaTeX не сверен с вырезкой]'+(conflict?'\n\n[?Номер по тексту: '+r.label+']':'')+caseNote;
     }finally{patch.width=patch.height=1;}
   }
   return text;
@@ -838,7 +947,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
 
 async function convPdf(buf, ctx){
   await initPdf();
-  const pdf=await pdfjsLib.getDocument({data:buf}).promise;
+  const pdf=await pdfjsLib.getDocument({data:buf,isEvalSupported:false}).promise;
   ctx.total=pdf.numPages;
   ctx.pageProgress?.(0,pdf.numPages);
   const parts=[];
@@ -854,13 +963,13 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.assets={};ctx.pageIssue='';
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
-        const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
+        let vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
         ctx.renderTablePatch=async(aligned,box)=>{
           const high=page.getViewport({scale:400/72}),k=high.width/vp.width,m=aligned.pageMatrix||[1,0,0,1,0,0];
           const patch=document.createElement('canvas');patch.width=Math.max(1,Math.ceil((box[2]-box[0])*k));patch.height=Math.max(1,Math.ceil((box[3]-box[1])*k));
@@ -879,17 +988,33 @@ async function convPdf(buf, ctx){
         if(ctx.ocr){const upright=rotatePageCanvas(cv,items,vp);if(upright!==cv){cv.width=cv.height=1;cv=upright;}}
         // Native text can still lose table positions. Detect the structure before
         // deciding that a readable layer is sufficient.
-        const structuredLayer=ctx.ocr&&!ctx.ocrAll&&!foreignLayer&&text.trim()&&(lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height))?.columns.length||0)>=7;
-        const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||text.replace(/\s/g,'').length<20);
+        const needsGrid=ctx.ocr&&(math||(!ctx.ocrAll&&!foreignLayer&&text.trim()));
+        const grid=needsGrid?lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height)):null;
+        const structuredLayer=Boolean(grid&&grid.columns.length>=4);
+        if(math&&structuredLayer&&grid.columns.length<7){
+          const detailScale=Math.min(3,Math.sqrt(MAX_PX/(base.width*base.height)));
+          if(detailScale>scale){
+            vp=page.getViewport({scale:detailScale});
+            cv.width=Math.floor(vp.width);cv.height=Math.floor(vp.height);delete cv.pageMatrix;
+            await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
+            const upright=rotatePageCanvas(cv,items,vp);if(upright!==cv){cv.width=cv.height=1;cv=upright;}
+          }
+        }
+        const formulaFirst=math&&formulaRegions(items,vp,cv.width,cv.height,cv.pageMatrix).length>0;
+        const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||formulaFirst||text.replace(/\s/g,'').length<20);
         if(needsOcr){
           ctx.assets={};
-          const formulaFirst=math&&formulaRegions(items,vp,cv.width,cv.height).length>1;
-          const formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
-          const table=!formulas?await recognizeCellTable(cv,ctx,i):null;
+          let formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
+          const previousMath=ctx.math;ctx.math=!!math;
+          let table;
+          try{table=!formulas?await recognizeCellTable(cv,ctx,i):null;}finally{ctx.math=previousMath;}
+          if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
           if(table||formulas){text=table||formulas;ctx.ocrPages=(ctx.ocrPages||0)+1;}
-          else if(math){text=await glmRecognize(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          else if(math){text=await glmRecognize(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
         }
+        if(ctx.pageIssue)text+='\n\n[?НЕПОЛНАЯ СТРАНИЦА: '+ctx.pageIssue+']';
         if(!text.trim())text='[нечитаемо]';
         await savePage(ctx,i,text,await canvasBlob(cv));
         parts.push(pageMarkdown(text,i));
@@ -1030,7 +1155,7 @@ async function countPages(job){
   if(['djvu','djv'].includes(extOf(job.file.name))){let worker;try{worker=await openDjvu(job.file);job.total=await worker.doc.getPagesQuantity().run();}catch(e){if(job.state==='ready')job.badge.textContent=e.message;}finally{worker?.terminate();updateJob(job);}return;}
   if(extOf(job.file.name)!=='pdf'){job.total=1;updateJob(job);return;}
   if(job.file.size>250*1024*1024){job.badge.textContent='Лимит файла: 250 МБ';return;}
-  let pdf;try{await initPdf();pdf=await pdfjsLib.getDocument({data:await job.file.arrayBuffer()}).promise;job.total=pdf.numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await pdf?.destroy();updateJob(job);}
+  let pdf;try{await initPdf();pdf=await pdfjsLib.getDocument({data:await job.file.arrayBuffer(),isEvalSupported:false}).promise;job.total=pdf.numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await pdf?.destroy();updateJob(job);}
 }
 function header(file,total){return ['---','обозначение:','название:','редакция:','дата_введения:','источник_скана: '+JSON.stringify(file.name),'страниц: '+(total||1),'распознано: '+new Date().toISOString().slice(0,10),'---','','> Автоматический черновик. Числа [?…] и формулы не сверены.',''].join('\n');}
 async function runJob(job){

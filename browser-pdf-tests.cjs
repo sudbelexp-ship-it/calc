@@ -7,4 +7,11 @@ assert(c.hasScanLayer({fnArray:[3,5],argsArray:[[100,0,0,100,0,0],['image']]},10
 assert(!c.hasScanLayer({fnArray:[3,5],argsArray:[[10,0,0,10,0,0],['small-figure']]},10000));
 assert(!c.hasScanLayer({fnArray:[1,3,2,5],argsArray:[[],[100,0,0,100,0,0],[],['small-figure']]},10000));
 assert(c.hasScanLayer({fnArray:[],argsArray:[]},10000,{f:{fontFamily:'GlyphLessFont'}}));
-console.log('PASS: old OCR layer, full-page scan, small figure exclusion, graphics-state restore');
+vm.runInContext(fs.readFileSync('browser-formulas.js','utf8'),c);
+const identity=[1,0,0,1,0,0];
+const item=(str,x,y,width)=>({str,width,transform:[10,0,0,10,x,y]});
+const candidates=[item('(8.4)',820,210,28),item('(8.9)',860,260,29),item('(8.10)',853,370,36)];
+const regions=c.formulaRegions(candidates,{scale:1,transform:identity},1000,1000);
+assert.deepEqual(Array.from(regions,r=>r.label),['(8.9)','(8.10)']);
+assert.equal(c.formulaRegions([candidates[1]],{scale:1,transform:identity},1000,1000).length,1);
+console.log('PASS: PDF scan detection, graphics-state restore, aligned formula labels, single formula');

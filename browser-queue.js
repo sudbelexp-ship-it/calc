@@ -33,7 +33,7 @@ async function countPages(job){
   if(['djvu','djv'].includes(extOf(job.file.name))){let worker;try{worker=await openDjvu(job.file);job.total=await worker.doc.getPagesQuantity().run();}catch(e){if(job.state==='ready')job.badge.textContent=e.message;}finally{worker?.terminate();updateJob(job);}return;}
   if(extOf(job.file.name)!=='pdf'){job.total=1;updateJob(job);return;}
   if(job.file.size>250*1024*1024){job.badge.textContent='Лимит файла: 250 МБ';return;}
-  let pdf;try{await initPdf();pdf=await pdfjsLib.getDocument({data:await job.file.arrayBuffer()}).promise;job.total=pdf.numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await pdf?.destroy();updateJob(job);}
+  let pdf;try{await initPdf();pdf=await pdfjsLib.getDocument({data:await job.file.arrayBuffer(),isEvalSupported:false}).promise;job.total=pdf.numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await pdf?.destroy();updateJob(job);}
 }
 function header(file,total){return ['---','обозначение:','название:','редакция:','дата_введения:','источник_скана: '+JSON.stringify(file.name),'страниц: '+(total||1),'распознано: '+new Date().toISOString().slice(0,10),'---','','> Автоматический черновик. Числа [?…] и формулы не сверены.',''].join('\n');}
 async function runJob(job){

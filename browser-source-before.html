@@ -126,8 +126,7 @@ footer a,.info a{color:var(--accent)}
 <script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/lib/turndown.browser.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
 <script>
 (function(){
@@ -487,11 +486,11 @@ async function convPptx(buf){
 }
 
 let pdfReady = false;
+let pdfjsLib;
 async function initPdf(){
   if (pdfReady) return;
-  const r = await fetch('https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js');
-  const blob = new Blob([await r.text()], {type: 'text/javascript'});
-  pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+  pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
   pdfReady = true;
 }
 

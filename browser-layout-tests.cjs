@@ -30,4 +30,8 @@ const closeRows=new Uint8ClampedArray(100*100*4).fill(255);
 for(let y=10;y<80;y++){let k=(y*100+5)*4;closeRows[k]=closeRows[k+1]=closeRows[k+2]=0;}
 for(const y0 of [20,34])for(let y=y0;y<y0+12;y++)for(let x=20;x<30;x++){let k=(y*100+x)*4;closeRows[k]=closeRows[k+1]=closeRows[k+2]=0;}
 assert.equal(c.regionLines({width:100,height:100,data:closeRows},[0,10,60,70],12).length,2);
-console.log('PASS: grid, grey rules, skew, close text rows, centered merged cells, multilevel header spans, false-rule rejection');
+assert.equal(c.tableCaption('Т а б л и ц а  2').id,'2');
+assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,'6.8');
+assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
+assert.equal(c.tableCaption('см. таблицу 2'),null);
+console.log('PASS: grid, grey rules, skew, close text rows, centered merged cells, multilevel header spans, false-rule rejection, table captions');
