@@ -2,6 +2,7 @@ async function convPdf(buf, ctx){
   await initPdf();
   const pdf=await pdfjsLib.getDocument({data:buf}).promise;
   ctx.total=pdf.numPages;
+  ctx.pageProgress?.(0,pdf.numPages);
   const parts=[];
   const mathSet=ctx.math?parsePages(ctx.pages,pdf.numPages):null;
   try {
@@ -11,7 +12,8 @@ async function convPdf(buf, ctx){
       const cached=await loadPage(ctx,i);
       if(cached?.version===PIPELINE&&cached.image&&typeof cached.text==='string'){
         ctx.cached=(ctx.cached||0)+1;
-        await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));continue;
+        await ctx.observePage?.(cached.text,i);
+        await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
       let cv=null;
@@ -20,9 +22,10 @@ async function convPdf(buf, ctx){
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
         const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
-        await page.render({canvasContext:cv.getContext('2d'),viewport:vp}).promise;
+        await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         let text=pageToMarkdown((await page.getTextContent()).items);
-        if(math){text=await glmRecognize(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
+        const needsOcr=ctx.ocr&&(ctx.ocrAll||text.replace(/\s/g,'').length<20);
+        if(math&&needsOcr){text=await glmRecognize(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
         else if(ctx.ocr&&(ctx.ocrAll||text.replace(/\s/g,'').length<20)){
           ctx.status('OCR страницы '+i+' из '+pdf.numPages);
           text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;
@@ -30,9 +33,9 @@ async function convPdf(buf, ctx){
         if(!text.trim())text='[нечитаемо]';
         await savePage(ctx,i,text,await canvasBlob(cv));
         parts.push(pageMarkdown(text,i));
+        ctx.pageProgress?.(i,pdf.numPages);
         if(ctx.dir)await writeFile(ctx.dir,'document.md',parts.join('\n\n'));
       }finally{if(cv)cv.width=cv.height=1;page.cleanup();}
-      await new Promise(r=>setTimeout(r,100));
     }
     ctx.progress(1);return parts.join('\n\n');
   }finally{await pdf.destroy();}

@@ -16,6 +16,12 @@ values.clear();const restored=await context.loadPage(ctx,1);assert.equal(restore
 values.clear();assert.equal(await context.loadPage({...ctx,key:'different:modeB'},1),null);
 assert.equal(await context.loadPage(ctx,2),null);
 assert.notEqual(await context.resultLabel({name:'test.pdf'},'file:modeA'),await context.resultLabel({name:'test.pdf'},'file:modeB'));
+vm.runInContext(await fs.readFile('browser-names.js','utf8'),context);
+const namedRoot=await dir(root+'/named');await fs.mkdir(root+'/named',{recursive:true});
+const title='СП 20.13330.2016 Нагрузки и воздействия';
+const first={key:'name-source-1',file:{name:'1.pdf'},output:namedRoot};await context.ensureDocumentDir(first,title);assert.equal(first.label,title);
+const second={key:'name-source-2',file:{name:'2.pdf'},output:namedRoot};await context.ensureDocumentDir(second,title);assert.equal(second.label,title+' (2)');
+const again={key:'name-source-1',file:{name:'1.pdf'},output:namedRoot};await context.ensureDocumentDir(again,title);assert.equal(again.label,title);
 console.log('Passed: atomic-page export, restore with empty browser cache, reject other mode/source, missing page, distinct output directories');
 }
 main().catch(e=>{console.error(e);process.exitCode=1;});

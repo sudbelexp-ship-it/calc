@@ -1,3 +1,22 @@
+// Stable Cache API storage independent of the HTML/Worker version query string.
+async function configureModelCache(TX){
+  TX.env.allowLocalModels=false;
+  if(!self.caches){self.postMessage({cacheInfo:'Кеш моделей недоступен: повторная загрузка может потребовать интернет.'});return;}
+  let cache;try{cache=await caches.open('bitexp-ocr-models-v1');}catch(e){TX.env.useBrowserCache=false;TX.env.useCustomCache=false;self.postMessage({cacheInfo:'Хранилище моделей заблокировано: '+e.message+'. Модель будет загружаться из сети.'});return;}
+  TX.env.useBrowserCache=false;TX.env.useCustomCache=true;
+  TX.env.customCache={
+    async match(request){
+      const found=await cache.match(request)||await caches.match(request);
+      const url=typeof request==='string'?request:request.url;
+      if(/onnx|tokenizer|config/.test(url))self.postMessage({cacheInfo:(found?'Из кеша: ':'Нет в кеше, запрос к сети: ')+url.split('/').pop()});
+      return found;
+    },
+    async put(request,response){
+      try{await cache.put(request,response);}catch(e){self.postMessage({cacheInfo:'Не удалось сохранить модель в кеш: '+e.message+'. Проверьте свободное место и разрешения хранения.'});}
+    }
+  };
+}
+
 const GLM_ID = 'onnx-community/GLM-OCR-ONNX';
 const GLM_PX = 2200000;
 let glm = null, glmLoading = null, glmDl = null;
@@ -20,6 +39,7 @@ async function getGlm(){
     const bad = await gpuSupport();
     if (bad) throw new Error(bad);
     const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+    await configureModelCache(TX);
     const cb = e => { if (e.progress != null && glmDl) glmDl(e.progress,e.file); };
     const [processor, model] = await Promise.all([
       TX.AutoProcessor.from_pretrained(GLM_ID, {progress_callback: cb}),
@@ -52,8 +72,8 @@ function fixUnits(t){
 }
 
 async function glmRecognize(canvas, ctx){
-  ctx.status('Загрузка модели…');
-  glmDl = (p,file) => ctx.status('Загрузка '+(file||'GLM-OCR')+': ' + Math.round(p) + '%');
+  ctx.status(glm?'Модель в памяти · распознавание…':'Чтение модели / подготовка GPU…');
+  glmDl = (p,file) => ctx.status('Подготовка '+(file||'GLM-OCR')+': ' + Math.round(p) + '%');
   const {TX, processor, model} = await getGlm();
   glmDl = null;
   const c2 = canvas;
@@ -67,7 +87,7 @@ async function glmRecognize(canvas, ctx){
     skip_prompt: true, skip_special_tokens: true, callback_function: () => {},
     token_callback_function: ids => {
       n++; for (const id of ids) gen.push(Number(id));
-      if (n % 8 === 0) ctx.status((ctx.stage || 'GLM-OCR') + ': ' + n + ' токенов');
+      if (n % 64 === 0) ctx.status((ctx.stage || 'GLM-OCR') + ': ' + n + ' токенов');
       if (n % 16 === 0) { cut = loopCut(gen); if (cut !== -1) stopper.interrupt(); }
     }
   });

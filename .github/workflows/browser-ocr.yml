@@ -18,3 +18,7 @@ jobs:
       - run: python build-browser.py
       - run: node browser-tests.cjs
       - run: node browser-recovery-tests.cjs
+      - run: node browser-queue-tests.cjs
+      - run: node browser-cache-tests.cjs
+      - run: node browser-names-tests.cjs
+      - run: node browser-djvu-tests.cjs
