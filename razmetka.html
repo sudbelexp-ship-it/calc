@@ -150,7 +150,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.3-cells.10';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.6';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -287,9 +287,9 @@ async function gpuSupport(){if(!window.isSecureContext)return 'Нужен HTTPS'
 async function glmRecognize(cv,ctx){
   const bad=await gpuSupport();if(bad)throw new Error(bad);
   if(ocrWorker){await ocrWorker.terminate();ocrWorker=null;ocrLang=null;}
-  if(!glmWorker)glmWorker=new Worker('browser-glm-worker-24144621b057.js');
+  if(!glmWorker)glmWorker=new Worker('browser-glm-worker-d72b15d10f8d.js');
   const img=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);
-  return new Promise((res,rej)=>{ctx.abort=()=>{glmWorker?.terminate();glmWorker=null;ctx.abort=null;rej(new Error('Распознавание отменено'));};glmWorker.onmessage=e=>{if(e.data.status)ctx.status(e.data.status);else if(e.data.cacheInfo)$('cacheInfo').textContent=e.data.cacheInfo;else if(e.data.error){ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.data.error));}else {ctx.abort=null;res(e.data.text);}};glmWorker.onerror=e=>{ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.message||'Ошибка WebGPU Worker'));};glmWorker.postMessage({pixels:img.data,width:cv.width,height:cv.height,task:ctx.task},[img.data.buffer]);});
+  return new Promise((res,rej)=>{ctx.abort=()=>{glmWorker?.terminate();glmWorker=null;ctx.abort=null;rej(new Error('Распознавание отменено'));};glmWorker.onmessage=e=>{if(e.data.status)ctx.status(e.data.status);else if(e.data.cacheInfo)$('cacheInfo').textContent=e.data.cacheInfo;else if(e.data.error){ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.data.error));}else {ctx.abort=null;res(e.data.text);}};glmWorker.onerror=e=>{ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.message||'Ошибка WebGPU Worker'));};glmWorker.postMessage({pixels:img.data,width:cv.width,height:cv.height,task:ctx.task,maxTokens:ctx.maxTokens},[img.data.buffer]);});
 }
 
 function fitCanvas(src, w, h, maxPx){
@@ -597,7 +597,8 @@ function scanSkew(image){
 function deskewCanvas(canvas){
   const angle=scanSkew(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
   if(Math.abs(angle)<=.1)return canvas;
-  const cv=document.createElement('canvas');cv.width=canvas.width;cv.height=canvas.height;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.translate(cv.width/2,cv.height/2);c.rotate(angle*Math.PI/180);c.drawImage(canvas,-canvas.width/2,-canvas.height/2);return cv;
+  const cv=document.createElement('canvas');cv.width=canvas.width;cv.height=canvas.height;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.translate(cv.width/2,cv.height/2);c.rotate(angle*Math.PI/180);c.drawImage(canvas,-canvas.width/2,-canvas.height/2);
+  const a=angle*Math.PI/180,co=Math.cos(a),si=Math.sin(a);cv.pageMatrix=pdfjsLib.Util.transform([co,si,-si,co,cv.width/2-co*cv.width/2+si*cv.height/2,cv.height/2-si*cv.width/2-co*cv.height/2],canvas.pageMatrix||[1,0,0,1,0,0]);return cv;
 }
 function lineGrid(image){
   const {width:w,height:h,data}=image;const xs=[],ys=[];const horizontal=[],vertical=[];
@@ -610,7 +611,7 @@ function lineGrid(image){
   const longest=Math.max(0,...horizontal.map(r=>r[2]-r[0]));const major=horizontal.filter(r=>r[2]-r[0]>longest*.7);
   if(!major.length)return null;
   const tableTop=Math.min(...major.map(r=>r[1]));
-  const useVertical=vertical.filter(r=>r[2]>tableTop+minV*.7);vertical.splice(0,vertical.length,...useVertical);
+  const useVertical=vertical.filter(r=>r[2]>tableTop+minV*.7&&r[1]<tableTop+minV*2);vertical.splice(0,vertical.length,...useVertical);
   let columns=clusterPositions(vertical.map(r=>r[0]),4);const lines=clusterPositions(ys.filter(y=>y>=tableTop-3),4);
   const gaps=columns.slice(1).map((v,i)=>v-columns[i]).sort((a,b)=>a-b);
   if(gaps.length){const tolerance=gaps[Math.floor(gaps.length/2)]*.30;columns=clusterPositions(columns,tolerance);}
@@ -628,7 +629,7 @@ function lineGrid(image){
   const starts=vertical.map(r=>r[1]).sort((a,b)=>a-b);
   const fullLines=clusterPositions(horizontal.filter(r=>r[2]-r[0]>(right-left)*.9).map(r=>r[1]),4);
   const ends=columns.map(x=>vertical.filter(r=>Math.abs(r[0]-x)<10).sort((a,b)=>(b[2]-b[1])-(a[2]-a[1]))[0]?.[2]).filter(Number.isFinite).sort((a,b)=>a-b);
-  return {columns,lines,horizontal,fullLines,headerStart:starts[Math.floor(starts.length/2)],top:tableTop,bottom:ends[Math.floor(ends.length*.6)]||Math.max(...vertical.map(r=>r[2])),left,right};
+  return {columns,lines,horizontal,vertical,fullLines,headerTop:Math.min(...starts),headerStart:starts[Math.floor(starts.length/2)],top:tableTop,bottom:ends[Math.floor(ends.length*.6)]||Math.max(...vertical.map(r=>r[2])),left,right};
 }
 function pixelRows(canvas,grid,first,height){
   const {width:w,height:h,data}=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);const active=[];
@@ -648,69 +649,153 @@ function rotatePageCanvas(canvas,items,viewport){
   for(const it of items){if(!it.str?.trim())continue;const m=pdfjsLib.Util.transform(viewport.transform,it.transform);const a=((Math.round(Math.atan2(m[1],m[0])*2/Math.PI)%4)+4)%4;votes[a]+=it.str.length;}
   const turn=votes.indexOf(Math.max(...votes));if(!turn)return canvas;
   const cv=document.createElement('canvas');cv.width=turn%2?canvas.height:canvas.width;cv.height=turn%2?canvas.width:canvas.height;
-  const c=cv.getContext('2d');c.translate(cv.width/2,cv.height/2);c.rotate(-turn*Math.PI/2);c.drawImage(canvas,-canvas.width/2,-canvas.height/2);return cv;
+  const c=cv.getContext('2d');c.translate(cv.width/2,cv.height/2);c.rotate(-turn*Math.PI/2);c.drawImage(canvas,-canvas.width/2,-canvas.height/2);const a=-turn*Math.PI/2,co=Math.cos(a),si=Math.sin(a);cv.pageMatrix=[co,si,-si,co,cv.width/2-co*canvas.width/2+si*canvas.height/2,cv.height/2-si*canvas.width/2-co*canvas.height/2];return cv;
 }
 function imageCrop(canvas,x0,y0,x1,y1,scale=1){const cv=document.createElement('canvas');cv.width=Math.max(1,Math.ceil((x1-x0)*scale));cv.height=Math.max(1,Math.ceil((y1-y0)*scale));const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(canvas,x0,y0,x1-x0,y1-y0,0,0,cv.width,cv.height);return cv;}
 function htmlEscape(text){return String(text).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function ruleCoverage(image,x0,y0,x1,y1){
+  const {width:w,height:h,data}=image;const vertical=Math.abs(x1-x0)<Math.abs(y1-y0);
+  if(vertical){let best=0;for(let dx=-8;dx<=8;dx++){let n=0,count=0;for(let y=Math.ceil(y0+2);y<y1-2;y+=2){count++;let ink=false;for(let d=-1;d<=1;d++){const x=Math.round(x0+dx+d);if(x<0||x>=w||y<0||y>=h)continue;const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){ink=true;break;}}if(ink)n++;}best=Math.max(best,n/Math.max(1,count));}return best>=.75?best:0;}
+  {let best=0;for(let dy=-3;dy<=3;dy++){let n=0,count=0;for(let x=Math.ceil(x0+2);x<x1-2;x+=2){count++;let ink=false;for(let d=-1;d<=1;d++){const y=Math.round(y0+dy+d);if(x<0||x>=w||y<0||y>=h)continue;const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){ink=true;break;}}if(ink)n++;}best=Math.max(best,n/Math.max(1,count));}return best>=.75?best:0;}
+}
+function regionLines(image,box,height){
+  const {width:w,data}=image,active=[];
+  const inset=Math.min(8,(box[2]-box[0])*.22);
+  for(let y=Math.ceil(box[1]+3);y<Math.floor(box[3]-3);y++){let count=0;for(let x=Math.ceil(box[0]+inset);x<Math.floor(box[2]-inset);x++){const k=(y*w+x)*4;if(data[k+3]>100&&data[k]+data[k+1]+data[k+2]<550)count++;}if(count>=2)active.push(y);}
+  const groups=[];for(const y of active){const g=groups.at(-1);if(g&&y-g.at(-1)<=1)g.push(y);else groups.push([y]);}
+  return groups.filter(g=>g.at(-1)-g[0]>=Math.max(3,height*.35));
+}
+function bodyCells(image,grid,body,first,height,words=[]){
+  const edges=[first+1,...body.slice(1).map((y,i)=>{const mid=(body[i]+y)/2,inside=grid.lines.filter(v=>v>body[i]+height*.35&&v<y-height*.35),near=inside.reduce((a,b)=>Math.abs(b-mid)<Math.abs(a-mid)?b:a,Infinity);return Number.isFinite(near)?near:mid;}),Math.min(grid.bottom,body.at(-1)+height)];
+  const matrix=body.map((_,r)=>grid.columns.slice(1).map((x,c)=>({r,c,span:1,colspan:1,bbox:[grid.columns[c],edges[r],x,edges[r+1]],skip:false})));
+  for(let c=0;c<grid.columns.length-1;c++){
+    let start=0;
+    for(let end=1;end<=body.length;end++){
+      if(end<body.length&&ruleCoverage(image,grid.columns[c]+3,edges[end],grid.columns[c+1]-3,edges[end])<.9)continue;
+      const box=[grid.columns[c],edges[start],grid.columns[c+1],edges[end]];
+      // A single line printed anywhere in a ruled group belongs to the entire
+      // physical cell, including rows above its visual baseline.
+      const bands=regionLines(image,box,height);
+      const textual=words.filter(w=>w.bbox&&/[А-Яа-яЁё]{3,}/.test(w.text)&&(w.bbox.x0+w.bbox.x1)/2>box[0]&&(w.bbox.x0+w.bbox.x1)/2<box[2]&&(w.bbox.y0+w.bbox.y1)/2>box[1]&&(w.bbox.y0+w.bbox.y1)/2<box[3]).length>=2;
+      if(end-start>1&&(bands.length<=1||textual)){const root=matrix[start][c];root.span=end-start;root.bbox=box;root.multiline=textual;for(let r=start+1;r<end;r++)matrix[r][c].skip=true;}
+      else if(textual&&end-start===1)matrix[start][c].multiline=true;
+      start=end;
+    }
+  }return matrix;
+}
+function headerCells(image,grid,first){
+  const top=Math.max(0,grid.headerTop??grid.top),bottom=first; if(bottom-top<12)return {rows:[],cells:[]};
+  const {width:w,data}=image,minRun=Math.max(18,Math.min(...grid.columns.slice(1).map((x,i)=>x-grid.columns[i]))*.7),yy=[];
+  for(let y=Math.ceil(top+5);y<bottom-5;y++){let run=0,best=0;for(let x=Math.ceil(grid.left);x<grid.right;x++){const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){run++;best=Math.max(best,run);}else run=0;}if(best>=minRun)yy.push(y);}
+  const rows=[top,...clusterPositions(yy,4).filter(y=>y>top+6&&y<bottom-6),bottom];
+  const n=grid.columns.length-1,m=rows.length-1,parent=Array.from({length:n*m},(_,i)=>i);
+  const find=i=>parent[i]===i?i:parent[i]=find(parent[i]);const join=(a,b)=>{parent[find(a)]=find(b);};
+  for(let r=0;r<m;r++)for(let c=0;c<n;c++){
+    if(c+1<n&&ruleCoverage(image,grid.columns[c+1],rows[r]+3,grid.columns[c+1],rows[r+1]-3)<.55)join(r*n+c,r*n+c+1);
+    if(r+1<m&&ruleCoverage(image,grid.columns[c]+3,rows[r+1],grid.columns[c+1]-3,rows[r+1])<.9)join(r*n+c,(r+1)*n+c);
+  }
+  const groups=new Map();for(let r=0;r<m;r++)for(let c=0;c<n;c++){const k=find(r*n+c);if(!groups.has(k))groups.set(k,[]);groups.get(k).push([r,c]);}
+  const cells=[];for(const group of groups.values()){const r0=Math.min(...group.map(p=>p[0])),r1=Math.max(...group.map(p=>p[0]))+1,c0=Math.min(...group.map(p=>p[1])),c1=Math.max(...group.map(p=>p[1]))+1;
+    if(group.length!==(r1-r0)*(c1-c0)){for(const [r,c]of group)cells.push({r,c,span:1,colspan:1,bbox:[grid.columns[c],rows[r],grid.columns[c+1],rows[r+1]],uncertain:true});}
+    else cells.push({r:r0,c:c0,span:r1-r0,colspan:c1-c0,bbox:[grid.columns[c0],rows[r0],grid.columns[c1],rows[r1]]});
+  }
+  const compact=rows.filter((y,i)=>!i||i===rows.length-1||cells.some(c=>c.bbox[1]===y||c.bbox[3]===y));
+  for(const cell of cells){cell.r=compact.indexOf(cell.bbox[1]);cell.span=compact.indexOf(cell.bbox[3])-cell.r;}
+  return {rows:compact,cells};
+}
+function trimCell(canvas){
+  const {width:w,height:h}=canvas,im=canvas.getContext('2d').getImageData(0,0,w,h);let x0=w,y0=h,x1=-1,y1=-1;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const k=(y*w+x)*4;if(im.data[k]+im.data[k+1]+im.data[k+2]<570){x0=Math.min(x0,x);x1=Math.max(x1,x);y0=Math.min(y0,y);y1=Math.max(y1,y);}}
+  if(x1<0)return null;
+  const cv=document.createElement('canvas'),pad=12;cv.width=x1-x0+1+pad*2;cv.height=y1-y0+1+pad*2;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(canvas,x0,y0,x1-x0+1,y1-y0+1,pad,pad,x1-x0+1,y1-y0+1);return cv;
+}
+function localBoundaryX(image,x,y0,y1){
+  const {width:w,height:h,data}=image;let best=x,score=0;
+  for(let xx=Math.max(0,Math.round(x)-8);xx<=Math.min(w-1,Math.round(x)+8);xx++){let n=0,total=0;for(let y=Math.max(0,Math.ceil(y0+2));y<Math.min(h,Math.floor(y1-2));y++){total++;const k=(y*w+xx)*4;if(data[k]+data[k+1]+data[k+2]<660)n++;}const s=n/Math.max(1,total);if(s>score||s===score&&Math.abs(xx-x)<Math.abs(best-x)){score=s;best=xx;}}
+  return score>.7?best:x;
+}
 async function recognizeCellTable(canvas,ctx,pageIndex){
   const aligned=deskewCanvas(canvas);
   try{return await recognizeAlignedTable(aligned,ctx,pageIndex);}finally{if(aligned!==canvas)aligned.width=aligned.height=1;}
 }
 async function recognizeAlignedTable(canvas,ctx,pageIndex){
   ctx.status('Поиск сетки таблицы…');
-  const grid=lineGrid(canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height));
-  if(!grid){ctx.status('Сетка не найдена');return null;}
-  const worker=await getOcr(ctx.lang||'rus+eng');
-  // Whole-page OCR supplies row locations only, never primary cell values.
-  await worker.setParameters({tessedit_pageseg_mode:'3'});
-  const whole=await worker.recognize(canvas);
-  const words=whole.data.words||[];
-  const candidates=[];
+  const image=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),grid=lineGrid(image);
+  if(!grid||grid.columns.length<7)return null;
+  const worker=await getOcr(ctx.lang||'rus+eng');await worker.setParameters({tessedit_pageseg_mode:'3'});
+  const whole=await worker.recognize(canvas),words=whole.data.words||[],candidates=[];
   for(const word of words){const b=word.bbox;if(b&&/^[−+-]?\d+(?:[.,]\d+)?[*%]?$/.test(word.text)&&b.x0>=grid.left&&b.x1<=grid.right&&b.y0>grid.top&&b.y1<grid.bottom)candidates.push({y:(b.y0+b.y1)/2,x:(b.x0+b.x1)/2,h:b.y1-b.y0});}
   const height=candidates.length?candidates.map(v=>v.h).sort((a,b)=>a-b)[Math.floor(candidates.length/2)]:10;
   const bands=clusterPositions(candidates.map(v=>v.y),Math.max(3,height*.5)).filter(y=>new Set(candidates.filter(v=>Math.abs(v.y-y)<height*.6).map(v=>grid.columns.findIndex(x=>x>v.x))).size>=Math.max(3,(grid.columns.length-1)*.35));
-  ctx.status('Сетка: '+grid.columns.length+' границ; слов '+words.length+'; полос '+bands.length);
-  if(grid.columns.length<7)return null;
-  // Header rows are retained as headers, not silently interpreted as data.
   const first=grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||(bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
-  const body=pixelRows(canvas,grid,first,height);
-  if(body.length<2||body.length*(grid.columns.length-1)>1400)return null;
-  ctx.tableStats={rows:body.length,columns:grid.columns.length-1};
-  const crop=imageCrop(canvas,grid.left,grid.top,grid.right,grid.bottom);
-  const name='img/p'+String(pageIndex).padStart(3,'0')+'_tabl_1.jpg';
+  const body=pixelRows(canvas,grid,first,height);if(body.length<2||body.length*(grid.columns.length-1)>1400)return null;
+  const matrix=bodyCells(image,grid,body,first,height,words),headers=headerCells(image,grid,first);
+  ctx.tableStats={rows:body.length,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
+  const crop=imageCrop(canvas,grid.left,Math.min(grid.top,grid.headerTop),grid.right,grid.bottom),name='img/p'+String(pageIndex).padStart(3,'0')+'_tabl_1.jpg';
   ctx.assets??={};ctx.assets[name]=await canvasBlob(crop);crop.width=crop.height=1;
-  const match=((ctx.sourceText||'')+'\n'+(whole.data.text||'')).match(/т\s*а\s*б\s*л(?:\s*и\s*ц\s*а|\.)\s*(\d+(?:\.\d+)?)/i);
-  const id=match?match[1]:'[?номер не распознан]';
-  let out='Таблица '+id+'\n\n![Таблица]('+name+')\n\n<table><thead><tr>';
-  for(let c=0;c<grid.columns.length-1;c++)out+='<th>Столбец '+(c+1)+' [?шапка не сверена]</th>';
-  out+='</tr></thead><tbody>';
-  await worker.setParameters({tessedit_pageseg_mode:'7',preserve_interword_spaces:'1'});
-  const matrix=[];
-  try{for(let r=0;r<body.length;r++){
-    await waitResume(ctx);matrix.push([]);
-    const y0=r?(body[r-1]+body[r])/2:first+2;
-    const y1=r+1<body.length?(body[r]+body[r+1])/2:Math.min(grid.bottom,body[r]+height);
-    for(let c=0;c<grid.columns.length-1;c++){
-      ctx.status('Таблица: строка '+(r+1)+'/'+body.length+', ячейка '+(c+1)+'/'+(grid.columns.length-1));
-      const patch=imageCrop(canvas,grid.columns[c]+3,y0+1,grid.columns[c+1]-3,y1-1,2);
-      const pixels=patch.getContext('2d').getImageData(0,0,patch.width,patch.height).data;let ink=0;for(let k=0;k<pixels.length;k+=4)if(pixels[k]+pixels[k+1]+pixels[k+2]<420)ink++;
-      let result;try{result=await worker.recognize(patch);}finally{patch.width=patch.height=1;}
-      const value=(result.data.text||'').replace(/\s+/g,' ').trim();
-      const alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>grid.columns[c]&&(w.bbox.x0+w.bbox.x1)/2<grid.columns[c+1]&&(w.bbox.y0+w.bbox.y1)/2>y0&&(w.bbox.y0+w.bbox.y1)/2<y1).map(w=>w.text).join(' ');
-      matrix[r].push({text:value,blank:!value&&ink<Math.max(3,pixels.length/4*.01),alt,confidence:result.data.confidence,bbox:[grid.columns[c],y0,grid.columns[c+1],y1],span:1});
+  const match=((ctx.sourceText||'')+'\n'+(whole.data.text||'')).match(/т\s*а\s*б\s*л(?:\s*и\s*ц\s*а|\.)\s*(\d+(?:\.\d+)?)/i),id=match?match[1]:'[?номер не распознан]';
+  const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
+  const read=async(patch,header=false)=>{
+    const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
+    try{
+      await worker.setParameters({tessedit_pageseg_mode:header?'6':'7',preserve_interword_spaces:'1',user_defined_dpi:'400'});
+      let result=(await worker.recognize(tight)).data,variants=[],turnChosen=0;variants.push({text:result.text.trim(),confidence:result.confidence});
+      if(header&&tight.height>tight.width*1.3){for(const sign of [-1,1]){const turn=document.createElement('canvas');turn.width=tight.height;turn.height=tight.width;const c=turn.getContext('2d');c.translate(turn.width/2,turn.height/2);c.rotate(sign*Math.PI/2);c.drawImage(tight,-tight.width/2,-tight.height/2);try{const r=(await worker.recognize(turn)).data;variants.push({text:r.text.trim(),confidence:r.confidence});if(r.confidence>result.confidence){result=r;turnChosen=sign;}}finally{turn.width=turn.height=1;}}}
+      if(!header&&(result.confidence<85||!/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/.test(result.text.trim()))){
+        await worker.setParameters({tessedit_pageseg_mode:'8'});const r=(await worker.recognize(tight)).data;variants.push({text:r.text.trim(),confidence:r.confidence});if(!/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/.test(result.text.trim())&&/\d/.test(r.text))result=r;
+      }
+      return {text:result.text.trim().replace(/\s+/g,' '),confidence:result.confidence,variants,turn:turnChosen,empty:false};
+    }finally{tight.width=tight.height=1;}
+  };
+  try{
+    for(let n=0;n<headers.cells.length;n++){
+      await waitResume(ctx);const cell=headers.cells[n];ctx.status('Шапка: ячейка '+(n+1)+'/'+headers.cells.length);
+      const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3],patch=await render(box);
+      try{Object.assign(cell,await read(patch.canvas,true));}finally{patch.canvas.width=patch.canvas.height=1;}
     }
-  }}finally{await worker.setParameters({tessedit_pageseg_mode:'3'});}
-  for(let r=1;r<matrix.length;r++)for(let c=0;c<matrix[r].length;c++){
-    const cell=matrix[r][c];if(!cell.blank)continue;
-    const y=cell.bbox[1];const border=grid.horizontal.some(s=>Math.abs(s[1]-y)<height*.6&&s[0]<=grid.columns[c]+5&&s[2]>=grid.columns[c+1]-5);if(border)continue;
-    let root=r-1;while(root>=0&&matrix[root][c].skip)root--;
-    if(root>=0&&matrix[root][c].text){matrix[root][c].span++;cell.skip=true;matrix[root][c].merged=true;}
-  }
-  for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;const value=cell.blank?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]';out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(value)+'</td>';}out+='</tr>';}
-  ctx.tableStats.cells=matrix;
-  const remainder=imageCrop(canvas,0,0,canvas.width,canvas.height);const rc=remainder.getContext('2d');rc.fillStyle='#fff';rc.fillRect(grid.left,grid.top,grid.right-grid.left,Math.min(grid.bottom,body.at(-1)+height)-grid.top);
+    for(let r=0;r<matrix.length;r++){
+      await waitResume(ctx);const roots=matrix[r].filter(c=>!c.skip),box=[grid.left,Math.min(...roots.map(c=>c.bbox[1])),grid.right,Math.max(...roots.map(c=>c.bbox[3]))];if(!roots.length)continue;
+      const strip=await render(box);
+      try{for(const cell of roots){
+        ctx.status('Таблица: строка '+(r+1)+'/'+body.length+', ячейка '+(cell.c+1)+'/'+(grid.columns.length-1));
+        const b=cell.bbox,k=strip.scale,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]),patch=imageCrop(strip.canvas,(l-box[0]+3)*k,(b[1]-box[1]+2)*k,(right-box[0]-3)*k,(b[3]-box[1]-2)*k);
+        try{Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline));}finally{patch.width=patch.height=1;}
+        cell.alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>b[0]&&(w.bbox.x0+w.bbox.x1)/2<b[2]&&(w.bbox.y0+w.bbox.y1)/2>b[1]&&(w.bbox.y0+w.bbox.y1)/2<b[3]).map(w=>w.text).join(' ');
+      }}finally{strip.canvas.width=strip.canvas.height=1;}
+    }
+  }finally{await worker.setParameters({tessedit_pageseg_mode:'3'});}
+  const remainder=imageCrop(canvas,0,0,canvas.width,canvas.height),rc=remainder.getContext('2d');rc.fillStyle='#fff';rc.fillRect(grid.left,Math.min(grid.top,grid.headerTop),grid.right-grid.left,grid.bottom-Math.min(grid.top,grid.headerTop));
   let prose;try{prose=(await worker.recognize(remainder)).data.text||'';}finally{remainder.width=remainder.height=1;}
-  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы, шапка и объединения ячеек требуют сверки по вырезке]\n\n'+prose;
+  // Finish CPU work before starting the GPU phase: the browser keeps only the
+  // one model needed for the current phase rather than both resident engines.
+  if(ctx.math){for(let n=0;n<headers.cells.length;n++){
+    await waitResume(ctx);const cell=headers.cells[n];if(cell.empty)continue;
+    ctx.status('Нейросеть: шапка '+(n+1)+'/'+headers.cells.length);
+    const b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+3,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-3],patch=await render(box);let input=patch.canvas;
+    try{
+      if(cell.turn){input=document.createElement('canvas');input.width=patch.canvas.height;input.height=patch.canvas.width;const c=input.getContext('2d');c.translate(input.width/2,input.height/2);c.rotate(cell.turn*Math.PI/2);c.drawImage(patch.canvas,-patch.canvas.width/2,-patch.canvas.height/2);}
+      const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=384;
+      let text;try{text=await glmRecognize(input,ctx);const compact=text.trim().replace(/[$\s]/g,'');if(compact.length<8&&!/[A-Za-zА-Яа-яЁё]/.test(compact)){ctx.task='Formula Recognition:';ctx.maxTokens=64;const math=await glmRecognize(input,ctx);cell.neuralMath=math;if(math.trim()&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'').trim();}}finally{ctx.task=task;ctx.maxTokens=limit;}
+      cell.tesseract=cell.text;cell.neural=text;
+      if(text.trim()&&!/Генерация остановлена/.test(text)&&text.length<1500&&!(cell.confidence>=90&&/[А-Яа-яЁё]{4,}/.test(cell.tesseract)&&!/[|]/.test(cell.tesseract))){cell.text=text.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/\s+/g,' ');cell.engine='GLM';}
+    }finally{if(input!==patch.canvas)input.width=input.height=1;patch.canvas.width=patch.canvas.height=1;}
+  }
+    const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
+    const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
+    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
+    ctx.tableStats.reviewedCells=review.length;
+    for(let n=0;n<review.length;n++){
+      await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2],patch=await render(box);
+      ctx.status('Нейросеть: проверка ячейки '+(n+1)+'/'+review.length);const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=128;
+      try{const text=await glmRecognize(patch.canvas,ctx);cell.tesseract=cell.text;cell.neural=text;if(text.trim()&&!/Генерация остановлена/.test(text)&&text.length<400){cell.text=text.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/^\$\$?|\$\$?$/g,'').trim().replace(/\s+/g,' ');cell.engine='GLM';}}finally{ctx.task=task;ctx.maxTokens=limit;patch.canvas.width=patch.canvas.height=1;}
+    }
+  }
+  let out='Таблица '+id+'\n\n![Таблица]('+name+')\n\n<table><thead>';
+  for(let r=0;r<headers.rows.length-1;r++){out+='<tr>';for(const cell of headers.cells.filter(c=>c.r===r).sort((a,b)=>a.c-b.c))out+='<th'+(cell.span>1?' rowspan="'+cell.span+'"':'')+(cell.colspan>1?' colspan="'+cell.colspan+'"':'')+'>'+htmlEscape(cell.text?'[?'+cell.text+']':cell.empty?'':'[?непрочитанная шапка]')+'</th>';out+='</tr>';}
+  out+='</thead><tbody>';
+  for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]')+'</td>';}out+='</tr>';}
+  ctx.tableStats.cells=matrix;
+  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+prose;
 }
 
 function formulaRegions(items,viewport,w,h){
@@ -776,6 +861,12 @@ async function convPdf(buf, ctx){
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
         const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
+        ctx.renderTablePatch=async(aligned,box)=>{
+          const high=page.getViewport({scale:400/72}),k=high.width/vp.width,m=aligned.pageMatrix||[1,0,0,1,0,0];
+          const patch=document.createElement('canvas');patch.width=Math.max(1,Math.ceil((box[2]-box[0])*k));patch.height=Math.max(1,Math.ceil((box[3]-box[1])*k));
+          if(patch.width*patch.height>MAX_PX)throw new Error('Вырезка таблицы превышает лимит 4 Мп');
+          try{await page.render({canvasContext:patch.getContext('2d'),viewport:high,transform:[m[0],m[1],m[2],m[3],(m[4]-box[0])*k,(m[5]-box[1])*k],intent:'print'}).promise;return {canvas:patch,scale:k};}catch(e){patch.width=patch.height=1;throw e;}
+        };
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
         let text=pageToMarkdown(items);

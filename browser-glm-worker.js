@@ -91,10 +91,10 @@ async function glmRecognize(canvas, ctx){
       if (n % 16 === 0) { cut = loopCut(gen); if (cut !== -1) stopper.interrupt(); }
     }
   });
-  let out;try { out = await model.generate({...inputs, max_new_tokens: 4096, do_sample: false, streamer, stopping_criteria: stopper});
+  let out;try { out = await model.generate({...inputs, max_new_tokens: ctx.maxTokens || 4096, do_sample: false, streamer, stopping_criteria: stopper});
   const end = cut === -1 ? out.dims.at(-1) : pl + cut;
   const text = processor.batch_decode(out.slice(null, [pl, end]), {skip_special_tokens: true})[0];
-  return (text.replace(/^<think>[\s\S]*?<\/think>/, '').trim()) + (cut!==-1 || end-pl>=4096 ? '\n\n[?Генерация остановлена: возможен пропуск текста, сверьте страницу]' : '');} finally {out?.dispose?.();for(const v of Object.values(inputs))v?.dispose?.();}
+  return (text.replace(/^<think>[\s\S]*?<\/think>/, '').trim()) + (cut!==-1 || end-pl>=(ctx.maxTokens||4096) ? '\n\n[?Генерация остановлена: возможен пропуск текста, сверьте страницу]' : '');} finally {out?.dispose?.();for(const v of Object.values(inputs))v?.dispose?.();}
 }
 
-self.onmessage=async e=>{const {pixels,width,height,task}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{task,status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};
+self.onmessage=async e=>{const {pixels,width,height,task,maxTokens}=e.data;try{const text=await glmRecognize({data:pixels,width,height},{task,maxTokens,status:s=>self.postMessage({status:s})});self.postMessage({text});}catch(err){self.postMessage({error:err.message});}};

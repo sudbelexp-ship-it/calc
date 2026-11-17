@@ -35,6 +35,12 @@ async function convPdf(buf, ctx){
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
         const vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
+        ctx.renderTablePatch=async(aligned,box)=>{
+          const high=page.getViewport({scale:400/72}),k=high.width/vp.width,m=aligned.pageMatrix||[1,0,0,1,0,0];
+          const patch=document.createElement('canvas');patch.width=Math.max(1,Math.ceil((box[2]-box[0])*k));patch.height=Math.max(1,Math.ceil((box[3]-box[1])*k));
+          if(patch.width*patch.height>MAX_PX)throw new Error('Вырезка таблицы превышает лимит 4 Мп');
+          try{await page.render({canvasContext:patch.getContext('2d'),viewport:high,transform:[m[0],m[1],m[2],m[3],(m[4]-box[0])*k,(m[5]-box[1])*k],intent:'print'}).promise;return {canvas:patch,scale:k};}catch(e){patch.width=patch.height=1;throw e;}
+        };
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
         let text=pageToMarkdown(items);
