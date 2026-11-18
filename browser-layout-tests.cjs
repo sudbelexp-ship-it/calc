@@ -52,4 +52,24 @@ for(const column of [0,1]){
   assert.equal(sparse[2][column].span,3);
   assert(sparse[1][column].skip&&sparse[3][column].skip&&sparse[4][column].skip);
 }
+const decimalWidth=62,decimalHeight=42;
+const decimalPixels=new Uint8ClampedArray(decimalWidth*decimalHeight*4).fill(255);
+const drawInk=(left,top,right,bottom)=>{
+  for(let y=top;y<bottom;y++){
+    for(let x=left;x<right;x++){
+      const offset=(y*decimalWidth+x)*4;
+      decimalPixels.fill(0,offset,offset+3);
+    }
+  }
+};
+drawInk(0,0,61,2);
+drawInk(9,9,19,33);
+drawInk(29,9,40,33);
+const decimalCanvas={width:decimalWidth,height:decimalHeight,getContext:()=>({getImageData:()=>({data:decimalPixels})})};
+assert(!c.decimalInk(decimalCanvas,'2,0'));
+drawInk(22,27,26,35);
+assert(c.decimalInk(decimalCanvas,'2,0'));
+assert(!c.decimalInk(decimalCanvas,'2,01'));
+assert.equal(c.cleanedCellReading('```markdown\n\n```'),'');
+assert.equal(c.cleanedCellReading('$i_x$ CM'),'$i_x$ CM');
 console.log('PASS: grid, skew, merged cells, aligned sparse rows, multilevel headers, false rules, table captions');

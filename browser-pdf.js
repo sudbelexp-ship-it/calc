@@ -43,9 +43,9 @@ async function convPdf(buf, ctx){
         };
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
-        ctx.positionedProfiles=aligned=>items.flatMap(item=>{
+        ctx.positionedTokens=aligned=>items.flatMap(item=>{
           const text=item.str?.trim();
-          if(!/^\d+[А-Яа-яЁё]\d+$/.test(text||''))return [];
+          if(!/^(?:\d+[А-Яа-яЁё]\d+|\d+[.,]\d+)$/.test(text||''))return [];
           const m=pdfjsLib.Util.transform(vp.transform,item.transform);
           const direction=Math.hypot(m[0],m[1]);
           if(!direction)return [];

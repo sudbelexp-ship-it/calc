@@ -160,6 +160,36 @@ function trimCell(canvas){
   if(x1<0)return null;
   const cv=document.createElement('canvas'),pad=12;cv.width=x1-x0+1+pad*2;cv.height=y1-y0+1+pad*2;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(canvas,x0,y0,x1-x0+1,y1-y0+1,pad,pad,x1-x0+1,y1-y0+1);return cv;
 }
+function decimalInk(canvas,decimal){
+  const [whole,fraction]=decimal.split(/[.,]/);
+  const {width,height}=canvas;
+  const image=canvas.getContext('2d').getImageData(0,0,width,height).data;
+  const topMargin=Math.min(6,Math.ceil(height*.05));
+  const groups=[];
+  let group=null;
+  for(let x=0;x<width;x++){
+    let top=height,bottom=-1,ink=0;
+    for(let y=topMargin;y<height;y++){
+      const offset=(y*width+x)*4;
+      if(image[offset]+image[offset+1]+image[offset+2]<570){top=Math.min(top,y);bottom=y;ink++;}
+    }
+    if(!ink){group=null;continue;}
+    if(!group){group={top,bottom,ink:0};groups.push(group);}
+    group.top=Math.min(group.top,top);group.bottom=Math.max(group.bottom,bottom);group.ink+=ink;
+  }
+  const glyphs=groups.filter(part=>part.ink>=4);
+  if(glyphs.length!==whole.length+fraction.length+1)return false;
+  const separator=glyphs[whole.length];
+  const digits=glyphs.filter((_,i)=>i!==whole.length);
+  const heights=digits.map(part=>part.bottom-part.top+1).sort((a,b)=>a-b);
+  const typical=heights[Math.floor(heights.length/2)];
+  const baseline=Math.max(...digits.map(part=>part.bottom));
+  return typical>=8&&heights[0]>=typical*.65&&separator.bottom-separator.top+1<typical*.55
+    &&separator.top>baseline-typical*.45&&Math.abs(separator.bottom-baseline)<typical*.4;
+}
+function cleanedCellReading(value){
+  return value.trim().replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/\s+/g,' ');
+}
 function localBoundaryX(image,x,y0,y1){
   const {width:w,height:h,data}=image;let best=x,score=0;
   for(let xx=Math.max(0,Math.round(x)-8);xx<=Math.min(w-1,Math.round(x)+8);xx++){let n=0,total=0;for(let y=Math.max(0,Math.ceil(y0+2));y<Math.min(h,Math.floor(y1-2));y++){total++;const k=(y*w+xx)*4;if(data[k]+data[k+1]+data[k+2]<660)n++;}const s=n/Math.max(1,total);if(s>score||s===score&&Math.abs(xx-x)<Math.abs(best-x)){score=s;best=xx;}}
@@ -214,6 +244,8 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   const id=caption?.id||'[?номер не распознан]';
   if(caption)ctx.tableStats.caption=caption;
   else ctx.pageIssue='Не определён номер таблицы';
+  const positionedTokens=ctx.positionedTokens?.(canvas)||[];
+  const tokensInCell=box=>positionedTokens.filter(word=>word.x>box[0]+3&&word.x<box[2]-3&&word.y>box[1]+2&&word.y<box[3]-2);
   const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
   const read=async(patch,header=false)=>{
     const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
@@ -244,6 +276,18 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
         cell.alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>b[0]&&(w.bbox.x0+w.bbox.x1)/2<b[2]&&(w.bbox.y0+w.bbox.y1)/2>b[1]&&(w.bbox.y0+w.bbox.y1)/2<b[3]).map(w=>w.text).join(' ');
         try{
           Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline));
+          if(/^\d{2,}$/.test(cell.text)){
+            const candidates=new Set([...tokensInCell(b).map(word=>word.text),cell.alt.replace(/[|\s]/g,'')]
+              .filter(value=>/^\d+[.,]\d+$/.test(value)&&value.replace(/[.,]/,'')===cell.text));
+            if(candidates.size===1){
+              const decimal=candidates.values().next().value;
+              if(decimalInk(patch,decimal)){
+                cell.beforeSeparator=cell.text;
+                cell.text=decimal;
+                cell.separatorVerified=true;
+              }
+            }
+          }
           const dash=cell.alt.replace(/[|\s]/g,'');
           if(!cell.text&&/^[-–—−]$/.test(dash)){
             const tight=trimCell(patch);
@@ -270,15 +314,41 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       if(cell.turn){input=document.createElement('canvas');input.width=patch.canvas.height;input.height=patch.canvas.width;const c=input.getContext('2d');c.translate(input.width/2,input.height/2);c.rotate(cell.turn*Math.PI/2);c.drawImage(patch.canvas,-patch.canvas.width/2,-patch.canvas.height/2);}
       if(Math.max(input.width,input.height)>100*Math.min(input.width,input.height))continue;
       const task=ctx.task,limit=ctx.maxTokens;ctx.task='Text Recognition:';ctx.maxTokens=384;
-      let text;try{text=await glmRecognize(input,ctx);const compact=text.trim().replace(/[$\s]/g,'');if(compact.length<8&&!/[A-Za-zА-Яа-яЁё]/.test(compact)){ctx.task='Formula Recognition:';ctx.maxTokens=64;const math=await glmRecognize(input,ctx);cell.neuralMath=math;if(math.trim()&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'').trim();}}finally{ctx.task=task;ctx.maxTokens=limit;}
+      let text;
+      try{
+        text=await glmRecognize(input,ctx);
+        const compact=cleanedCellReading(text).replace(/[$\s]/g,'');
+        if(!compact){
+          const source=patch.canvas;
+          const center=imageCrop(source,source.width*.15,source.height*.1,source.width*.85,source.height*.9);
+          const tight=trimCell(center);
+          center.width=center.height=1;
+          if(tight)try{
+            ctx.maxTokens=64;
+            cell.neuralTight=await glmRecognize(tight,ctx);
+            if(!cleanedCellReading(cell.neuralTight).replace(/[$\s]/g,'')){
+              ctx.task='Formula Recognition:';
+              cell.neuralTight=await glmRecognize(tight,ctx);
+            }
+            if(cleanedCellReading(cell.neuralTight).replace(/[$\s]/g,''))text=cell.neuralTight;
+          }finally{tight.width=tight.height=1;}
+        }else if(compact.length<8&&!/[A-Za-zА-Яа-яЁё]/.test(compact)){
+          ctx.task='Formula Recognition:';ctx.maxTokens=64;
+          const math=await glmRecognize(input,ctx);
+          cell.neuralMath=math;
+          if(cleanedCellReading(math).replace(/[$\s]/g,'')&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'');
+        }
+      }finally{ctx.task=task;ctx.maxTokens=limit;}
       cell.tesseract=cell.text;cell.neural=text;
-      if(text.trim()&&!/Генерация остановлена/.test(text)&&text.length<1500&&!(cell.confidence>=90&&/[А-Яа-яЁё]{4,}/.test(cell.tesseract)&&!/[|]/.test(cell.tesseract))){cell.text=text.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/\s+/g,' ');cell.engine='GLM';}
+      const cleaned=cleanedCellReading(text);
+      const reading=cleaned.replace(/[$\s]/g,'')?cleaned:'';
+      if(reading&&!/Генерация остановлена/.test(text)&&text.length<1500&&!(cell.confidence>=90&&/[А-Яа-яЁё]{4,}/.test(cell.tesseract)&&!/[|]/.test(cell.tesseract))){cell.text=reading;cell.engine='GLM';}
+      else if(!reading&&!/[A-Za-zА-Яа-яЁё\d]/.test(cell.text)){cell.text='';}
     }finally{if(input!==patch.canvas)input.width=input.height=1;patch.canvas.width=patch.canvas.height=1;}
   }
     const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
-    const positionedProfiles=ctx.positionedProfiles?.(canvas)||[];
     const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
-    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
+    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
     for(let n=0;n<review.length;n++){
       await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
@@ -300,7 +370,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
             if(candidate&&candidate[1]===ambiguous[1]&&candidate[2]===ambiguous[2])cell.text=cell.neuralTight;
           }finally{tight.width=tight.height=1;}
           if(cell.text===clean(text)){
-            const inCell=positionedProfiles.filter(word=>word.x>b[0]+3&&word.x<b[2]-3&&word.y>b[1]+2&&word.y<b[3]-2);
+            const inCell=tokensInCell(b).filter(word=>/^\d+[А-Яа-яЁё]\d+$/.test(word.text));
             if(inCell.length===1){
               const candidate=inCell[0].text.match(/^(\d+)[А-Яа-яЁё](\d+)$/);
               if(candidate&&candidate[1]===ambiguous[1]&&candidate[2]===ambiguous[2]){
