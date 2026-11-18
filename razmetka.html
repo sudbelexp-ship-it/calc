@@ -149,7 +149,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.14';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.15';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -1084,6 +1084,125 @@ function dottedVariable(canvas){
   return stemStart-dotEnd>=3&&dotEnd-first.top<heightOfGlyph*.23&&first.bottom-stemStart>heightOfGlyph*.55&&
     dotRight<first.left+(first.right-first.left)*.68;
 }
+function indexedRatioParts(canvas,hasPunctuation){
+  const groups=cellInk(canvas),base=groups[0],end=groups.at(-1);
+  if(groups.length<2)return null;
+  const glyphHeight=base.bottom-base.top+1;
+  if(glyphHeight<13||glyphHeight>canvas.height*.93||base.right-base.left>glyphHeight*1.05)return null;
+  const right=hasPunctuation&&end.top>=base.top+glyphHeight*.62&&end.bottom-end.top<glyphHeight*.46?end.left-1:canvas.width;
+  const upper=imageCrop(canvas,0,base.top,right,base.top+Math.floor(glyphHeight*.54));
+  const top=cellInk(upper);upper.width=upper.height=1;
+  if(top.length!==3||top[1].right-top[1].left>glyphHeight*.60)return null;
+
+  const {width,height}=canvas;
+  const {data}=canvas.getContext('2d').getImageData(0,0,width,height);
+  const dark=(x,y)=>{const k=(y*width+x)*4;return data[k]+data[k+1]+data[k+2]<570;};
+  const points=[];
+  let stroke=0;
+  for(let y=base.top+1;y<base.top+Math.floor(glyphHeight*.52);y++){
+    const row=[];
+    for(let x=top[1].left-1;x<=top[1].right+1;x++)if(dark(x,y))row.push(x);
+    if(!row.length||row.at(-1)-row[0]+1>glyphHeight*.30)continue;
+    stroke=Math.max(stroke,row.at(-1)-row[0]+1);
+    points.push([y,row.reduce((sum,x)=>sum+x,0)/row.length]);
+  }
+  if(points.length<Math.max(6,glyphHeight*.32))return null;
+  const yMean=points.reduce((sum,[y])=>sum+y,0)/points.length;
+  const xMean=points.reduce((sum,[,x])=>sum+x,0)/points.length;
+  const slope=points.reduce((sum,[y,x])=>sum+(y-yMean)*(x-xMean),0)/points.reduce((sum,[y])=>sum+(y-yMean)**2,0);
+  const center=y=>xMean+slope*(y-yMean);
+  if(!(slope<-.10&&slope>-.85)||points.some(([y,x])=>Math.abs(x-center(y))>1.5))return null;
+
+  const denominatorLeft=Math.floor((top[1].right+top[2].left)/2)-1;
+  const middleLeft=base.right+1;
+  const middle=imageCrop(canvas,middleLeft,0,denominatorLeft,height);
+  const slash=imageCrop(canvas,middleLeft,0,denominatorLeft,height);
+  for(const [part,index] of [[middle,true],[slash,false]]){
+    const ctx=part.getContext('2d'),im=ctx.getImageData(0,0,part.width,part.height);
+    for(let y=0;y<part.height;y++){
+      for(let x=0;x<part.width;x++){
+        const near=y>=base.top-1&&y<=base.bottom+1&&Math.abs(middleLeft+x-center(y))<=stroke*.72;
+        const keep=index?!near&&y>=base.top+glyphHeight*.42:near;
+        if(!keep){const k=(y*part.width+x)*4;im.data.fill(255,k,k+4);}
+      }
+    }
+    ctx.putImageData(im,0,0);
+  }
+  const index=cellInk(middle);
+  if(index.length!==1||index[0].bottom<base.bottom+glyphHeight*.13||
+    index[0].bottom-index[0].top+1>glyphHeight*.95||index[0].top<base.top+glyphHeight*.39){
+    middle.width=middle.height=slash.width=slash.height=1;
+    return null;
+  }
+  const denominator=imageCrop(canvas,denominatorLeft,0,right,height);
+  const rightGlyph=cellInk(denominator);
+  if(rightGlyph.length!==1||rightGlyph[0].bottom>base.bottom+glyphHeight*.16){
+    denominator.width=denominator.height=middle.width=middle.height=slash.width=slash.height=1;
+    return null;
+  }
+  return [imageCrop(canvas,0,0,middleLeft,height),middle,slash,denominator];
+}
+async function readIndexedRatio(canvas,worker,hasPunctuation,caseHint,language){
+  const parts=indexedRatioParts(canvas,hasPunctuation);
+  if(!parts)return null;
+  const latin='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const readPart=async(part,alphabet)=>{
+    const tight=trimCell(part);
+    if(!tight)return [];
+    const larger=imageCrop(tight,0,0,tight.width,tight.height,2);
+    try{
+      await worker.setParameters({tessedit_pageseg_mode:'10',user_defined_dpi:'400',tessedit_char_whitelist:alphabet});
+      const reads=[];
+      for(const sample of [tight,larger]){
+        const {data}=await worker.recognize(sample);
+        const text=data.text.trim();
+        if(text.length===1&&alphabet.includes(text))reads.push({text,confidence:data.confidence});
+      }
+      return reads;
+    }finally{tight.width=tight.height=larger.width=larger.height=1;}
+  };
+  const choose=(reads,minimum)=>reads.find(result=>result.confidence>=minimum&&reads.every(other=>other.text===result.text))?.text;
+  let switched=false;
+  try{
+    const indexReads=await readPart(parts[1],'0123456789');
+    const slashReads=await readPart(parts[2],'/+-');
+    const index=choose(indexReads,62),slash=choose(slashReads,52);
+    if(!index||slash!=='/')return null;
+    if(language.includes('+')&&language.split('+').includes('eng')){
+      await worker.reinitialize('eng',1);switched=true;
+    }
+    const baseReads=await readPart(parts[0],latin);
+    const divisorReads=await readPart(parts[3],latin);
+    let base=choose(baseReads,62);
+    const divisor=choose(divisorReads,68);
+    // When the stem is case-ambiguous, use only the case of the same letter
+    // in the PDF's own positioned token. The subscript comes from the pixels.
+    if(caseHint&&divisor&&caseHint[1]===divisor&&baseReads.some(row=>row.text.toLowerCase()===caseHint[0].toLowerCase())&&
+      !baseReads.some(row=>row.confidence>=72&&row.text.toLowerCase()!==caseHint[0].toLowerCase())){
+      const matching=await readPart(parts[0],caseHint[0]===caseHint[0].toLowerCase()?latin.slice(0,26):latin.slice(26));
+      if(matching.some(row=>row.text===caseHint[0]))base=caseHint[0];
+    }
+    return base&&index&&slash==='/'&&divisor?base+'_'+index+'/'+divisor:null;
+  }finally{
+    for(const part of parts)part.width=part.height=1;
+    if(switched)await worker.reinitialize(language,1);
+    await worker.setParameters({tessedit_char_whitelist:''});
+  }
+}
+function ratioCaseHint(positioned,word){
+  const denominator=word.match(/\/([A-Za-z])[,.]?$/)?.[1];
+  if(!denominator)return '';
+  const hints=new Set();
+  for(const item of positioned){
+    for(const token of item.text.split(/\s+/)){
+      const ends=token.match(/^([A-Za-z])[^\s,]{1,5}([A-Za-z])[,.]?$/);
+      if(ends&&/\(|\[|\//.test(token)&&ends[2].toLowerCase()===denominator.toLowerCase()){
+        hints.add(ends[1]+ends[2]);
+      }
+    }
+  }
+  return hints.size===1?hints.values().next().value:'';
+}
 function ruledHeaderBoundary(grid,letterHeight,fullWidth){
   const starts=grid.columns.slice(1,-1).map(x=>grid.vertical.filter(rule=>Math.abs(rule[0]-x)<=8)
     .sort((a,b)=>(b[2]-b[1])-(a[2]-a[1]))[0]?.[1]).filter(y=>y>grid.top+letterHeight*.65);
@@ -1185,7 +1304,10 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
         await worker.setParameters({tessedit_pageseg_mode:'8'});const r=(await worker.recognize(tight)).data;variants.push({text:r.text.trim(),confidence:r.confidence});if(!/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/.test(result.text.trim())&&/\d/.test(r.text))result=r;
       }
       const text=body&&header&&!ctx.math&&!turnChosen?restoreWordDecimals(tight,result):result.text;
-      return {text:text.trim().replace(/\s+/g,' '),confidence:result.confidence,variants,turn:turnChosen,empty:false};
+      const ratio=header&&!body&&!ctx.math&&!turnChosen?result.words?.find(word=>word.bbox&&
+        /^[A-Za-z0-9\[][^/\s]{1,5}\/[A-Za-z][,.]?$/.test(word.text)):null;
+      return {text:text.trim().replace(/\s+/g,' '),confidence:result.confidence,variants,turn:turnChosen,empty:false,
+        ...(ratio?{ratio:{text:ratio.text,bbox:ratio.bbox}}:{})};
     }finally{tight.width=tight.height=1;}
   };
   const readSingleHeader=async patch=>{
@@ -1333,6 +1455,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   };
   const fastReview=[];
   const unreadLabels=[];
+  const ratioLabels=[];
   try{
     const headerRetries=[];
     for(let n=0;n<headers.cells.length;n++){
@@ -1343,6 +1466,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
       try{
         Object.assign(cell,await read(patch.canvas,true));
         if(!ctx.math&&!cell.text&&!cell.empty)unreadLabels.push({cell,box,isHeader:true});
+        if(cell.ratio)ratioLabels.push({cell,box});
         if(!ctx.math&&!cell.empty&&(!/[\p{L}\d]/u.test(cell.text)||cell.text.length<2&&cell.confidence<70)){
           headerRetries.push({cell,box});
         }
@@ -1525,6 +1649,22 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
     const {canvas:strip}=await render(box);
     const patch=cropBox?imageCrop(strip,...cropBox):strip;
     try{await rereadLabel(patch,cell,isHeader);}finally{patch.width=patch.height=strip.width=strip.height=1;}
+  }
+  for(const {cell,box} of ratioLabels){
+    await waitResume(ctx);
+    const {text,bbox}=cell.ratio;
+    if(!cell.text.includes(text))continue;
+    const {canvas:patch}=await render(box);
+    const tight=trimCell(patch);patch.width=patch.height=1;
+    if(!tight)continue;
+    const crop=imageCrop(tight,Math.max(0,bbox.x0-2),Math.max(0,bbox.y0-2),Math.min(tight.width,bbox.x1+2),Math.min(tight.height,bbox.y1+2));
+    tight.width=tight.height=1;
+    try{
+      const punctuation=text.match(/[,.]$/)?.[0]||'';
+      const hint=ratioCaseHint(tokensInCell(cell.bbox),text);
+      const reading=await readIndexedRatio(crop,worker,Boolean(punctuation),hint,ctx.lang||'rus+eng');
+      if(reading){cell.firstReading=cell.text;cell.text=cell.text.replace(text,'$'+reading+'$'+punctuation);}
+    }finally{crop.width=crop.height=1;}
   }
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.

@@ -47,6 +47,9 @@ const labels=rows.flatMap((row,i)=>row.map((text,j)=>({text,x:130+70*j,y:150+48*
 const headerGrid={...compactGrid,right:380,bottom:320,lines:[80,128,176,225,273,320]};
 assert.equal(c.headerAboveDecimalRows(headerGrid,labels,18),176);
 assert.equal(c.headerAboveDecimalRows(headerGrid,labels.slice(4),18),null);
+assert.equal(c.ratioCaseHint([{text:'x(4a,'}], '[g/a,'),'xa');
+assert.equal(c.ratioCaseHint([{text:'x(4a,'},{text:'X(4a,'}], '[g/a,'),'');
+assert.equal(c.ratioCaseHint([{text:'x(4a,'}], '[g/b,'),'');
 const sparseImage={width:211,height:130,data:new Uint8ClampedArray(211*130*4).fill(255)};
 for(const top of [29,79]){
   for(let y=top;y<top+12;y++){
