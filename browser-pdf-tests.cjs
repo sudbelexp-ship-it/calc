@@ -14,4 +14,7 @@ const candidates=[item('(8.4)',820,210,28),item('(8.9)',860,260,29),item('(8.10)
 const regions=c.formulaRegions(candidates,{scale:1,transform:identity},1000,1000);
 assert.deepEqual(Array.from(regions,r=>r.label),['(8.9)','(8.10)']);
 assert.equal(c.formulaRegions([candidates[1]],{scale:1,transform:identity},1000,1000).length,1);
+assert(c.incompleteFraction(String.raw`\eta=\frac{1}{1-\frac{N}{ }}`));
+assert(c.incompleteFraction(String.raw`\dfrac{{x} + y}{`));
+assert(!c.incompleteFraction(String.raw`\eta=\frac{1}{1-\frac{N}{N_{cr}}}`));
 console.log('PASS: PDF scan detection, graphics-state restore, aligned formula labels, single formula');

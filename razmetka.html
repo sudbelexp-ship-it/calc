@@ -149,7 +149,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.12';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.13';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -851,6 +851,124 @@ function edgeStroke(canvas){
   return first.left<canvas.width*.14&&first.right<canvas.width*.24&&strokeHeight>=canvas.height*.60&&strokeWidth<=strokeHeight*.32&&
     (first.top<=Math.min(8,canvas.height*.16)||first.bottom>=canvas.height*.9)?first:null;
 }
+function fractionBar(canvas,letterHeight){
+  const {width,height}=canvas,{data}=canvas.getContext('2d').getImageData(0,0,width,height);
+  const lines=[];
+  for(let y=Math.ceil(height*.24);y<height*.77;y++){
+    let start=-1;
+    for(let x=0;x<=width;x++){
+      const offset=(y*width+x)*4;
+      if(x<width&&data[offset]+data[offset+1]+data[offset+2]<570){if(start<0)start=x;continue;}
+      if(start>letterHeight&&x<width-letterHeight/2&&x-start>=letterHeight*1.9&&x-start<width*.78){
+        const previous=lines.at(-1);
+        if(previous&&previous.bottom===y-1&&Math.abs(previous.left-start)<4&&Math.abs(previous.right-x)<4){
+          previous.bottom=y;
+        }else lines.push({left:start,right:x,top:y,bottom:y});
+      }
+      start=-1;
+    }
+  }
+  return lines.filter(bar=>bar.bottom-bar.top+1<letterHeight*.23)
+    .sort((a,b)=>(b.right-b.left)-(a.right-a.left))[0];
+}
+function glyphPixels(source){
+  const tight=trimCell(source);
+  if(!tight)return null;
+  const small=document.createElement('canvas');small.width=20;small.height=28;
+  const ctx=small.getContext('2d');ctx.drawImage(tight,12,12,tight.width-24,tight.height-24,0,0,20,28);
+  const {data}=ctx.getImageData(0,0,20,28);
+  tight.width=tight.height=small.width=small.height=1;
+  return Array.from({length:560},(_,i)=>data[i*4]/255);
+}
+let variableTemplates;
+function mathVariable(source){
+  const ink=glyphPixels(source);
+  if(!ink)return '';
+  if(!variableTemplates){
+    const canvas=document.createElement('canvas');canvas.width=136;canvas.height=124;
+    const ctx=canvas.getContext('2d');
+    variableTemplates=[];
+    for(const font of ['82px "Times New Roman", serif','italic 82px "Times New Roman", serif','82px "Cambria Math", serif','82px Arial, sans-serif']){
+      ctx.font=font;
+      for(const letter of 'αβγδεζηθικλμνξοπρστυφχψω∂aAbBdDpP68'){
+        ctx.fillStyle='#fff';ctx.fillRect(0,0,136,124);
+        ctx.fillStyle='#000';ctx.fillText(letter,16,92);
+        const pixels=glyphPixels(canvas);
+        if(pixels)variableTemplates.push({letter,pixels});
+      }
+    }
+    canvas.width=canvas.height=1;
+  }
+  const ranked=variableTemplates.map(({letter,pixels})=>({letter,distance:pixels.reduce((sum,value,i)=>sum+Math.abs(value-ink[i]),0)/560}))
+    .sort((a,b)=>a.distance-b.distance);
+  const best=ranked[0],alternative=ranked.find(candidate=>candidate.letter!==best.letter);
+  return best.distance<.235&&alternative?.distance-best.distance>.013?best.letter:'';
+}
+async function recognizeCellFraction(canvas,letterHeight,worker){
+  const bar=fractionBar(canvas,letterHeight);
+  if(!bar)return null;
+  const y0=Math.max(0,Math.floor(bar.top-letterHeight*1.5));
+  const y1=Math.min(canvas.height,Math.ceil(bar.bottom+letterHeight*1.32));
+  const numerator=imageCrop(canvas,bar.left-3,y0,bar.right+3,bar.top-1);
+  const denominator=imageCrop(canvas,bar.left,bar.bottom+2,bar.right,y1);
+  const left=imageCrop(canvas,Math.max(0,bar.left-letterHeight*2.2),bar.top-letterHeight*.65,bar.left-4,bar.bottom+letterHeight*.64);
+  const inputs=[numerator,denominator,left];
+  const latin='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const recognize=async(patch,mode,characters='')=>{
+    const tight=trimCell(patch);
+    if(!tight)return '';
+    try{
+      await worker.setParameters({tessedit_pageseg_mode:mode,tessedit_char_whitelist:characters});
+      return (await worker.recognize(tight)).data.text.trim();
+    }finally{tight.width=tight.height=1;}
+  };
+  try{
+    const sides=cellInk(left);
+    if(sides.length!==2)return null;
+    const equals=imageCrop(left,sides[1].left-1,sides[1].top-1,sides[1].right+2,sides[1].bottom+2);
+    inputs.push(equals);
+    if(await recognize(equals,'10','=+-')!=='=')return null;
+    const variable=imageCrop(left,sides[0].left-1,sides[0].top-1,sides[0].right+2,sides[0].bottom+2);
+    inputs.push(variable);
+    const lhs=mathVariable(variable)||await recognize(variable,'10',latin);
+    if(!/^\p{L}$/u.test(lhs))return null;
+    const den=await recognize(denominator,'7','0123456789');
+    if(!/^\d+$/.test(den))return null;
+    const symbols=cellInk(numerator);
+    if(symbols.length<3||symbols.length>14)return null;
+    const tokens=[];
+    for(let i=0;i<symbols.length;i++){
+      const glyph=symbols[i],prior=symbols[i-1];
+      const h=glyph.bottom-glyph.top+1,w=glyph.right-glyph.left+1;
+      if(w>h*2.5&&h<letterHeight*.25){tokens.push('−');continue;}
+      const isIndex=prior&&/^[A-Za-z]$/.test(tokens.at(-1))&&h<(prior.bottom-prior.top+1)*.85&&
+        glyph.bottom>prior.bottom+letterHeight*.08&&glyph.left-prior.right<letterHeight*.5;
+      const part=imageCrop(numerator,Math.max(0,glyph.left-1),Math.max(0,glyph.top-1),glyph.right+2,glyph.bottom+2);
+      let reading;
+      try{
+        const characters=isIndex?'0123456789':latin+'0123456789+';
+        reading=await recognize(part,'10',characters);
+        if(!reading&&!isIndex)reading=mathVariable(part);
+        if(!reading)reading=await recognize(part,'13',characters);
+      }finally{part.width=part.height=1;}
+      if(!/^[A-Za-z\d+]$/.test(reading)||isIndex&&!/^\d$/.test(reading))return null;
+      tokens.push(reading);
+    }
+    const num=tokens.join('').replace(/[−+]/g,sign=>' '+sign+' ');
+    if(!/^[A-Za-z\d]+(?: [−+] [A-Za-z\d]+)+$/.test(num))return null;
+    const before=imageCrop(canvas,0,0,canvas.width,y0),after=imageCrop(canvas,0,y1,canvas.width,canvas.height);
+    inputs.push(before,after);
+    const top=await recognize(before,'6'),bottom=await recognize(after,'6');
+    const fold=value=>value.replace(/(\p{L})-\s*\n\s*(\p{L})/gu,'$1$2').replace(/\s+/g,' ');
+    const box=[Math.max(0,bar.left-letterHeight*2.15),y0,Math.min(canvas.width,bar.right+letterHeight*.24),y1];
+    const image=imageCrop(canvas,...box);
+    try{return {text:[fold(top),lhs+' = ('+num+') / '+den,fold(bottom)].filter(Boolean).join(' '),image:await canvasBlob(image)};}
+    finally{image.width=image.height=1;}
+  }finally{
+    for(const input of inputs)input.width=input.height=1;
+    await worker.setParameters({tessedit_char_whitelist:''});
+  }
+}
 function binaryGlyph(canvas,slant,threshold=500){
   const {width,height}=canvas;
   const c=canvas.getContext('2d'),im=c.getImageData(0,0,width,height);
@@ -960,6 +1078,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   const positionedTokens=ctx.positionedTokens?.(canvas)||[];
   const tokensInCell=box=>positionedTokens.filter(word=>word.x>box[0]+3&&word.x<box[2]-3&&word.y>box[1]+2&&word.y<box[3]-2);
   const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
+  const formulaLinks=[];
   const numeric=/^[±−+-]?\s*\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
   const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
   const read=async(patch,header=false,body=false)=>{
@@ -997,14 +1116,14 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       await worker.setParameters({tessedit_char_whitelist:''});
     }
   };
-  const retryNumber=async(patch,expected)=>{
+  const retryNumber=async(patch,expected,mode=expected.length===1?'10':'13',characters='0123456789±−+.,/-')=>{
     const tight=trimCell(patch);
     if(!tight)return [];
     try{
       const readings=[];
       const glyph=binaryGlyph(tight,0);
       try{
-        await worker.setParameters({tessedit_pageseg_mode:expected.length===1?'10':'13',tessedit_char_whitelist:'0123456789±−+.,/-'});
+        await worker.setParameters({tessedit_pageseg_mode:mode,tessedit_char_whitelist:characters});
         for(const image of [tight,glyph]){
           const result=(await worker.recognize(image)).data;
           readings.push({text:result.text.trim(),confidence:result.confidence});
@@ -1016,6 +1135,69 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       await worker.setParameters({tessedit_char_whitelist:''});
     }
   };
+  const lineCandidates=(cell,positioned,center,letterHeight)=>{
+    const plain=/^[−+]?\d+(?:[.,]\d+)?$/;
+    const profile=text=>cell.c===0&&/^\d+[А-Яа-яA-Za-z]\d*$/u.test(text);
+    const main=positioned.filter(item=>Math.abs(item.localY-center)<letterHeight*.78)
+      .map(item=>item.text).filter(text=>plain.test(text)||profile(text));
+    const candidates=new Map(main.map(text=>[same(text),text]));
+    if(/^1\d{2,}[.,]\d+$/.test(cell.text)){
+      for(const alternate of cell.variants){
+        const text=alternate.text.trim();
+        if(alternate.confidence>=65&&plain.test(text)&&same(cell.text)==='1'+same(text))candidates.set(same(text),text);
+      }
+    }
+    if(!plain.test(cell.text)&&main.every(text=>!plain.test(text))){
+      const alternate=cell.alt.trim().split(/\s+/).filter(text=>plain.test(text)&&/[.,]/.test(text));
+      if(alternate.length===1)candidates.set(same(alternate[0]),alternate[0]);
+    }
+    return candidates.has(same(cell.text))?[]:[...candidates.values()];
+  };
+  const recoverCellLine=async(patch,cell,candidates,center,letterHeight)=>{
+    const inset=Math.min(letterHeight*.22,patch.width*.12);
+    const x1=patch.width-inset,y0=Math.max(0,center-letterHeight*.83),y1=Math.min(patch.height,center+letterHeight*.83);
+    if(x1<=inset||y1-y0<letterHeight*.6)return;
+    const line=imageCrop(patch,inset,y0,x1,y1);
+    try{
+      const compact=text=>same(text).replace(/[yYУу]/g,'У').toUpperCase();
+      for(const target of candidates){
+        const isProfile=/^\d+[А-Яа-яA-Za-z]\d*$/.test(target);
+        // Source text is a candidate only. Require the same reading from the
+        // independently isolated line, including all digits and suffixes.
+        const characters=isProfile?'0123456789'+
+          'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЗИКЛМНОПРСТУФХЭЯабвгдезиклмнопрстуфхэя':undefined;
+        const readings=await retryNumber(line,target,'7',characters);
+        const matches=entry=>compact(entry.text)===compact(target);
+        if(!readings.some(entry=>matches(entry)&&entry.confidence>=56))readings.push(...await retryNumber(line,target,'13',characters));
+        let verified=readings.some(entry=>matches(entry)&&entry.confidence>=56);
+        if(!verified&&isProfile){
+          const glyphs=cellInk(line);
+          if(glyphs.length===target.length){
+            const pieces=[];
+            for(let i=0;i<glyphs.length;i++){
+              const g=glyphs[i];
+              const piece=imageCrop(line,Math.max(0,g.left-1),Math.max(0,g.top-1),g.right+2,g.bottom+2);
+              try{
+                const alphabet=/\d/.test(target[i])?'0123456789':characters.replace(/\d/g,'');
+                const reads=await retryNumber(piece,target[i],'10',alphabet);
+                const agreeing=reads.find(read=>read.confidence>=42&&compact(read.text)===compact(target[i]));
+                pieces.push(agreeing?.text||'');
+              }finally{piece.width=piece.height=1;}
+            }
+            verified=pieces.every(Boolean)&&compact(pieces.join(''))===compact(target);
+          }
+        }else if(!verified&&target.replace(/[.,]/g,'')===cell.text.replace(/^[|\s]+/,'')&&/[.,]/.test(target)){
+          const tighter=imageCrop(line,0,Math.max(0,center-letterHeight*.68-y0),line.width,Math.min(line.height,center+letterHeight*.68-y0));
+          try{verified=decimalInk(tighter,target);}finally{tighter.width=tighter.height=1;}
+        }
+        if(verified){
+          cell.firstReading=cell.text;cell.text=target;cell.variants.push(...readings);
+          cell.cellAgreement='Повторное OCR отдельной строки';return;
+        }
+      }
+    }finally{line.width=line.height=1;}
+  };
+  const fastReview=[];
   try{
     const headerRetries=[];
     for(let n=0;n<headers.cells.length;n++){
@@ -1059,7 +1241,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       const strip=await render(box);
       try{for(const cell of roots){
         ctx.status('Таблица: строка '+(r+1)+'/'+body.length+', ячейка '+(cell.c+1)+'/'+(grid.columns.length-1));
-        const b=cell.bbox,k=strip.scale,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]),patch=imageCrop(strip.canvas,(l-box[0]+3)*k,(b[1]-box[1]+2)*k,(right-box[0]-3)*k,(b[3]-box[1]-2)*k);
+        const b=cell.bbox,k=strip.scale,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]);
+        const cropBox=[(l-box[0]+3)*k,(b[1]-box[1]+2)*k,(right-box[0]-3)*k,(b[3]-box[1]-2)*k];
+        const patch=imageCrop(strip.canvas,...cropBox);
         cell.alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>b[0]&&(w.bbox.x0+w.bbox.x1)/2<b[2]&&(w.bbox.y0+w.bbox.y1)/2>b[1]&&(w.bbox.y0+w.bbox.y1)/2<b[3]).map(w=>w.text).join(' ');
         try{
           Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline,true));
@@ -1157,6 +1341,15 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
               }
             }
             cell.text=cell.text.replace(/(^|\s)[–—](?=\s*\d)/g,'$1−');
+            if(!cell.multiline&&!cell.cellAgreement){
+              const inStrip=positioned.map(item=>({...item,localY:(item.y-b[1]-2)*k}));
+              const center=(body[r]-b[1]-2)*k,letterHeight=height*k;
+              const candidates=lineCandidates(cell,inStrip,center,letterHeight);
+              if(candidates.length)fastReview.push({cell,box,cropBox,center,letterHeight,candidates});
+            }
+            if(cell.multiline&&cell.span>1&&cell.text.includes('=')){
+              fastReview.push({cell,box,cropBox,letterHeight:height*k});
+            }
           }
         }finally{patch.width=patch.height=1;}
       }}finally{strip.canvas.width=strip.canvas.height=1;}
@@ -1164,6 +1357,26 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   }finally{await worker.setParameters({tessedit_pageseg_mode:'3'});}
   const remainder=imageCrop(canvas,0,0,canvas.width,canvas.height),rc=remainder.getContext('2d');rc.fillStyle='#fff';rc.fillRect(grid.left,Math.min(grid.top,grid.headerTop),grid.right-grid.left,grid.bottom-Math.min(grid.top,grid.headerTop));
   let prose;try{prose=(await worker.recognize(remainder)).data.text||'';}finally{remainder.width=remainder.height=1;}
+  let retryBox,retryStrip;
+  try{
+    for(const {cell,box,cropBox,center,letterHeight,candidates} of fastReview){
+      await waitResume(ctx);
+      if(retryBox!==box){
+        if(retryStrip)retryStrip.width=retryStrip.height=1;
+        retryStrip=(await render(box)).canvas;retryBox=box;
+      }
+      const patch=imageCrop(retryStrip,...cropBox);
+      try{
+        if(candidates){await recoverCellLine(patch,cell,candidates,center,letterHeight);continue;}
+        const fraction=await recognizeCellFraction(patch,letterHeight,worker);
+        if(!fraction)continue;
+        cell.firstReading=cell.text;cell.text=fraction.text;
+        const link='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(formulaLinks.length+1)+'.jpg';
+        ctx.assets[link]=fraction.image;
+        formulaLinks.push('![Формула, строка '+(cell.r+1)+', столбец '+(cell.c+1)+']('+link+')\n\n[?Формула в ячейке не сверена с вырезкой]');
+      }finally{patch.width=patch.height=1;}
+    }
+  }finally{if(retryStrip)retryStrip.width=retryStrip.height=1;}
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.
   if(ctx.math){for(let n=0;n<headers.cells.length;n++){
@@ -1248,7 +1461,8 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   out+='</thead><tbody>';
   for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]')+'</td>';}out+='</tr>';}
   ctx.tableStats.cells=matrix;
-  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+prose;
+  if(formulaLinks.length)ctx.formulaStats={count:formulaLinks.length};
+  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+[...formulaLinks,prose].join('\n\n');
 }
 
 function formulaRegions(items,viewport,w,h,alignment){
@@ -1263,6 +1477,56 @@ function formulaRegions(items,viewport,w,h,alignment){
     .sort((a,b)=>b.length-a.length||b[0].right-a[0].right)[0];
   const aligned=cluster?.length>=2?cluster:found;
   return aligned.sort((a,b)=>a.y0-b.y0).filter((r,i,a)=>!i||r.y0-a[i-1].y0>5);
+}
+function incompleteFraction(latex){
+  const groups=/\\(?:[dt]?frac)\b/g;
+  for(const match of latex.matchAll(groups)){
+    let position=match.index+match[0].length;
+    for(let part=0;part<2;part++){
+      while(/\s/.test(latex[position]||''))position++;
+      if(latex[position]!=='{')return true;
+      const start=++position;
+      let depth=1;
+      while(position<latex.length&&depth){
+        if(latex[position]==='{')depth++;
+        if(latex[position]==='}')depth--;
+        position++;
+      }
+      if(depth||!latex.slice(start,position-1).trim())return true;
+    }
+  }
+  return false;
+}
+function formulaFocus(canvas,baseline,letterHeight,width){
+  const {height}=canvas,{data}=canvas.getContext('2d').getImageData(0,0,canvas.width,height);
+  const bands=[];
+  for(let y=0;y<height;y++){
+    let left=width,right=-1,ink=0;
+    for(let x=0;x<width;x++){
+      const offset=(y*canvas.width+x)*4;
+      if(data[offset]+data[offset+1]+data[offset+2]<570){left=Math.min(left,x);right=x;ink++;}
+    }
+    if(ink<3)continue;
+    const prior=bands.at(-1);
+    if(prior&&y-prior.bottom<3){prior.bottom=y;prior.left=Math.min(prior.left,left);prior.right=Math.max(prior.right,right);}
+    else bands.push({top:y,bottom:y,left,right});
+  }
+  const candidates=bands.filter(band=>band.right-band.left<width*.65&&band.bottom-band.top>=2);
+  const distance=band=>Math.max(band.top-baseline,baseline-band.bottom,0);
+  const anchor=candidates.reduce((best,band)=>!best||distance(band)<distance(best)?band:best,null);
+  if(!anchor||distance(anchor)>letterHeight*.6)return null;
+  let left=anchor.left,right=anchor.right,top=anchor.top,bottom=anchor.bottom;
+  for(const direction of [-1,1]){
+    for(let i=bands.indexOf(anchor)+direction;i>=0&&i<bands.length;i+=direction){
+      const band=bands[i],gap=direction<0?top-band.bottom:band.top-bottom;
+      if(gap>letterHeight*.65||band.right-band.left>width*.65||
+        band.right<left-letterHeight||band.left>right+letterHeight)break;
+      left=Math.min(left,band.left);right=Math.max(right,band.right);
+      top=Math.min(top,band.top);bottom=Math.max(bottom,band.bottom);
+    }
+  }
+  const margin=Math.round(letterHeight*.26);
+  return imageCrop(canvas,Math.max(0,left-margin),Math.max(0,top-margin),Math.min(width,right+margin),Math.min(height,bottom+margin));
 }
 async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   const regions=formulaRegions(items,viewport,canvas.width,canvas.height,canvas.pageMatrix);
@@ -1313,9 +1577,26 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
       // Keep extra margins in the human reference, but exclude the next prose
       // line from the model input: it can otherwise paraphrase it as mathematics.
       const input=imageCrop(patch,0,0,patch.width,Math.ceil((r.y1-r.y0)*k));
-      let latex,caseNote='';
+      let latex,caseNote='',reference=patch;
       try{
         latex=(await glmRecognize(input,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+        if(incompleteFraction(latex)&&r.baseline!=null){
+          const end=Math.min(canvas.height,regions[n+1]?.y0??canvas.height,r.y1+r.height*1.8);
+          const {canvas:expanded}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,end]);
+          try{
+            const width=Math.floor(Math.min(expanded.width,(r.right-r.x0-r.height*5)*k));
+            const focused=width>0?formulaFocus(expanded,(r.baseline-r.y0)*k,r.height*k,width):null;
+            if(focused)try{
+              const reading=(await glmRecognize(focused,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+              if(/\\[dt]?frac\b/.test(reading)&&!incompleteFraction(reading)&&!reading.includes('Генерация остановлена')){
+                const tag=latex.match(/\\tag\s*\{[^{}]+\}/)?.[0]||'';
+                latex=reading.replace(/\\tag\s*\{[^{}]+\}/g,'').trim()+(tag?' '+tag:'');
+                reference=expanded;
+              }
+            }finally{focused.width=focused.height=1;}
+          }finally{if(reference!==expanded)expanded.width=expanded.height=1;}
+        }
+        if(incompleteFraction(latex))ctx.pageIssue||='В формуле '+r.label+' не распознана часть дроби';
         const variable=latex.match(/^\s*([A-Z])\s*=/)?.[1];
         if(variable&&r.baseline!=null){
           const positions=items.filter(item=>item.str?.trim()).map(item=>{
@@ -1340,7 +1621,8 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
           }
         }
       }finally{ctx.task=task;input.width=input.height=1;}
-      const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';ctx.assets[name]=await canvasBlob(patch);
+      const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';
+      try{ctx.assets[name]=await canvasBlob(reference);}finally{if(reference!==patch)reference.width=reference.height=1;}
       latex=latex.replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
       const inferred=latex.match(/\\tag\s*\{\s*(\d+\s*\.\s*\d+)\s*\}/);
       const label=inferred?'('+inferred[1].replace(/\s/g,'')+')':r.label;

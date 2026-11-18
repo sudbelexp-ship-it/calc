@@ -1,4 +1,4 @@
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.12';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.13';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);

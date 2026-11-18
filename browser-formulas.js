@@ -11,6 +11,56 @@ function formulaRegions(items,viewport,w,h,alignment){
   const aligned=cluster?.length>=2?cluster:found;
   return aligned.sort((a,b)=>a.y0-b.y0).filter((r,i,a)=>!i||r.y0-a[i-1].y0>5);
 }
+function incompleteFraction(latex){
+  const groups=/\\(?:[dt]?frac)\b/g;
+  for(const match of latex.matchAll(groups)){
+    let position=match.index+match[0].length;
+    for(let part=0;part<2;part++){
+      while(/\s/.test(latex[position]||''))position++;
+      if(latex[position]!=='{')return true;
+      const start=++position;
+      let depth=1;
+      while(position<latex.length&&depth){
+        if(latex[position]==='{')depth++;
+        if(latex[position]==='}')depth--;
+        position++;
+      }
+      if(depth||!latex.slice(start,position-1).trim())return true;
+    }
+  }
+  return false;
+}
+function formulaFocus(canvas,baseline,letterHeight,width){
+  const {height}=canvas,{data}=canvas.getContext('2d').getImageData(0,0,canvas.width,height);
+  const bands=[];
+  for(let y=0;y<height;y++){
+    let left=width,right=-1,ink=0;
+    for(let x=0;x<width;x++){
+      const offset=(y*canvas.width+x)*4;
+      if(data[offset]+data[offset+1]+data[offset+2]<570){left=Math.min(left,x);right=x;ink++;}
+    }
+    if(ink<3)continue;
+    const prior=bands.at(-1);
+    if(prior&&y-prior.bottom<3){prior.bottom=y;prior.left=Math.min(prior.left,left);prior.right=Math.max(prior.right,right);}
+    else bands.push({top:y,bottom:y,left,right});
+  }
+  const candidates=bands.filter(band=>band.right-band.left<width*.65&&band.bottom-band.top>=2);
+  const distance=band=>Math.max(band.top-baseline,baseline-band.bottom,0);
+  const anchor=candidates.reduce((best,band)=>!best||distance(band)<distance(best)?band:best,null);
+  if(!anchor||distance(anchor)>letterHeight*.6)return null;
+  let left=anchor.left,right=anchor.right,top=anchor.top,bottom=anchor.bottom;
+  for(const direction of [-1,1]){
+    for(let i=bands.indexOf(anchor)+direction;i>=0&&i<bands.length;i+=direction){
+      const band=bands[i],gap=direction<0?top-band.bottom:band.top-bottom;
+      if(gap>letterHeight*.65||band.right-band.left>width*.65||
+        band.right<left-letterHeight||band.left>right+letterHeight)break;
+      left=Math.min(left,band.left);right=Math.max(right,band.right);
+      top=Math.min(top,band.top);bottom=Math.max(bottom,band.bottom);
+    }
+  }
+  const margin=Math.round(letterHeight*.26);
+  return imageCrop(canvas,Math.max(0,left-margin),Math.max(0,top-margin),Math.min(width,right+margin),Math.min(height,bottom+margin));
+}
 async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   const regions=formulaRegions(items,viewport,canvas.width,canvas.height,canvas.pageMatrix);
   const detector=await getOcr(ctx.lang||'rus+eng');await detector.setParameters({tessedit_pageseg_mode:'3'});
@@ -60,9 +110,26 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
       // Keep extra margins in the human reference, but exclude the next prose
       // line from the model input: it can otherwise paraphrase it as mathematics.
       const input=imageCrop(patch,0,0,patch.width,Math.ceil((r.y1-r.y0)*k));
-      let latex,caseNote='';
+      let latex,caseNote='',reference=patch;
       try{
         latex=(await glmRecognize(input,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+        if(incompleteFraction(latex)&&r.baseline!=null){
+          const end=Math.min(canvas.height,regions[n+1]?.y0??canvas.height,r.y1+r.height*1.8);
+          const {canvas:expanded}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,end]);
+          try{
+            const width=Math.floor(Math.min(expanded.width,(r.right-r.x0-r.height*5)*k));
+            const focused=width>0?formulaFocus(expanded,(r.baseline-r.y0)*k,r.height*k,width):null;
+            if(focused)try{
+              const reading=(await glmRecognize(focused,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
+              if(/\\[dt]?frac\b/.test(reading)&&!incompleteFraction(reading)&&!reading.includes('Генерация остановлена')){
+                const tag=latex.match(/\\tag\s*\{[^{}]+\}/)?.[0]||'';
+                latex=reading.replace(/\\tag\s*\{[^{}]+\}/g,'').trim()+(tag?' '+tag:'');
+                reference=expanded;
+              }
+            }finally{focused.width=focused.height=1;}
+          }finally{if(reference!==expanded)expanded.width=expanded.height=1;}
+        }
+        if(incompleteFraction(latex))ctx.pageIssue||='В формуле '+r.label+' не распознана часть дроби';
         const variable=latex.match(/^\s*([A-Z])\s*=/)?.[1];
         if(variable&&r.baseline!=null){
           const positions=items.filter(item=>item.str?.trim()).map(item=>{
@@ -87,7 +154,8 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
           }
         }
       }finally{ctx.task=task;input.width=input.height=1;}
-      const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';ctx.assets[name]=await canvasBlob(patch);
+      const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';
+      try{ctx.assets[name]=await canvasBlob(reference);}finally{if(reference!==patch)reference.width=reference.height=1;}
       latex=latex.replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
       const inferred=latex.match(/\\tag\s*\{\s*(\d+\s*\.\s*\d+)\s*\}/);
       const label=inferred?'('+inferred[1].replace(/\s/g,'')+')':r.label;
