@@ -28,7 +28,7 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;ctx.assets={};ctx.pageIssue='';
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegion=null;ctx.assets={};ctx.pageIssue='';
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
@@ -52,8 +52,9 @@ async function convPdf(buf, ctx){
           const halfWidth=(item.width||0)*vp.scale/2;
           const x=m[4]+m[0]/direction*halfWidth+m[2]*.35;
           const y=m[5]+m[1]/direction*halfWidth+m[3]*.35;
+          const height=Math.hypot(m[2],m[3]);
           const a=aligned.pageMatrix;
-          return [a?{text,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,x,y}];
+          return [a?{text,height,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,height,x,y}];
         });
         let text=pageToMarkdown(items);
         ctx.sourceText=text;
@@ -81,12 +82,17 @@ async function convPdf(buf, ctx){
         const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||formulaFirst||text.replace(/\s/g,'').length<20);
         if(needsOcr){
           ctx.assets={};
-          let formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
           const previousMath=ctx.math;ctx.math=!!math;
-          let table;
-          try{table=!formulas?await recognizeCellTable(cv,ctx,i):null;}finally{ctx.math=previousMath;}
+          let formulas,table;
+          try{
+            if(formulaFirst){
+              table=await recognizeCellTable(cv,ctx,i,true);
+              formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
+              if(!formulas&&!table)table=await recognizeCellTable(cv,ctx,i);
+            }else table=await recognizeCellTable(cv,ctx,i);
+          }finally{ctx.math=previousMath;}
           if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
-          if(table||formulas){text=table||formulas;ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          if(table||formulas){text=[formulas,table].filter(Boolean).join('\n\n');ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else if(math){text=await glmRecognize(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
           if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';

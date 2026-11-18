@@ -149,7 +149,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.13';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.14';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -1030,21 +1030,116 @@ function tableCaption(text){
   const match=String(text).match(/((?:п\s*р\s*о\s*д\s*о\s*л\s*ж\s*е\s*н\s*и\s*е|о\s*к\s*о\s*н\s*ч\s*а\s*н\s*и\s*е)\s*)?т\s*а\s*б\s*л(?:\s*и\s*ц\s*[аы]|\.)\s*(?:№\s*)?(\d+(?:\s*\.\s*\d+)*)/i);
   return match?{id:match[2].replace(/\s/g,''),continued:Boolean(match[1])}:null;
 }
-async function recognizeCellTable(canvas,ctx,pageIndex){
-  const aligned=deskewCanvas(canvas);
-  try{return await recognizeAlignedTable(aligned,ctx,pageIndex);}finally{if(aligned!==canvas)aligned.width=aligned.height=1;}
+function positionedLines(positioned){
+  const groups=[];
+  for(const token of positioned.sort((a,b)=>a.y-b.y)){
+    const line=groups.at(-1);
+    if(line&&Math.abs(line.y-token.y)<=Math.max(3,token.height*.35))line.tokens.push(token);
+    else groups.push({y:token.y,tokens:[token]});
+  }
+  for(const line of groups)line.tokens.sort((a,b)=>a.x-b.x);
+  return groups;
 }
-async function recognizeAlignedTable(canvas,ctx,pageIndex){
+function captionGrid(canvas,positioned){
+  const groups=positionedLines(positioned);
+  for(const line of groups){
+    const tokens=line.tokens;
+    const title=tokens.map(token=>token.text).join(' ');
+    if(!/^\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title))continue;
+    const caption=tableCaption(title);
+    if(!caption)continue;
+    const height=Math.max(10,...tokens.map(token=>token.height));
+    const from=Math.max(0,Math.floor(line.y-height*.76));
+    const to=Math.min(canvas.height,Math.ceil(line.y+canvas.height*.27));
+    const crop=imageCrop(canvas,0,from,canvas.width,to);
+    try{
+      const grid=lineGrid(crop.getContext('2d').getImageData(0,0,crop.width,crop.height));
+      if(!grid||grid.columns.length<4||grid.top>height*3.9||grid.bottom-grid.top<height*2.6)continue;
+      for(const key of ['headerTop','headerStart','top','bottom'])grid[key]+=from;
+      grid.lines=grid.lines.map(y=>y+from);grid.fullLines=grid.fullLines.map(y=>y+from);
+      grid.horizontal=grid.horizontal.map(([left,y,right])=>[left,y+from,right]);
+      grid.vertical=grid.vertical.map(([x,top,bottom])=>[x,top+from,bottom+from]);
+      return {grid,caption,from};
+    }finally{crop.width=crop.height=1;}
+  }
+  return null;
+}
+function dottedVariable(canvas){
+  const [first]=cellInk(canvas);
+  if(!first)return false;
+  const {width,height}=canvas;
+  const {data}=canvas.getContext('2d').getImageData(0,0,width,height);
+  const heightOfGlyph=first.bottom-first.top+1;
+  let dotEnd=first.top,stemStart=-1,dotRight=first.left;
+  for(let y=first.top;y<=first.bottom;y++){
+    let right=-1;
+    for(let x=first.left;x<=first.right;x++){
+      const k=(y*width+x)*4;
+      if(data[k]+data[k+1]+data[k+2]<570)right=x;
+    }
+    if(right<0)continue;
+    if(y-dotEnd>1){stemStart=y;break;}
+    dotEnd=y;dotRight=Math.max(dotRight,right);
+  }
+  return stemStart-dotEnd>=3&&dotEnd-first.top<heightOfGlyph*.23&&first.bottom-stemStart>heightOfGlyph*.55&&
+    dotRight<first.left+(first.right-first.left)*.68;
+}
+function ruledHeaderBoundary(grid,letterHeight,fullWidth){
+  const starts=grid.columns.slice(1,-1).map(x=>grid.vertical.filter(rule=>Math.abs(rule[0]-x)<=8)
+    .sort((a,b)=>(b[2]-b[1])-(a[2]-a[1]))[0]?.[1]).filter(y=>y>grid.top+letterHeight*.65);
+  for(const level of clusterPositions(starts.slice(),Math.max(4,letterHeight*.22))){
+    if(starts.filter(y=>Math.abs(y-level)<=Math.max(5,letterHeight*.35)).length<2)continue;
+    const downstream=fullWidth.filter(y=>y>level+letterHeight*.55);
+    if(downstream.length>=3)return downstream[0];
+  }
+  return null;
+}
+function headerAboveDecimalRows(grid,positioned,letterHeight){
+  const lines=positionedLines(positioned.filter(token=>token.x>grid.columns[1]&&token.x<grid.right&&token.y>grid.top&&token.y<grid.bottom));
+  const minColumns=Math.max(2,Math.ceil((grid.columns.length-2)*.65));
+  const count=(line,pattern)=>new Set(line.tokens.filter(token=>pattern.test(token.text))
+    .map(token=>grid.columns.findIndex(x=>x>token.x))).size;
+  for(let i=1;i<lines.length-1;i++){
+    const header=lines[i-1],data=lines[i];
+    if(count(header,/^\d+$/)<minColumns||count(data,/^[+−-]?\d+[.,]\d+$/)<minColumns||
+      count(lines[i+1],/^[+−-]?\d+[.,]\d+$/)<minColumns)continue;
+    const between=grid.lines.filter(y=>y>header.y+letterHeight*.32&&y<data.y-letterHeight*.32);
+    if(between.length)return between.at(-1);
+  }
+  return null;
+}
+async function recognizeCellTable(canvas,ctx,pageIndex,alongsideFormulas=false){
+  const aligned=deskewCanvas(canvas);
+  try{
+    const image=aligned.getContext('2d',{willReadFrequently:true}).getImageData(0,0,aligned.width,aligned.height);
+    const geometry=alongsideFormulas?null:lineGrid(image);
+    if(geometry&&geometry.columns.length>=4)return await recognizeAlignedTable(aligned,ctx,pageIndex,image,geometry);
+    const local=captionGrid(aligned,ctx.positionedTokens?.(aligned)||[]);
+    if(!local)return null;
+    const text=await recognizeAlignedTable(aligned,ctx,pageIndex,image,local.grid,local.caption,alongsideFormulas,local.from);
+    if(text&&alongsideFormulas)ctx.tableRegion=[local.grid.left,local.from,local.grid.right,local.grid.bottom];
+    return text;
+  }finally{if(aligned!==canvas)aligned.width=aligned.height=1;}
+}
+async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaption=null,skipProse=false,captionTop=null){
   ctx.status('Поиск сетки таблицы…');
-  const image=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height),grid=lineGrid(image);
-  if(!grid||grid.columns.length<4)return null;
   const worker=await getOcr(ctx.lang||'rus+eng');await worker.setParameters({tessedit_pageseg_mode:'3'});
   const whole=await worker.recognize(canvas),words=whole.data.words||[],candidates=[];
   for(const word of words){const b=word.bbox;if(b&&/^[−+-]?\d+(?:[.,]\d+)?[*%]?$/.test(word.text)&&b.x0>=grid.left&&b.x1<=grid.right&&b.y0>grid.top&&b.y1<grid.bottom)candidates.push({y:(b.y0+b.y1)/2,x:(b.x0+b.x1)/2,h:b.y1-b.y0});}
   const height=candidates.length?candidates.map(v=>v.h).sort((a,b)=>a-b)[Math.floor(candidates.length/2)]:10;
   const bands=clusterPositions(candidates.map(v=>v.y),Math.max(3,height*.5)).filter(y=>new Set(candidates.filter(v=>Math.abs(v.y-y)<height*.6).map(v=>grid.columns.findIndex(x=>x>v.x))).size>=Math.max(3,(grid.columns.length-1)*.35));
-  const first=grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||(bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
-  let caption=tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
+  const narrow=grid.columns.length<=6;
+  // On a short ruled table, numbers in a second header row can form a band
+  // just like data. The interior verticals start above those header numbers.
+  const fullWidth=knownCaption&&narrow?grid.lines.filter(y=>{
+    const ruled=grid.columns.slice(1).map((x,i)=>ruleCoverage(image,grid.columns[i]+3,y,x-3,y)>0);
+    return ruled[0]&&ruled.filter(Boolean).length>=Math.ceil(ruled.length*.8);
+  }):[];
+  const ruledHeader=knownCaption&&narrow?(headerAboveDecimalRows(grid,ctx.positionedTokens?.(canvas)||[],height)||
+    ruledHeaderBoundary(grid,height,fullWidth)):null;
+  const first=ruledHeader||grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||
+    (bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
+  let caption=knownCaption||tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
   const top=Math.min(grid.top,grid.headerTop);
   if(!caption&&top>12){
     const captionImage=imageCrop(canvas,Math.max(0,grid.left-30),Math.max(0,top-canvas.height*.09),Math.min(canvas.width,grid.right+30),top-1,2);
@@ -1056,8 +1151,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       await worker.setParameters({tessedit_pageseg_mode:'3'});
     }
   }
-  const narrow=grid.columns.length<=6;
-  const dividers=narrow?clusterPositions(grid.horizontal
+  const dividers=ruledHeader?fullWidth.filter(y=>y>first+5&&y<grid.bottom-5):narrow?clusterPositions(grid.horizontal
     .filter(([left,y,right])=>y>first+5&&y<grid.bottom-5&&left<=grid.columns[1]+6&&right>=grid.right-6)
     .map(line=>line[1]),4):[];
   const ruledEdges=dividers.length>=2?[first,...dividers,grid.bottom]:null;
@@ -1115,6 +1209,46 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       tight.width=tight.height=1;
       await worker.setParameters({tessedit_char_whitelist:''});
     }
+  };
+  const rereadLabel=async(patch,cell,isHeader)=>{
+    const crop=isHeader?imageCrop(patch,patch.width*.08,patch.height*.06,patch.width*.92,patch.height*.94):patch;
+    clearCellRules(crop);
+    const tight=trimCell(crop);
+    if(crop!==patch)crop.width=crop.height=1;
+    if(!tight)return;
+    try{
+      const readings=[];
+      const fold=value=>value.replace(/(\p{L})[-\u00ad]\s*\n\s*(\p{L})/gu,'$1$2').replace(/\s+/g,' ').trim();
+      const sourceLines=positionedLines(tokensInCell(cell.bbox)).map(line=>line.tokens.map(item=>item.text).join(' '));
+      const layer=fold(sourceLines.join('\n'));
+      const bodyWords=value=>(value.toLowerCase().replace(/ё/g,'е').match(/[а-я]{2,}/g)||[]).join('');
+      const comparableUnit=value=>value.toLowerCase().replace(/m/g,'м').replace(/c/g,'с').replace(/\s/g,'');
+      for(const zoom of isHeader?[1,1.6,2.3]:[1,1.6]){
+        const sample=zoom===1?tight:imageCrop(tight,0,0,tight.width,tight.height,zoom);
+        try{
+          for(const mode of isHeader?['7','13']:['6']){
+            await worker.setParameters({tessedit_pageseg_mode:mode,user_defined_dpi:'400',tessedit_char_whitelist:''});
+            const {data}=await worker.recognize(sample);
+            readings.push({text:fold(data.text),confidence:data.confidence,lines:data.text.trim().split(/\n+/)});
+          }
+        }finally{if(sample!==tight)sample.width=sample.height=1;}
+      }
+      cell.variants.push(...readings);
+      const best=readings.sort((a,b)=>b.confidence-a.confidence)[0];
+      if(isHeader){
+        const unit=readings.find(row=>row.confidence>=78&&/^[а-я]{1,3}$/i.test(layer)&&comparableUnit(row.text)===comparableUnit(layer));
+        if(unit){cell.text=layer;cell.confidence=unit.confidence;return;}
+        const suffixes=readings.map(row=>row.text.match(/^[fLliI]([yу\d])[,\s]+([сc][мm])$/i)?.[1]?.toLowerCase().replace('у','y')).filter(Boolean);
+        const index=suffixes.find(value=>suffixes.filter(other=>other===value).length>=2);
+        if(index&&dottedVariable(tight)){cell.text='i_'+index+', см';cell.confidence=best.confidence;return;}
+        if(best.confidence>=65&&/[\p{L}\d]/u.test(best.text)){cell.text=best.text;cell.confidence=best.confidence;}
+      }else if(best.confidence>=65&&/[а-яё]{3,}/i.test(best.text)){
+        const confirmation=layer&&!/\d/.test(layer)&&bodyWords(layer).length>=12&&readings.find(row=>
+          row.lines.length===sourceLines.length&&bodyWords(row.text)===bodyWords(layer));
+        const joined=confirmation?sourceLines.reduce((text,line,i)=>text+(i&&!confirmation.lines[i-1].trimEnd().endsWith('-')?' ':'')+line,''):'';
+        cell.text=joined||best.text;cell.confidence=best.confidence;
+      }
+    }finally{tight.width=tight.height=1;}
   };
   const retryNumber=async(patch,expected,mode=expected.length===1?'10':'13',characters='0123456789±−+.,/-')=>{
     const tight=trimCell(patch);
@@ -1198,6 +1332,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
     }finally{line.width=line.height=1;}
   };
   const fastReview=[];
+  const unreadLabels=[];
   try{
     const headerRetries=[];
     for(let n=0;n<headers.cells.length;n++){
@@ -1207,6 +1342,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       const patch=await render(box);
       try{
         Object.assign(cell,await read(patch.canvas,true));
+        if(!ctx.math&&!cell.text&&!cell.empty)unreadLabels.push({cell,box,isHeader:true});
         if(!ctx.math&&!cell.empty&&(!/[\p{L}\d]/u.test(cell.text)||cell.text.length<2&&cell.confidence<70)){
           headerRetries.push({cell,box});
         }
@@ -1350,13 +1486,19 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
             if(cell.multiline&&cell.span>1&&cell.text.includes('=')){
               fastReview.push({cell,box,cropBox,letterHeight:height*k});
             }
+            if(!cell.text&&/[а-яё]{3,}/i.test(cell.alt))unreadLabels.push({cell,box,cropBox});
           }
         }finally{patch.width=patch.height=1;}
       }}finally{strip.canvas.width=strip.canvas.height=1;}
     }
   }finally{await worker.setParameters({tessedit_pageseg_mode:'3'});}
-  const remainder=imageCrop(canvas,0,0,canvas.width,canvas.height),rc=remainder.getContext('2d');rc.fillStyle='#fff';rc.fillRect(grid.left,Math.min(grid.top,grid.headerTop),grid.right-grid.left,grid.bottom-Math.min(grid.top,grid.headerTop));
-  let prose;try{prose=(await worker.recognize(remainder)).data.text||'';}finally{remainder.width=remainder.height=1;}
+  let prose='';
+  if(!skipProse){
+    const remainder=imageCrop(canvas,0,0,canvas.width,canvas.height),rc=remainder.getContext('2d');
+    const upper=captionTop??Math.min(grid.top,grid.headerTop);
+    rc.fillStyle='#fff';rc.fillRect(grid.left,upper,grid.right-grid.left,grid.bottom-upper);
+    try{prose=(await worker.recognize(remainder)).data.text||'';}finally{remainder.width=remainder.height=1;}
+  }
   let retryBox,retryStrip;
   try{
     for(const {cell,box,cropBox,center,letterHeight,candidates} of fastReview){
@@ -1377,6 +1519,13 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       }finally{patch.width=patch.height=1;}
     }
   }finally{if(retryStrip)retryStrip.width=retryStrip.height=1;}
+  for(const {cell,box,cropBox,isHeader} of unreadLabels){
+    if(cell.text)continue;
+    await waitResume(ctx);
+    const {canvas:strip}=await render(box);
+    const patch=cropBox?imageCrop(strip,...cropBox):strip;
+    try{await rereadLabel(patch,cell,isHeader);}finally{patch.width=patch.height=strip.width=strip.height=1;}
+  }
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.
   if(ctx.math){for(let n=0;n<headers.cells.length;n++){
@@ -1417,6 +1566,8 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       const reading=cleaned.replace(/[$\s]/g,'')?cleaned:'';
       if(reading&&!/Генерация остановлена/.test(text)&&text.length<1500&&!(cell.confidence>=90&&/[А-Яа-яЁё]{4,}/.test(cell.tesseract)&&!/[|]/.test(cell.tesseract))){cell.text=reading;cell.engine='GLM';}
       else if(!reading&&!/[A-Za-zА-Яа-яЁё\d]/.test(cell.text)){cell.text='';}
+      if(/^\d+(?:\s+\d+)+$/.test(cell.text)&&/^\d+$/.test(cell.tesseract)&&same(cell.text)===cell.tesseract&&
+        tokensInCell(cell.bbox).some(token=>token.text===cell.tesseract))cell.text=cell.tesseract;
     }finally{if(input!==patch.canvas)input.width=input.height=1;patch.canvas.width=patch.canvas.height=1;}
   }
     const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
@@ -1567,6 +1718,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   regions.sort((a,b)=>a.y0-b.y0);
   ctx.formulaStats={count:regions.length};
   const body=imageCrop(canvas,0,0,canvas.width,canvas.height);const c=body.getContext('2d');c.fillStyle='#fff';for(const r of regions)c.fillRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0);
+  if(ctx.tableRegion){const [x0,y0,x1,y1]=ctx.tableRegion;c.fillRect(x0,y0,x1-x0,y1-y0);}
   let text;try{text=await ocrImage(body,ctx);}finally{body.width=body.height=1;}
   ctx.assets??={};
   for(let n=0;n<regions.length;n++){
@@ -1651,7 +1803,7 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;ctx.assets={};ctx.pageIssue='';
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegion=null;ctx.assets={};ctx.pageIssue='';
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
@@ -1675,8 +1827,9 @@ async function convPdf(buf, ctx){
           const halfWidth=(item.width||0)*vp.scale/2;
           const x=m[4]+m[0]/direction*halfWidth+m[2]*.35;
           const y=m[5]+m[1]/direction*halfWidth+m[3]*.35;
+          const height=Math.hypot(m[2],m[3]);
           const a=aligned.pageMatrix;
-          return [a?{text,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,x,y}];
+          return [a?{text,height,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,height,x,y}];
         });
         let text=pageToMarkdown(items);
         ctx.sourceText=text;
@@ -1704,12 +1857,17 @@ async function convPdf(buf, ctx){
         const needsOcr=ctx.ocr&&(ctx.ocrAll||foreignLayer||structuredLayer||formulaFirst||text.replace(/\s/g,'').length<20);
         if(needsOcr){
           ctx.assets={};
-          let formulas=formulaFirst?await recognizeFormulaPage(page,cv,vp,items,ctx,i):null;
           const previousMath=ctx.math;ctx.math=!!math;
-          let table;
-          try{table=!formulas?await recognizeCellTable(cv,ctx,i):null;}finally{ctx.math=previousMath;}
+          let formulas,table;
+          try{
+            if(formulaFirst){
+              table=await recognizeCellTable(cv,ctx,i,true);
+              formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
+              if(!formulas&&!table)table=await recognizeCellTable(cv,ctx,i);
+            }else table=await recognizeCellTable(cv,ctx,i);
+          }finally{ctx.math=previousMath;}
           if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
-          if(table||formulas){text=table||formulas;ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          if(table||formulas){text=[formulas,table].filter(Boolean).join('\n\n');ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else if(math){text=await glmRecognize(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
           if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';

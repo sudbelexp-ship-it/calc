@@ -100,6 +100,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   regions.sort((a,b)=>a.y0-b.y0);
   ctx.formulaStats={count:regions.length};
   const body=imageCrop(canvas,0,0,canvas.width,canvas.height);const c=body.getContext('2d');c.fillStyle='#fff';for(const r of regions)c.fillRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0);
+  if(ctx.tableRegion){const [x0,y0,x1,y1]=ctx.tableRegion;c.fillRect(x0,y0,x1-x0,y1-y0);}
   let text;try{text=await ocrImage(body,ctx);}finally{body.width=body.height=1;}
   ctx.assets??={};
   for(let n=0;n<regions.length;n++){

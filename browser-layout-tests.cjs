@@ -35,6 +35,18 @@ assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,
 assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
 assert(c.tableCaption('Окончание таблицы 1').continued);
 assert.equal(c.tableCaption('см. таблицу 2'),null);
+const compactGrid={top:80,columns:[20,100,170,240,310,380],
+  vertical:[[100,80,320],[170,128,320],[240,129,320],[310,129,320]]};
+assert.equal(c.ruledHeaderBoundary(compactGrid,18,[80,176,225,273,320]),176);
+assert.equal(c.ruledHeaderBoundary({...compactGrid,vertical:[[100,80,320],[170,128,320]]},18,[80,176,225,273,320]),null);
+const captionLines=c.positionedLines([{x:150,y:30,height:12,text:'8.1'},
+  {x:20,y:29,height:12,text:'Т а б л и ц а'},{x:20,y:50,height:12,text:'Класс бетона'}]);
+assert.deepEqual(Array.from(captionLines[0].tokens,token=>token.text),['Т а б л и ц а','8.1']);
+const rows=[['2','4','6','8'],['0,23','0,25','0,26','0,28'],['0,41','0,42','0,45','0,48']];
+const labels=rows.flatMap((row,i)=>row.map((text,j)=>({text,x:130+70*j,y:150+48*i,height:17})));
+const headerGrid={...compactGrid,right:380,bottom:320,lines:[80,128,176,225,273,320]};
+assert.equal(c.headerAboveDecimalRows(headerGrid,labels,18),176);
+assert.equal(c.headerAboveDecimalRows(headerGrid,labels.slice(4),18),null);
 const sparseImage={width:211,height:130,data:new Uint8ClampedArray(211*130*4).fill(255)};
 for(const top of [29,79]){
   for(let y=top;y<top+12;y++){
