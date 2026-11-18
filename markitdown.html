@@ -149,7 +149,7 @@ footer a,.info a{color:var(--accent)}
 const $ = id => document.getElementById(id);
 const drop = $('drop'), fileInp = $('file'), results = $('results'), bulk = $('bulk');
 const done = []; // {name, md}
-const MAX_PX=4000000, PIPELINE='browser-3.4-tables.11.2';
+const MAX_PX=4000000, PIPELINE='browser-3.4-tables.12';
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -754,8 +754,7 @@ function trimCell(canvas){
   if(x1<0)return null;
   const cv=document.createElement('canvas'),pad=12;cv.width=x1-x0+1+pad*2;cv.height=y1-y0+1+pad*2;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.drawImage(canvas,x0,y0,x1-x0+1,y1-y0+1,pad,pad,x1-x0+1,y1-y0+1);return cv;
 }
-function decimalInk(canvas,decimal){
-  const [whole,fraction]=decimal.split(/[.,]/);
+function cellInk(canvas){
   const {width,height}=canvas;
   const image=canvas.getContext('2d').getImageData(0,0,width,height).data;
   const topMargin=Math.min(6,Math.ceil(height*.05));
@@ -768,10 +767,25 @@ function decimalInk(canvas,decimal){
       if(image[offset]+image[offset+1]+image[offset+2]<570){top=Math.min(top,y);bottom=y;ink++;}
     }
     if(!ink){group=null;continue;}
-    if(!group){group={top,bottom,ink:0};groups.push(group);}
-    group.top=Math.min(group.top,top);group.bottom=Math.max(group.bottom,bottom);group.ink+=ink;
+    if(!group){group={top,bottom,left:x,right:x,ink:0};groups.push(group);}
+    group.top=Math.min(group.top,top);group.bottom=Math.max(group.bottom,bottom);group.right=x;group.ink+=ink;
   }
-  const glyphs=groups.filter(part=>part.ink>=4);
+  return groups.filter(part=>part.ink>=4);
+}
+function decimalPosition(glyphs,digitCount){
+  if(glyphs.length!==digitCount+1||digitCount<2)return -1;
+  const heights=glyphs.map(part=>part.bottom-part.top+1);
+  const typical=heights.slice().sort((a,b)=>a-b)[Math.floor(heights.length/2)];
+  const baseline=Math.max(...glyphs.map(part=>part.bottom));
+  const short=heights.reduce((found,h,i)=>h<typical*.65?[...found,i]:found,[]);
+  if(typical<8||short.length!==1||short[0]===0||short[0]===heights.length-1)return -1;
+  const separator=glyphs[short[0]];
+  return heights[short[0]]<typical*.55&&separator.top>baseline-typical*.45
+    &&Math.abs(separator.bottom-baseline)<typical*.4?short[0]:-1;
+}
+function decimalInk(canvas,decimal){
+  const [whole,fraction]=decimal.split(/[.,]/);
+  const glyphs=cellInk(canvas);
   if(glyphs.length!==whole.length+fraction.length+1)return false;
   const separator=glyphs[whole.length];
   const digits=glyphs.filter((_,i)=>i!==whole.length);
@@ -780,6 +794,111 @@ function decimalInk(canvas,decimal){
   const baseline=Math.max(...digits.map(part=>part.bottom));
   return typical>=8&&heights[0]>=typical*.65&&separator.bottom-separator.top+1<typical*.55
     &&separator.top>baseline-typical*.45&&Math.abs(separator.bottom-baseline)<typical*.4;
+}
+function restoreWordDecimals(canvas,result){
+  const words=result.words||[];
+  let text=result.text,cursor=0;
+  if(words.length<2)return text;
+  for(const word of words){
+    const start=text.indexOf(word.text,cursor);
+    if(start<0)continue;
+    cursor=start+word.text.length;
+    if(!/^\d{2,}$/.test(word.text)||!word.bbox)continue;
+    const {x0,y0,x1,y1}=word.bbox;
+    const patch=imageCrop(canvas,Math.max(0,x0-2),Math.max(0,y0-2),Math.min(canvas.width,x1+2),Math.min(canvas.height,y1+4));
+    try{
+      const position=decimalPosition(cellInk(patch),word.text.length);
+      if(position>0){text=text.slice(0,start+position)+','+text.slice(start+position);cursor++;}
+    }finally{patch.width=patch.height=1;}
+  }
+  return text;
+}
+function clearCellRules(canvas){
+  const {width,height}=canvas,c=canvas.getContext('2d',{willReadFrequently:true}),im=c.getImageData(0,0,width,height),data=im.data;
+  const dark=(x,y)=>{const k=(y*width+x)*4;return data[k]+data[k+1]+data[k+2]<570;};
+  const blank=(x,y)=>data.fill(255,(y*width+x)*4,(y*width+x)*4+4);
+  let changed=false;
+  // Only remove rules along the crop boundary. A dash or minus in the cell's
+  // interior is data. A serif on the first digit never spans the cell height.
+  const horizontal=Math.min(7,Math.ceil(height*.12));
+  const vertical=Math.min(12,Math.ceil(width*.16));
+  for(let y=0;y<height;y++){
+    if(y>=horizontal&&y<height-horizontal)continue;
+    let ink=0;for(let x=0;x<width;x++)if(dark(x,y))ink++;
+    if(ink<width*.57)continue;
+    for(let x=0;x<width;x++)blank(x,y);changed=true;
+  }
+  for(let x=0;x<width;x++){
+    if(x>=vertical&&x<width-vertical)continue;
+    let ink=0;for(let y=0;y<height;y++)if(dark(x,y))ink++;
+    if(ink<height*.63)continue;
+    for(let y=0;y<height;y++)blank(x,y);changed=true;
+  }
+  if(changed)c.putImageData(im,0,0);
+  return changed;
+}
+function printedDash(canvas){
+  const glyphs=cellInk(canvas);
+  if(glyphs.length!==1)return false;
+  const [g]=glyphs,width=g.right-g.left+1,height=g.bottom-g.top+1;
+  return width>=8&&width>=height*3&&width<canvas.width*.85&&g.top>canvas.height*.12
+    &&g.bottom<canvas.height*.88&&g.ink>=width*height*.36;
+}
+function edgeStroke(canvas){
+  const [first]=cellInk(canvas);
+  if(!first)return null;
+  const strokeHeight=first.bottom-first.top+1,strokeWidth=first.right-first.left+1;
+  return first.left<canvas.width*.14&&first.right<canvas.width*.24&&strokeHeight>=canvas.height*.60&&strokeWidth<=strokeHeight*.32&&
+    (first.top<=Math.min(8,canvas.height*.16)||first.bottom>=canvas.height*.9)?first:null;
+}
+function binaryGlyph(canvas,slant,threshold=500){
+  const {width,height}=canvas;
+  const c=canvas.getContext('2d'),im=c.getImageData(0,0,width,height);
+  for(let n=0;n<im.data.length;n+=4){
+    const value=im.data[n]+im.data[n+1]+im.data[n+2]<threshold?0:255;
+    im.data[n]=im.data[n+1]=im.data[n+2]=value;
+  }
+  const source=document.createElement('canvas');source.width=width;source.height=height;
+  source.getContext('2d').putImageData(im,0,0);
+  const wc=width+Math.ceil(Math.abs(slant)*height),result=document.createElement('canvas');
+  result.width=wc;result.height=height;
+  const out=result.getContext('2d');out.fillStyle='#fff';out.fillRect(0,0,wc,height);
+  out.imageSmoothingEnabled=false;out.transform(1,0,slant,1,(wc-width-slant*height)/2,0);
+  out.drawImage(source,0,0);source.width=source.height=1;return result;
+}
+function plusMinusLines(canvas){
+  const {width,height}=canvas,im=canvas.getContext('2d').getImageData(0,0,width,height);
+  const dark=(x,y)=>{const n=(y*width+x)*4;return im.data[n]+im.data[n+1]+im.data[n+2]<570;};
+  const bands=[];
+  for(let y=1;y<height-1;y++){
+    let ink=0;for(let x=1;x<width-1;x++)if(dark(x,y))ink++;
+    if(ink<3)continue;
+    const prev=bands.at(-1);
+    if(prev&&y-prev[1]<=3)prev[1]=y;else bands.push([y,y]);
+  }
+  return bands.filter(([top,bottom])=>bottom-top>=7).map(([top,bottom])=>{
+    let first=-1,last=-1;
+    for(let x=1;x<width-1;x++){
+      let ink=0;for(let y=top;y<=bottom;y++)if(dark(x,y))ink++;
+      if(ink&&first<0)first=x;
+      if(ink)last=x;
+      if(first>=0&&x-last>=2)break;
+    }
+    const w=last-first+1;
+    if(first<0||w<6||w>bottom-top+1)return false;
+    const strokes=[];
+    for(let y=top;y<=bottom;y++){
+      let ink=0;for(let x=first;x<=last;x++)if(dark(x,y))ink++;
+      if(!ink)continue;
+      const prev=strokes.at(-1);
+      if(prev&&y===prev.end+1){prev.end=y;prev.max=Math.max(prev.max,ink);prev.min=Math.min(prev.min,ink);}
+      else strokes.push({start:y,end:y,min:ink,max:ink});
+    }
+    if(strokes.length!==2)return false;
+    const [cross,bar]=strokes;
+    return cross.end-cross.start>=4&&cross.min<w*.52&&cross.max>=w*.7
+      &&bar.max>=w*.7&&bar.end-bar.start<=(cross.end-cross.start)*.65;
+  });
 }
 function cleanedCellReading(value){
   return value.trim().replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/\s+/g,' ');
@@ -790,7 +909,7 @@ function localBoundaryX(image,x,y0,y1){
   return score>.7?best:x;
 }
 function tableCaption(text){
-  const match=String(text).match(/(п\s*р\s*о\s*д\s*о\s*л\s*ж\s*е\s*н\s*и\s*е\s*)?т\s*а\s*б\s*л(?:\s*и\s*ц\s*[аы]|\.)\s*(?:№\s*)?(\d+(?:\s*\.\s*\d+)*)/i);
+  const match=String(text).match(/((?:п\s*р\s*о\s*д\s*о\s*л\s*ж\s*е\s*н\s*и\s*е|о\s*к\s*о\s*н\s*ч\s*а\s*н\s*и\s*е)\s*)?т\s*а\s*б\s*л(?:\s*и\s*ц\s*[аы]|\.)\s*(?:№\s*)?(\d+(?:\s*\.\s*\d+)*)/i);
   return match?{id:match[2].replace(/\s/g,''),continued:Boolean(match[1])}:null;
 }
 async function recognizeCellTable(canvas,ctx,pageIndex){
@@ -841,7 +960,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
   const positionedTokens=ctx.positionedTokens?.(canvas)||[];
   const tokensInCell=box=>positionedTokens.filter(word=>word.x>box[0]+3&&word.x<box[2]-3&&word.y>box[1]+2&&word.y<box[3]-2);
   const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
-  const read=async(patch,header=false)=>{
+  const numeric=/^[±−+-]?\s*\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
+  const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
+  const read=async(patch,header=false,body=false)=>{
     const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
     try{
       await worker.setParameters({tessedit_pageseg_mode:header?'6':'7',preserve_interword_spaces:'1',user_defined_dpi:'400'});
@@ -850,16 +971,88 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
       if(!header&&(result.confidence<85||!/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/.test(result.text.trim()))){
         await worker.setParameters({tessedit_pageseg_mode:'8'});const r=(await worker.recognize(tight)).data;variants.push({text:r.text.trim(),confidence:r.confidence});if(!/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/.test(result.text.trim())&&/\d/.test(r.text))result=r;
       }
-      return {text:result.text.trim().replace(/\s+/g,' '),confidence:result.confidence,variants,turn:turnChosen,empty:false};
+      const text=body&&header&&!ctx.math&&!turnChosen?restoreWordDecimals(tight,result):result.text;
+      return {text:text.trim().replace(/\s+/g,' '),confidence:result.confidence,variants,turn:turnChosen,empty:false};
     }finally{tight.width=tight.height=1;}
   };
+  const readSingleHeader=async patch=>{
+    const center=imageCrop(patch,patch.width*.15,patch.height*.1,patch.width*.85,patch.height*.9);
+    const tight=trimCell(center);center.width=center.height=1;
+    if(!tight)return null;
+    try{
+      const width=tight.width-24,height=tight.height-24;
+      if(height<8||height>55||width>height*1.25)return null;
+      await worker.setParameters({tessedit_pageseg_mode:'10',tessedit_char_whitelist:'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789',user_defined_dpi:'400'});
+      const readings=[];
+      for(const [slant,threshold] of [[0,500],[0,345],[0,625],[.25,500]]){
+        const glyph=binaryGlyph(tight,slant,threshold);
+        try{
+          const reading=(await worker.recognize(glyph)).data;
+          readings.push({text:reading.text.trim(),confidence:reading.confidence});
+        }finally{glyph.width=glyph.height=1;}
+      }
+      return readings;
+    }finally{
+      tight.width=tight.height=1;
+      await worker.setParameters({tessedit_char_whitelist:''});
+    }
+  };
+  const retryNumber=async(patch,expected)=>{
+    const tight=trimCell(patch);
+    if(!tight)return [];
+    try{
+      const readings=[];
+      const glyph=binaryGlyph(tight,0);
+      try{
+        await worker.setParameters({tessedit_pageseg_mode:expected.length===1?'10':'13',tessedit_char_whitelist:'0123456789±−+.,/-'});
+        for(const image of [tight,glyph]){
+          const result=(await worker.recognize(image)).data;
+          readings.push({text:result.text.trim(),confidence:result.confidence});
+        }
+      }finally{glyph.width=glyph.height=1;}
+      return readings;
+    }finally{
+      tight.width=tight.height=1;
+      await worker.setParameters({tessedit_char_whitelist:''});
+    }
+  };
   try{
+    const headerRetries=[];
     for(let n=0;n<headers.cells.length;n++){
       await waitResume(ctx);const cell=headers.cells[n];ctx.status('Шапка: ячейка '+(n+1)+'/'+headers.cells.length);
       const box=[localBoundaryX(image,cell.bbox[0],cell.bbox[1],cell.bbox[3])+3,cell.bbox[1]+3,localBoundaryX(image,cell.bbox[2],cell.bbox[1],cell.bbox[3])-3,cell.bbox[3]-3];
       if(box[2]<=box[0]||box[3]<=box[1])continue;
       const patch=await render(box);
-      try{Object.assign(cell,await read(patch.canvas,true));}finally{patch.canvas.width=patch.canvas.height=1;}
+      try{
+        Object.assign(cell,await read(patch.canvas,true));
+        if(!ctx.math&&!cell.empty&&(!/[\p{L}\d]/u.test(cell.text)||cell.text.length<2&&cell.confidence<70)){
+          headerRetries.push({cell,box});
+        }
+      }finally{patch.canvas.width=patch.canvas.height=1;}
+    }
+    if(headerRetries.length){
+      const lang=ctx.lang||'rus+eng',latin=lang==='rus+eng';
+      if(latin)await worker.reinitialize('eng',1);
+      try{
+        for(const {cell,box} of headerRetries){
+          await waitResume(ctx);
+          const patch=await render(box);
+          let readings;
+          try{readings=await readSingleHeader(patch.canvas);}finally{patch.canvas.width=patch.canvas.height=1;}
+          if(readings){
+            cell.variants.push(...readings);
+            const layer=tokensInCell(cell.bbox);
+            const reading=readings.filter(candidate=>/^[a-z]$/.test(candidate.text)&&candidate.confidence>=45&&
+              (candidate.confidence>=88||layer.length===1&&layer[0].text===candidate.text||
+                readings.filter(other=>other.text===candidate.text).length>=2||
+                /^[|~]$/.test(cell.text)&&readings.every(other=>!other.text||other.text===candidate.text)))
+              .sort((a,b)=>b.confidence-a.confidence)[0];
+            if(reading){
+              cell.text=reading.text;cell.confidence=reading.confidence;cell.turn=0;
+            }
+          }
+        }
+      }finally{if(latin)await worker.reinitialize(lang,1);}
     }
     for(let r=0;r<matrix.length;r++){
       await waitResume(ctx);const roots=matrix[r].filter(c=>!c.skip),box=[grid.left,Math.min(...roots.map(c=>c.bbox[1])),grid.right,Math.max(...roots.map(c=>c.bbox[3]))];if(!roots.length)continue;
@@ -869,9 +1062,24 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
         const b=cell.bbox,k=strip.scale,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]),patch=imageCrop(strip.canvas,(l-box[0]+3)*k,(b[1]-box[1]+2)*k,(right-box[0]-3)*k,(b[3]-box[1]-2)*k);
         cell.alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>b[0]&&(w.bbox.x0+w.bbox.x1)/2<b[2]&&(w.bbox.y0+w.bbox.y1)/2>b[1]&&(w.bbox.y0+w.bbox.y1)/2<b[3]).map(w=>w.text).join(' ');
         try{
-          Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline));
+          Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline,true));
+          const positioned=tokensInCell(b);
+          const values=positioned.map(item=>item.text);
+          const alt=cell.alt.replace(/^[|\s]+|[|\s]+$/g,'');
+          const layer=values.length===1&&numeric.test(values[0])?values[0]:'';
+          if(!ctx.math&&!cell.empty&&clearCellRules(patch)){
+            const clean=await read(patch,cell.multiline,true);
+            const originalDigits=same(cell.text).replace(/[.,]/g,'');
+            const agreesWithLayer=layer&&originalDigits===same(layer).replace(/[.,]/g,'');
+            const removedRule=!agreesWithLayer&&/^[1|]\s*/.test(cell.text)&&same(cell.text.replace(/^[1|]\s*/,''))===same(clean.text);
+            const variants=[...cell.variants,...clean.variants];
+            if(numeric.test(clean.text)&&(removedRule||[alt,layer].some(other=>other&&same(clean.text)===same(other)&&same(cell.text)!==same(other))||!numeric.test(cell.text)&&clean.confidence>=65)){
+              cell.withGrid=cell.text;Object.assign(cell,clean);
+            }
+            cell.variants=variants;
+          }
           if(/^\d{2,}$/.test(cell.text)){
-            const candidates=new Set([...tokensInCell(b).map(word=>word.text),cell.alt.replace(/[|\s]/g,'')]
+            const candidates=new Set([...values,cell.alt.replace(/[|\s]/g,'')]
               .filter(value=>/^\d+[.,]\d+$/.test(value)&&value.replace(/[.,]/,'')===cell.text));
             if(candidates.size===1){
               const decimal=candidates.values().next().value;
@@ -882,15 +1090,73 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
               }
             }
           }
-          const dash=cell.alt.replace(/[|\s]/g,'');
-          if(!cell.text&&/^[-–—−]$/.test(dash)){
-            const tight=trimCell(patch);
-            if(tight){
-              const width=tight.width-24,height=tight.height-24;
-              cell.dash=width>=height*3&&width>=8;
-              if(cell.dash){cell.text=dash;cell.empty=false;}
-              tight.width=tight.height=1;
+          if(ctx.math&&!cell.multiline&&!cell.separatorVerified&&/^\d+[.,]\d+$/.test(layer)&&/^\d+[.,]\d+$/.test(cell.text)){
+            const text=same(cell.text),source=same(layer);
+            const oneDigitDiff=text.length===source.length&&text.indexOf('.')===source.indexOf('.')&&
+              Array.from(text,(char,i)=>char!==source[i]).filter(Boolean).length===1;
+            if(oneDigitDiff){
+              const readings=await retryNumber(patch,layer);
+              cell.variants.push(...readings);
+              if(readings.length===2&&readings.every(reading=>reading.confidence>=75&&same(reading.text)===source)){
+                cell.firstReading=cell.text;cell.text=layer;cell.numberVerified=true;
+              }
             }
+          }
+          const dash=/^[-–—−]$/;
+          const cpuDash=dash.test(cell.text),altDash=cell.alt.replace(/[|\s]/g,'');
+          if(cpuDash||(!/\d/.test(cell.text)&&(dash.test(altDash)||!cell.text))){
+            if(cpuDash||printedDash(patch)){
+              cell.dash=true;cell.text=cpuDash?cell.text:dash.test(altDash)?altDash:'—';cell.empty=false;
+            }
+          }
+          if(!ctx.math&&!cell.empty&&!cell.dash&&!cell.separatorVerified){
+            if(layer&&same(layer)!==same(cell.text))cell.positioned=layer;
+            const profile=values.length===1?values[0].match(/^(\d+)([Бб])([\dЗзОо]+)$/):null;
+            const profileEnd=profile?.[3].replace(/[Зз]/g,'3').replace(/[Оо]/g,'0');
+            if(profile&&new RegExp('^'+profile[1]+'(?:[56Бб]|56)'+profileEnd+'$').test(same(cell.text))){
+              cell.firstReading=cell.text;cell.text=profile[1]+profile[2]+profileEnd;cell.cellAgreement='Б / 5 / 6';
+            }else if(layer&&numeric.test(alt)&&same(layer)===same(alt)&&same(cell.text)!==same(layer)){
+              cell.firstReading=cell.text;cell.text=layer;cell.cellAgreement='PDF + OCR страницы';
+            }else if(/^[±−+-]?\s*\d+(?:[.,]\d+)?$/.test(layer)&&same(layer)!==same(cell.text)&&!cell.multiline){
+              const matches=readings=>readings.some(reading=>reading.confidence>=52&&
+                [reading.text,reading.text.replace(/^\s*(?:\|\s*|1\s+)|\s+(?:\||[-–—])\s*$/g,'')].some(value=>same(value)===same(layer)));
+              let numberRetry=[];
+              if(!matches(cell.variants)){
+                const mid=(positioned[0].y-b[1]-2)*k;
+                const focused=b[3]-b[1]>height*2.1?imageCrop(patch,0,Math.max(0,mid-height*k),patch.width,Math.min(patch.height,mid+height*k)):patch;
+                try{numberRetry=await retryNumber(focused,layer);}finally{if(focused!==patch)focused.width=focused.height=1;}
+                if(!matches(numberRetry)&&same(cell.text)==='1'+same(layer)){
+                  const edge=edgeStroke(patch);
+                  if(edge){
+                    const inner=imageCrop(patch,edge.right+1,0,patch.width,patch.height);
+                    try{numberRetry.push(...await retryNumber(inner,layer));}finally{inner.width=inner.height=1;}
+                  }
+                }
+              }
+              cell.variants.push(...numberRetry);
+              if(matches(cell.variants)){
+                cell.firstReading=cell.text;cell.text=layer;cell.cellAgreement='PDF + повторное OCR';
+              }
+            }
+            if(/^\d{2,}$/.test(cell.text)&&!cell.multiline){
+              const position=decimalPosition(cellInk(patch),cell.text.length);
+              if(position>0){cell.firstReading=cell.text;cell.text=cell.text.slice(0,position)+','+cell.text.slice(position);}
+              else if(/^\d+[.,]\d+$/.test(layer)&&layer.replace(/[.,]/,'')===cell.text&&cell.variants.some(reading=>{
+                const number=reading.text.trim().match(/^\d+[.,]\d+(?=\s|$)/);
+                return number&&reading.confidence>=52&&same(number[0])===same(layer);
+              })){
+                cell.firstReading=cell.text;cell.text=layer;cell.cellAgreement='PDF + разделитель в OCR вырезки';
+              }
+            }
+            const numbers=cell.text.trim().match(/[+±]\s*\d+(?:[.,]\d+)?/g)||[];
+            if(numbers.length&&same(numbers.join(''))===same(cell.text)){
+              const signs=plusMinusLines(patch);
+              if(signs.length===numbers.length&&signs.includes(true)){
+                cell.beforeSigns=cell.text;
+                cell.text=numbers.map((number,i)=>signs[i]?number.replace(/^\+/,'±'):number).join(' ');
+              }
+            }
+            cell.text=cell.text.replace(/(^|\s)[–—](?=\s*\d)/g,'$1−');
           }
         }finally{patch.width=patch.height=1;}
       }}finally{strip.canvas.width=strip.canvas.height=1;}
@@ -941,8 +1207,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex){
     }finally{if(input!==patch.canvas)input.width=input.height=1;patch.canvas.width=patch.canvas.height=1;}
   }
     const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
-    const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
-    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
+    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&!cell.numberVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
     for(let n=0;n<review.length;n++){
       await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
@@ -1121,7 +1386,7 @@ async function convPdf(buf, ctx){
         const content=await page.getTextContent();const items=content.items;
         ctx.positionedTokens=aligned=>items.flatMap(item=>{
           const text=item.str?.trim();
-          if(!/^(?:\d+[А-Яа-яЁё]\d+|\d+[.,]\d+)$/.test(text||''))return [];
+          if(!text)return [];
           const m=pdfjsLib.Util.transform(vp.transform,item.transform);
           const direction=Math.hypot(m[0],m[1]);
           if(!direction)return [];

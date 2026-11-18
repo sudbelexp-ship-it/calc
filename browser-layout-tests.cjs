@@ -33,6 +33,7 @@ assert.equal(c.regionLines({width:100,height:100,data:closeRows},[0,10,60,70],12
 assert.equal(c.tableCaption('Т а б л и ц а  2').id,'2');
 assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,'6.8');
 assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
+assert(c.tableCaption('Окончание таблицы 1').continued);
 assert.equal(c.tableCaption('см. таблицу 2'),null);
 const sparseImage={width:211,height:130,data:new Uint8ClampedArray(211*130*4).fill(255)};
 for(const top of [29,79]){
@@ -72,4 +73,24 @@ assert(c.decimalInk(decimalCanvas,'2,0'));
 assert(!c.decimalInk(decimalCanvas,'2,01'));
 assert.equal(c.cleanedCellReading('```markdown\n\n```'),'');
 assert.equal(c.cleanedCellReading('$i_x$ CM'),'$i_x$ CM');
+function cellImage(width,height){
+  const data=new Uint8ClampedArray(width*height*4).fill(255);
+  return {canvas:{width,height,getContext:()=>({getImageData:()=>({data}),putImageData(){}})},
+    ink(left,top,right,bottom){for(let y=top;y<bottom;y++)for(let x=left;x<right;x++)data.fill(0,(y*width+x)*4,(y*width+x)*4+3);}};
+}
+const dash=cellImage(72,44);
+dash.ink(22,20,50,23);
+assert(c.printedDash(dash.canvas));
+dash.ink(1,0,3,44);
+assert(!c.printedDash(dash.canvas));
+assert(c.edgeStroke(dash.canvas));
+assert(c.clearCellRules(dash.canvas));
+assert(c.printedDash(dash.canvas));
+assert(!c.edgeStroke(dash.canvas));
+const signs=cellImage(80,45);
+signs.ink(10,10,13,27); signs.ink(4,17,19,20);
+signs.ink(25,9,39,31);
+assert.deepEqual(Array.from(c.plusMinusLines(signs.canvas)),[false]);
+signs.ink(4,29,19,31);
+assert.deepEqual(Array.from(c.plusMinusLines(signs.canvas)),[true]);
 console.log('PASS: grid, skew, merged cells, aligned sparse rows, multilevel headers, false rules, table captions');
