@@ -13,7 +13,7 @@ s=s.replace('<main>', '''<main>
 <div class="acts"><button class="btn" id="analyzeAll">Анализ всех</button><button class="btn sec" id="pause">Пауза всех</button><button class="btn sec" id="sourceFolder">Выбрать папку документов</button><button class="btn sec" id="outputFolder">Папка результата</button><button class="btn sec" id="keepCache">Сохранять модель на устройстве</button></div>
 <p id="cacheInfo" role="status">Модель загружается только после Старт. Чтение кеша и подготовка GPU тоже занимают время.</p>
 <p id="backgroundNote">Для долгого прогона исключите bit-exp.ru из экономии памяти Chrome. Сворачивание/заморозку браузера сайт полностью не контролирует.</p>
-<p id="storageInfo" role="status">Результат сохраняется по страницам в браузере. Для продолжения после закрытия выберите исходный файл повторно с тем же режимом. При выборе папки внутри неё создаётся «Распознанные документы».</p>
+<p id="storageInfo" role="status"></p>
 <p>За один раз обрабатывается одна страница; максимум 4 млн пикселей, один OCR Worker. Видеопамять управляется браузером: режим формул может быть тяжёлым. Закрытая вкладка не продолжает распознавание.</p></section>''',1)
 s=s.replace('Один лист занимает 20–60 с.', 'Скорость зависит от устройства; при нехватке видеопамяти выберите обычный OCR.')
 s=s.replace('формулы Word (OMML) переводятся в LaTeX без потерь', 'формулы Word (OMML) переводятся в LaTeX для ручной сверки')
@@ -135,7 +135,7 @@ s=re.sub(r'<label><input type="checkbox" id="ocrAll">.*?</label>', '',s,count=1)
 s=s.replace('Язык OCR','Язык Tesseract')
 s=s.replace("$('mode').onchange = async () => {", "$('ocrPolicy').onchange=()=>{$('mode').disabled=$('ocrPolicy').value==='off';$('lang').disabled=$('ocrPolicy').value==='off'||$('mode').value==='math';};\n$('mode').onchange = async () => {\n  $('ocrPolicy').onchange();")
 start=s.index('<div class="acts"><button class="btn" id="analyzeAll">')
-end=s.index('<p id="storageInfo"',start)
+end=s.index('</p>',s.index('<p id="storageInfo"',start))+len('</p>')
 controls=s[start:end]
 controls+=(root/'browser-background-help.html').read_text(encoding='utf-8')
 s=s[:start]+s[end:]

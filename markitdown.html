@@ -104,7 +104,7 @@ footer a,.info a{color:var(--accent)}
   <section class="card" aria-label="Управление анализом"><div class="acts"><button class="btn" id="analyzeAll">Анализ всех</button><button class="btn sec" id="pause">Пауза всех</button><button class="btn sec" id="sourceFolder">Выбрать папку документов</button><button class="btn sec" id="outputFolder">Папка результата</button><button class="btn sec" id="keepCache">Сохранять модель на устройстве</button></div>
 <p id="cacheInfo" role="status">Модель загружается только после Старт. Чтение кеша и подготовка GPU тоже занимают время.</p>
 <p id="backgroundNote">Для долгого прогона исключите bit-exp.ru из экономии памяти Chrome. Сворачивание/заморозку браузера сайт полностью не контролирует.</p>
-<details class="info" id="backgroundHelp">
+<p id="storageInfo" role="status"></p><details class="info" id="backgroundHelp">
 <summary style="cursor:pointer;font-weight:600">Как настроить долгий прогон: Chrome и Яндекс Браузер</summary>
 <p>Эти настройки уменьшают риск выгрузки вкладки, но не отменяют все ограничения фоновой работы. Настраивайте браузер до запуска анализа.</p>
 <h3>Google Chrome на компьютере</h3>
@@ -207,8 +207,48 @@ async function loadPage(ctx,i){
   }return null;
 }
 async function waitResume(ctx){if(ctx.isRemoved())throw new Error('Документ удалён из очереди');if(ctx.shouldPause?.()){const e=new Error('Пауза: готовые страницы сохранены');e.name='PauseError';throw e;}}
-$('outputFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Выбор папки доступен в Chrome/Edge. Используйте скачивание ZIP.');outputHandle=await showDirectoryPicker({mode:'readwrite'});$('storageInfo').textContent='Сохранение в папку: '+outputHandle.name;}catch(e){if(e.name!=='AbortError')alert(e.message);}};
-$('sourceFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Для выбора папки используйте Chrome/Edge. Файлы можно выбрать кнопкой ниже.');const source=await showDirectoryPicker({mode:'readwrite'});outputHandle=await source.getDirectoryHandle('Распознанные документы',{create:true});const files=[];for await(const h of source.values()){if(h.kind==='file'&&/\.(pdf|djvu|djv|png|jpe?g|webp|bmp)$/i.test(h.name))files.push(await h.getFile());}files.sort((a,b)=>a.name.localeCompare(b.name,'ru'));$('storageInfo').textContent='Найдено документов: '+files.length+'. Результат: '+source.name+'/Распознанные документы';addFiles(files);}catch(e){if(e.name!=='AbortError')alert(e.message);}};
+function showStorageInfo(message){
+  const status=$('storageInfo');
+  if(status)status.textContent=message;
+}
+function showFolderError(error,missingMessage){
+  if(error.name==='AbortError')return;
+  if(error.name==='NotFoundError'){
+    showStorageInfo(missingMessage);
+    return;
+  }
+  alert(error.message);
+}
+$('outputFolder').onclick=async()=>{
+  try{
+    if(!window.showDirectoryPicker)throw new Error('Выбор папки доступен в Chrome/Edge. Используйте скачивание ZIP.');
+    outputHandle=await showDirectoryPicker({mode:'readwrite'});
+    showStorageInfo('Сохранение в папку: '+outputHandle.name);
+  }catch(e){showFolderError(e,'Папка результата недоступна. Выберите папку ещё раз.');}
+};
+$('sourceFolder').onclick=async()=>{
+  try{
+    if(!window.showDirectoryPicker)throw new Error('Для выбора папки используйте Chrome/Edge. Файлы можно выбрать кнопкой ниже.');
+    const source=await showDirectoryPicker({mode:'readwrite'});
+    const files=[];
+    let missing=0;
+    for await(const entry of source.values()){
+      if(entry.kind!=='file'||!/\.(pdf|djvu|djv|png|jpe?g|webp|bmp)$/i.test(entry.name))continue;
+      try{
+        files.push(await entry.getFile());
+      }catch(e){
+        if(e.name!=='NotFoundError')throw e;
+        missing++;
+      }
+    }
+    files.sort((a,b)=>a.name.localeCompare(b.name,'ru'));
+    outputHandle=await source.getDirectoryHandle('Распознанные документы',{create:true});
+    addFiles(files);
+    let message='Найдено документов: '+files.length+'. Результат: '+source.name+'/Распознанные документы';
+    if(missing)message+='. Недоступно файлов: '+missing+'. Их можно добавить отдельно, когда они снова будут доступны.';
+    showStorageInfo(message);
+  }catch(e){showFolderError(e,'Папка документов недоступна. Выберите папку ещё раз.');}
+};
 
 
 const designationPattern=/(?:СП\s+\d+\.\d+\.\d{4}|ГОСТ(?:\s+Р)?(?:\s+ИСО)?\s+[\d.]+(?:[−–-]\d{2,4})?|СНиП\s+[\d.]+[−–-]\d{2,4}|СТО\s+[\d.−–-]+)/i;

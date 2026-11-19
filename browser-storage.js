@@ -56,5 +56,45 @@ async function loadPage(ctx,i){
   }return null;
 }
 async function waitResume(ctx){if(ctx.isRemoved())throw new Error('Документ удалён из очереди');if(ctx.shouldPause?.()){const e=new Error('Пауза: готовые страницы сохранены');e.name='PauseError';throw e;}}
-$('outputFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Выбор папки доступен в Chrome/Edge. Используйте скачивание ZIP.');outputHandle=await showDirectoryPicker({mode:'readwrite'});$('storageInfo').textContent='Сохранение в папку: '+outputHandle.name;}catch(e){if(e.name!=='AbortError')alert(e.message);}};
-$('sourceFolder').onclick=async()=>{try{if(!window.showDirectoryPicker)throw new Error('Для выбора папки используйте Chrome/Edge. Файлы можно выбрать кнопкой ниже.');const source=await showDirectoryPicker({mode:'readwrite'});outputHandle=await source.getDirectoryHandle('Распознанные документы',{create:true});const files=[];for await(const h of source.values()){if(h.kind==='file'&&/\.(pdf|png|jpe?g|webp|bmp)$/i.test(h.name))files.push(await h.getFile());}files.sort((a,b)=>a.name.localeCompare(b.name,'ru'));$('storageInfo').textContent='Найдено документов: '+files.length+'. Результат: '+source.name+'/Распознанные документы';addFiles(files);}catch(e){if(e.name!=='AbortError')alert(e.message);}};
+function showStorageInfo(message){
+  const status=$('storageInfo');
+  if(status)status.textContent=message;
+}
+function showFolderError(error,missingMessage){
+  if(error.name==='AbortError')return;
+  if(error.name==='NotFoundError'){
+    showStorageInfo(missingMessage);
+    return;
+  }
+  alert(error.message);
+}
+$('outputFolder').onclick=async()=>{
+  try{
+    if(!window.showDirectoryPicker)throw new Error('Выбор папки доступен в Chrome/Edge. Используйте скачивание ZIP.');
+    outputHandle=await showDirectoryPicker({mode:'readwrite'});
+    showStorageInfo('Сохранение в папку: '+outputHandle.name);
+  }catch(e){showFolderError(e,'Папка результата недоступна. Выберите папку ещё раз.');}
+};
+$('sourceFolder').onclick=async()=>{
+  try{
+    if(!window.showDirectoryPicker)throw new Error('Для выбора папки используйте Chrome/Edge. Файлы можно выбрать кнопкой ниже.');
+    const source=await showDirectoryPicker({mode:'readwrite'});
+    const files=[];
+    let missing=0;
+    for await(const entry of source.values()){
+      if(entry.kind!=='file'||!/\.(pdf|png|jpe?g|webp|bmp)$/i.test(entry.name))continue;
+      try{
+        files.push(await entry.getFile());
+      }catch(e){
+        if(e.name!=='NotFoundError')throw e;
+        missing++;
+      }
+    }
+    files.sort((a,b)=>a.name.localeCompare(b.name,'ru'));
+    outputHandle=await source.getDirectoryHandle('Распознанные документы',{create:true});
+    addFiles(files);
+    let message='Найдено документов: '+files.length+'. Результат: '+source.name+'/Распознанные документы';
+    if(missing)message+='. Недоступно файлов: '+missing+'. Их можно добавить отдельно, когда они снова будут доступны.';
+    showStorageInfo(message);
+  }catch(e){showFolderError(e,'Папка документов недоступна. Выберите папку ещё раз.');}
+};

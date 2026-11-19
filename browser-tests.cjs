@@ -12,6 +12,7 @@ assert.equal(ctx.flagNumbers('<!-- таблица 6.8: строк 6, столб�
 assert.equal(ctx.flagNumbers('<!-- OCR 25 -->'),'<!-- OCR [?25] -->');
 const md=ctx.pageMarkdown('25,0',2);assert(md.includes('<!-- стр. 2 -->'));assert(md.includes('pages/p002.jpg'));assert(md.includes('[?25,0]'));
 const html=readFileSync('markitdown.html','utf8');
+assert.equal((html.match(/<p id="storageInfo" role="status">/g)||[]).length,1);
 assert(!/127\.0\.0\.1|install\.bat|start\.bat|ocr-local-2\.2/.test(html));
 assert(html.includes('new Worker(\'browser-glm-worker-'));
 const pdf=readFileSync('browser-pdf.js','utf8');assert(pdf.indexOf('await loadPage')<pdf.indexOf('await pdf.getPage'));assert(pdf.includes('await pdf.destroy()'));assert(pdf.includes('page.cleanup()'));
