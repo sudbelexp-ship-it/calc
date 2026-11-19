@@ -10,6 +10,39 @@ function hasScanLayer(ops,area,styles={}){
     else if([O.paintImageXObject,O.paintInlineImageXObject,O.paintJpegXObject].filter(Number.isFinite).includes(fn)&&Math.abs(matrix[0]*matrix[3]-matrix[1]*matrix[2])>area*.60)return true;
   }return false;
 }
+function pdfPatchGeometry(box,preferredScale){
+  const width=box[2]-box[0],height=box[3]-box[1];
+  const pixels=(length,scale)=>Math.max(1,Math.ceil(length*scale));
+  const fits=scale=>pixels(width,scale)*pixels(height,scale)<=MAX_PX;
+  let scale=preferredScale;
+  const reduced=!fits(scale);
+  if(reduced){
+    // Account for both rounded dimensions so the entire crop fits in the budget.
+    let lo=0,hi=Math.min(scale,Math.sqrt(MAX_PX/(width*height)));
+    for(let step=0;step<24;step++){
+      const middle=(lo+hi)/2;
+      if(fits(middle))lo=middle;
+      else hi=middle;
+    }
+    scale=lo;
+  }
+  return {width:pixels(width,scale),height:pixels(height,scale),scale,reduced};
+}
+async function renderPdfPatch(page,viewport,aligned,box,fullResolutionOnly=false){
+  const targetDpiScale=400/72;
+  const target=page.getViewport({scale:targetDpiScale});
+  const preferredScale=target.width/viewport.width;
+  const {width,height,scale,reduced}=pdfPatchGeometry(box,preferredScale);
+  if(fullResolutionOnly&&reduced)return null;
+  const detail=reduced?page.getViewport({scale:targetDpiScale*scale/preferredScale}):target;
+  const m=aligned.pageMatrix||[1,0,0,1,0,0];
+  const patch=document.createElement('canvas');patch.width=width;patch.height=height;
+  try{
+    await page.render({canvasContext:patch.getContext('2d'),viewport:detail,
+      transform:[m[0],m[1],m[2],m[3],(m[4]-box[0])*scale,(m[5]-box[1])*scale],intent:'print'}).promise;
+    return {canvas:patch,scale};
+  }catch(e){patch.width=patch.height=1;throw e;}
+}
 async function convPdf(buf, ctx){
   await initPdf();
   const pdf=await pdfjsLib.getDocument({data:buf,isEvalSupported:false}).promise;
@@ -28,19 +61,14 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegion=null;ctx.assets={};ctx.pageIssue='';
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegion=null;ctx.assets={};ctx.pageIssue='';ctx.glmSkippedOnPage=false;
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
         const math=mathSet?.has(i);
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
         let vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
-        ctx.renderTablePatch=async(aligned,box)=>{
-          const high=page.getViewport({scale:400/72}),k=high.width/vp.width,m=aligned.pageMatrix||[1,0,0,1,0,0];
-          const patch=document.createElement('canvas');patch.width=Math.max(1,Math.ceil((box[2]-box[0])*k));patch.height=Math.max(1,Math.ceil((box[3]-box[1])*k));
-          if(patch.width*patch.height>MAX_PX)throw new Error('Вырезка таблицы превышает лимит 4 Мп');
-          try{await page.render({canvasContext:patch.getContext('2d'),viewport:high,transform:[m[0],m[1],m[2],m[3],(m[4]-box[0])*k,(m[5]-box[1])*k],intent:'print'}).promise;return {canvas:patch,scale:k};}catch(e){patch.width=patch.height=1;throw e;}
-        };
+        ctx.renderTablePatch=(aligned,box,fullResolutionOnly)=>renderPdfPatch(page,vp,aligned,box,fullResolutionOnly);
         await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
         ctx.positionedTokens=aligned=>items.flatMap(item=>{
@@ -93,12 +121,13 @@ async function convPdf(buf, ctx){
           }finally{ctx.math=previousMath;}
           if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
           if(table||formulas){text=[formulas,table].filter(Boolean).join('\n\n');ctx.ocrPages=(ctx.ocrPages||0)+1;}
-          else if(math){text=await glmRecognize(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
+          else if(math){text=await glmPageText(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
           if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
         }
         if(ctx.pageIssue)text+='\n\n[?НЕПОЛНАЯ СТРАНИЦА: '+ctx.pageIssue+']';
         if(!text.trim())text='[нечитаемо]';
+        text=markGlmMemoryLimit(text,ctx);
         await savePage(ctx,i,text,await canvasBlob(cv));
         parts.push(pageMarkdown(text,i));
         ctx.pageProgress?.(i,pdf.numPages);

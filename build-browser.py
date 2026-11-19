@@ -53,12 +53,60 @@ self.onmessage=async e=>{const {pixels,width,height,task,maxTokens}=e.data;try{c
 s=s[:gstart]+'''const GLM_PX=2200000;
 let glmWorker=null;
 async function gpuSupport(){if(!window.isSecureContext)return 'Нужен HTTPS';if(!navigator.gpu)return 'WebGPU недоступен. Выберите обычный OCR.';try{const a=await navigator.gpu.requestAdapter();return !a?'Видеокарта недоступна':!a.features.has('shader-f16')?'Нет shader-f16: выберите обычный OCR.':'';}catch(e){return e.message;}}
-async function glmRecognize(cv,ctx){
+async function runGlm(cv,ctx,maxPixels,maxTokens){
   const bad=await gpuSupport();if(bad)throw new Error(bad);
   if(ocrWorker){await ocrWorker.terminate();ocrWorker=null;ocrLang=null;}
   if(!glmWorker)glmWorker=new Worker('browser-glm-worker.js?v=3.0');
-  const img=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);
-  return new Promise((res,rej)=>{ctx.abort=()=>{glmWorker?.terminate();glmWorker=null;ctx.abort=null;rej(new Error('Распознавание отменено'));};glmWorker.onmessage=e=>{if(e.data.status)ctx.status(e.data.status);else if(e.data.cacheInfo)$('cacheInfo').textContent=e.data.cacheInfo;else if(e.data.error){ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.data.error));}else {ctx.abort=null;res(e.data.text);}};glmWorker.onerror=e=>{ctx.abort=null;glmWorker.terminate();glmWorker=null;rej(new Error(e.message||'Ошибка WebGPU Worker'));};glmWorker.postMessage({pixels:img.data,width:cv.width,height:cv.height},[img.data.buffer]);});
+  // A PDF crop can fit the CPU budget while exceeding the GLM page budget.
+  const input=cv.width*cv.height>maxPixels?fitCanvas(cv,cv.width,cv.height,maxPixels):cv;
+  let img;
+  try{img=input.getContext('2d').getImageData(0,0,input.width,input.height);}
+  finally{if(input!==cv)input.width=input.height=1;}
+  return new Promise((resolve,reject)=>{
+    const fail=error=>{ctx.abort=null;glmWorker?.terminate();glmWorker=null;reject(error);};
+    ctx.abort=()=>fail(new Error('Распознавание отменено'));
+    glmWorker.onmessage=({data})=>{
+      if(data.status)ctx.status(data.status);
+      else if(data.cacheInfo)$('cacheInfo').textContent=data.cacheInfo;
+      else if(data.error)fail(new Error(data.error));
+      else {ctx.abort=null;resolve(data.text);}
+    };
+    glmWorker.onerror=e=>fail(new Error(e.message||'Ошибка WebGPU Worker'));
+    try{glmWorker.postMessage({pixels:img.data,width:img.width,height:img.height,task:ctx.task,maxTokens},[img.data.buffer]);}
+    catch(e){fail(e);}
+  });
+}
+function isGlmMemoryError(error){
+  return /std::bad_alloc|out of memory|memory access out of bounds|failed to allocate/i.test(error.message);
+}
+async function glmRecognize(cv,ctx){
+  const retryPixels=GLM_PX/2,retryTokens=Math.min(ctx.maxTokens||4096,2048);
+  if(!ctx.glmMemoryExhausted){
+    try{
+      return await runGlm(cv,ctx,ctx.glmLowMemory?retryPixels:GLM_PX,ctx.glmLowMemory?retryTokens:ctx.maxTokens);
+    }catch(error){
+      if(!isGlmMemoryError(error))throw error;
+      if(!ctx.glmLowMemory){
+        await waitResume(ctx);
+        ctx.glmLowMemory=true;
+        ctx.status('GLM‑OCR: повтор с меньшим расходом памяти…');
+        const pixels=Math.min(retryPixels,Math.max(65536,Math.floor(cv.width*cv.height/2)));
+        try{return await runGlm(cv,ctx,pixels,retryTokens);}
+        catch(retryError){if(!isGlmMemoryError(retryError))throw retryError;}
+      }
+      ctx.glmMemoryExhausted=true;
+      ctx.status('GLM‑OCR: не хватило памяти. Продолжаем обычным OCR…');
+    }
+  }
+  ctx.glmSkippedOnPage=true;
+  return '';
+}
+async function glmPageText(cv,ctx){
+  const text=await glmRecognize(cv,ctx);
+  return ctx.glmSkippedOnPage?ocrImage(cv,ctx):text;
+}
+function markGlmMemoryLimit(text,ctx){
+  return ctx.glmSkippedOnPage?text+'\\n\\n[?НЕПОЛНАЯ СТРАНИЦА: GLM‑OCR не хватило памяти. Сохранён результат обычного OCR.]':text;
 }
 ''' +s[gend:]
 s=s.replace("if (ocrWorker && ocrLang === lang) return ocrWorker;", "if(glmWorker){glmWorker.terminate();glmWorker=null;}\n  if (ocrWorker && ocrLang === lang) return ocrWorker;")
@@ -76,11 +124,12 @@ s=s[:start]+'''async function convImage(file, ctx){
   const bmp = await createImageBitmap(file);
   const cv = fitCanvas(bmp, bmp.width, bmp.height, ctx.math ? GLM_PX : MAX_PX); bmp.close();
   try {
-    const text = ctx.math ? await glmRecognize(cv,ctx) : await ocrImage(cv,ctx);
+    const text = ctx.math ? await glmPageText(cv,ctx) : await ocrImage(cv,ctx);
     const blob=await canvasBlob(cv);
-    await savePage(ctx,1,text,blob);
+    const marked=markGlmMemoryLimit(text,ctx);
+    await savePage(ctx,1,marked,blob);
     ctx.ocrPages=1;
-    return pageMarkdown(text,1);
+    return pageMarkdown(marked,1);
   } finally {cv.width=cv.height=1;}
 }
 ''' +s[end:]
@@ -114,7 +163,6 @@ s=s.replace("$('clear').onclick = () => { results.innerHTML = ''; done.length = 
 worker_name='browser-glm-worker-'+hashlib.sha256(worker.encode()).hexdigest()[:12]+'.js'
 (root/worker_name).write_text(worker,encoding='utf-8')
 s=s.replace("browser-glm-worker.js?v=3.0",worker_name)
-s=s.replace('pixels:img.data,width:cv.width,height:cv.height}', 'pixels:img.data,width:cv.width,height:cv.height,task:ctx.task,maxTokens:ctx.maxTokens}')
 s=s.replace('async function convPdf(buf, ctx){',(root/'browser-layout.js').read_text(encoding='utf-8')+'\n'+(root/'browser-formulas.js').read_text(encoding='utf-8')+'\nasync function convPdf(buf, ctx){',1)
 # Replace the legacy Promise chain with an explicit, user-controlled queue.
 start=s.index('async function handle(')

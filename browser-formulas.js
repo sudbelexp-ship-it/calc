@@ -107,7 +107,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
     await waitResume(ctx);const r=regions[n];
     const {canvas:patch,scale:k}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,Math.min(canvas.height,r.y1+canvas.height*.012)]);
     try{
-      ctx.status('Формула '+r.label+' · 400 dpi');const task=ctx.task;ctx.task='Formula Recognition:';
+      ctx.status('Формула '+r.label);const task=ctx.task;ctx.task='Formula Recognition:';
       // Keep extra margins in the human reference, but exclude the next prose
       // line from the model input: it can otherwise paraphrase it as mathematics.
       const input=imageCrop(patch,0,0,patch.width,Math.ceil((r.y1-r.y0)*k));
@@ -116,10 +116,10 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
         latex=(await glmRecognize(input,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
         if(incompleteFraction(latex)&&r.baseline!=null){
           const end=Math.min(canvas.height,regions[n+1]?.y0??canvas.height,r.y1+r.height*1.8);
-          const {canvas:expanded}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,end]);
+          const {canvas:expanded,scale:expandedScale}=await ctx.renderTablePatch(canvas,[r.x0,r.y0,r.x1,end]);
           try{
-            const width=Math.floor(Math.min(expanded.width,(r.right-r.x0-r.height*5)*k));
-            const focused=width>0?formulaFocus(expanded,(r.baseline-r.y0)*k,r.height*k,width):null;
+            const width=Math.floor(Math.min(expanded.width,(r.right-r.x0-r.height*5)*expandedScale));
+            const focused=width>0?formulaFocus(expanded,(r.baseline-r.y0)*expandedScale,r.height*expandedScale,width):null;
             if(focused)try{
               const reading=(await glmRecognize(focused,ctx)).replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
               if(/\\[dt]?frac\b/.test(reading)&&!incompleteFraction(reading)&&!reading.includes('Генерация остановлена')){
@@ -161,7 +161,12 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
       const inferred=latex.match(/\\tag\s*\{\s*(\d+\s*\.\s*\d+)\s*\}/);
       const label=inferred?'('+inferred[1].replace(/\s/g,'')+')':r.label;
       const conflict=r.label.replace(/[(),.\s]/g,'')!==label.replace(/[(),.\s]/g,'');
-      text+='\n\n$$'+latex+'$$ '+label+'\n\n![Формула '+label+']('+name+')\n\n[?LaTeX не сверен с вырезкой]'+(conflict?'\n\n[?Номер по тексту: '+r.label+']':'')+caseNote;
+      const link='\n\n![Формула '+label+']('+name+')';
+      if(latex)text+='\n\n$$'+latex+'$$ '+label+link+'\n\n[?LaTeX не сверен с вырезкой]'+(conflict?'\n\n[?Номер по тексту: '+r.label+']':'')+caseNote;
+      else {
+        ctx.pageIssue||='В формуле '+label+' не распознан LaTeX';
+        text+='\n\n[?Формула '+label+' не распознана. См. вырезку.]'+link;
+      }
     }finally{patch.width=patch.height=1;}
   }
   return text;

@@ -21,10 +21,12 @@ async function convDjvu(file,ctx){
         const image=await worker.doc.getPage(i).getImageData().run();
         raw=document.createElement('canvas');raw.width=image.width;raw.height=image.height;raw.getContext('2d').putImageData(image,0,0);
         cv=fitCanvas(raw,raw.width,raw.height,ctx.math&&selected.has(i)?GLM_PX:MAX_PX);raw.width=raw.height=1;
+        ctx.glmSkippedOnPage=false;
         if(ctx.ocr&&(ctx.ocrAll||text.replace(/\s/g,'').length<20)){
-          text=ctx.math&&selected.has(i)?await glmRecognize(cv,ctx):await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;
+          text=ctx.math&&selected.has(i)?await glmPageText(cv,ctx):await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;
         }
         if(!text.trim())text='[нечитаемо]';
+        text=markGlmMemoryLimit(text,ctx);
         await savePage(ctx,i,text,await canvasBlob(cv));parts.push(pageMarkdown(text,i));ctx.pageProgress?.(i,ctx.total);
         if(ctx.dir)await writeFile(ctx.dir,'document.md',parts.join('\n\n'));
       }finally{if(raw)raw.width=raw.height=1;if(cv)cv.width=cv.height=1;}

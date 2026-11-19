@@ -58,7 +58,9 @@ async function runJob(job){
     const md=header(job.file,ctx.total)+'\n'+(ctx.total?raw:flagNumbers(raw));
     if(ctx.dir)await writeFile(ctx.dir,'document.md',md);
     if(job.state==='removed')return;
-    job.state=ctx.incomplete?'error':'done';job.complete=job.total=ctx.total||1;job.badge.className='badge '+(ctx.incomplete?'bad':'ok');job.badge.textContent=(ctx.incomplete?'Неполный результат: '+ctx.incomplete+' стр. — повторите распознавание':'Готово')+(ctx.cached?' · из сохранения: '+ctx.cached+' стр.':'');
+    job.state=ctx.incomplete?'error':'done';job.complete=job.total=ctx.total||1;job.badge.className='badge '+(ctx.incomplete?'bad':'ok');
+    const partial=ctx.glmMemoryExhausted?' · GLM‑OCR не хватило памяти':' — повторите распознавание';
+    job.badge.textContent=(ctx.incomplete?'Неполный результат: '+ctx.incomplete+' стр.'+partial:'Готово')+(ctx.cached?' · из сохранения: '+ctx.cached+' стр.':'');
     const ta=document.createElement('textarea');ta.value=md;ta.spellcheck=false;ta.setAttribute('aria-label','Markdown для '+job.file.name);
     const acts=document.createElement('div');acts.className='acts';
     const copy=jobButton('Копировать',()=>navigator.clipboard.writeText(ta.value).catch(e=>alert(e.message)));

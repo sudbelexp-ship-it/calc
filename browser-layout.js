@@ -696,7 +696,8 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   else ctx.pageIssue='Не определён номер таблицы';
   const positionedTokens=ctx.positionedTokens?.(canvas)||[];
   const tokensInCell=box=>positionedTokens.filter(word=>word.x>box[0]+3&&word.x<box[2]-3&&word.y>box[1]+2&&word.y<box[3]-2);
-  const render=async box=>ctx.renderTablePatch?ctx.renderTablePatch(canvas,box):{canvas:imageCrop(canvas,...box,2),scale:2};
+  const render=async(box,fullResolutionOnly=false)=>ctx.renderTablePatch?
+    ctx.renderTablePatch(canvas,box,fullResolutionOnly):{canvas:imageCrop(canvas,...box,2),scale:2};
   const formulaLinks=[];
   const numeric=/^[±−+-]?\s*\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
   const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
@@ -903,13 +904,18 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
       }finally{if(latin)await worker.reinitialize(lang,1);}
     }
     for(let r=0;r<matrix.length;r++){
-      await waitResume(ctx);const roots=matrix[r].filter(c=>!c.skip),box=[grid.left,Math.min(...roots.map(c=>c.bbox[1])),grid.right,Math.max(...roots.map(c=>c.bbox[3]))];if(!roots.length)continue;
-      const strip=await render(box);
+      await waitResume(ctx);const roots=matrix[r].filter(c=>!c.skip);if(!roots.length)continue;
+      const box=[grid.left,Math.min(...roots.map(c=>c.bbox[1])),grid.right,Math.max(...roots.map(c=>c.bbox[3]))];
+      // A wide strip can exceed the budget even if its individual cells fit at 400 dpi.
+      const strip=await render(box,true);
       try{for(const cell of roots){
         ctx.status('Таблица: строка '+(r+1)+'/'+body.length+', ячейка '+(cell.c+1)+'/'+(grid.columns.length-1));
-        const b=cell.bbox,k=strip.scale,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]);
-        const cropBox=[(l-box[0]+3)*k,(b[1]-box[1]+2)*k,(right-box[0]-3)*k,(b[3]-box[1]-2)*k];
-        const patch=imageCrop(strip.canvas,...cropBox);
+        const b=cell.bbox,l=localBoundaryX(image,b[0],b[1],b[3]),right=localBoundaryX(image,b[2],b[1],b[3]);
+        const cellBox=[l+3,b[1]+2,right-3,b[3]-2];
+        const s=strip?.scale;
+        const cropBox=strip?[(l-box[0]+3)*s,(b[1]-box[1]+2)*s,(right-box[0]-3)*s,(b[3]-box[1]-2)*s]:null;
+        const {canvas:patch,scale:k}=strip?{canvas:imageCrop(strip.canvas,...cropBox),scale:s}:await render(cellBox);
+        const retryBox=strip?box:cellBox;
         cell.alt=words.filter(w=>w.bbox&&(w.bbox.x0+w.bbox.x1)/2>b[0]&&(w.bbox.x0+w.bbox.x1)/2<b[2]&&(w.bbox.y0+w.bbox.y1)/2>b[1]&&(w.bbox.y0+w.bbox.y1)/2<b[3]).map(w=>w.text).join(' ');
         try{
           Object.assign(cell,cell.empty?{text:'',confidence:100,empty:true}:await read(patch,cell.multiline,true));
@@ -1011,15 +1017,15 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
               const inStrip=positioned.map(item=>({...item,localY:(item.y-b[1]-2)*k}));
               const center=(body[r]-b[1]-2)*k,letterHeight=height*k;
               const candidates=lineCandidates(cell,inStrip,center,letterHeight);
-              if(candidates.length)fastReview.push({cell,box,cropBox,center,letterHeight,candidates});
+              if(candidates.length)fastReview.push({cell,box:retryBox,cropBox,center,letterHeight,candidates});
             }
             if(cell.multiline&&cell.span>1&&cell.text.includes('=')){
-              fastReview.push({cell,box,cropBox,letterHeight:height*k});
+              fastReview.push({cell,box:retryBox,cropBox,letterHeight:height*k});
             }
-            if(!cell.text&&/[а-яё]{3,}/i.test(cell.alt))unreadLabels.push({cell,box,cropBox});
+            if(!cell.text&&/[а-яё]{3,}/i.test(cell.alt))unreadLabels.push({cell,box:retryBox,cropBox});
           }
         }finally{patch.width=patch.height=1;}
-      }}finally{strip.canvas.width=strip.canvas.height=1;}
+      }}finally{if(strip)strip.canvas.width=strip.canvas.height=1;}
     }
   }finally{await worker.setParameters({tessedit_pageseg_mode:'3'});}
   let prose='';
@@ -1037,7 +1043,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
         if(retryStrip)retryStrip.width=retryStrip.height=1;
         retryStrip=(await render(box)).canvas;retryBox=box;
       }
-      const patch=imageCrop(retryStrip,...cropBox);
+      const patch=cropBox?imageCrop(retryStrip,...cropBox):retryStrip;
       try{
         if(candidates){await recoverCellLine(patch,cell,candidates,center,letterHeight);continue;}
         const fraction=await recognizeCellFraction(patch,letterHeight,worker);
@@ -1046,7 +1052,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
         const link='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(formulaLinks.length+1)+'.jpg';
         ctx.assets[link]=fraction.image;
         formulaLinks.push('![Формула, строка '+(cell.r+1)+', столбец '+(cell.c+1)+']('+link+')\n\n[?Формула в ячейке не сверена с вырезкой]');
-      }finally{patch.width=patch.height=1;}
+      }finally{if(patch!==retryStrip)patch.width=patch.height=1;}
     }
   }finally{if(retryStrip)retryStrip.width=retryStrip.height=1;}
   for(const {cell,box,cropBox,isHeader} of unreadLabels){
@@ -1074,7 +1080,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   }
   // Finish CPU work before starting the GPU phase: the browser keeps only the
   // one model needed for the current phase rather than both resident engines.
-  if(ctx.math){for(let n=0;n<headers.cells.length;n++){
+  if(ctx.math){
+    if(ctx.glmMemoryExhausted)ctx.glmSkippedOnPage=true;
+    for(let n=0;n<headers.cells.length&&!ctx.glmMemoryExhausted;n++){
     await waitResume(ctx);const cell=headers.cells[n];if(cell.empty||cell.confidence==null)continue;
     ctx.status('Нейросеть: шапка '+(n+1)+'/'+headers.cells.length);
     const b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+3,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-3],patch=await render(box);let input=patch.canvas;
@@ -1107,6 +1115,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
           if(cleanedCellReading(math).replace(/[$\s]/g,'')&&!/Генерация остановлена/.test(math))text=math.trim().replace(/^\$\$?|\$\$?$/g,'');
         }
       }finally{ctx.task=task;ctx.maxTokens=limit;}
+      if(ctx.glmMemoryExhausted)break;
       cell.tesseract=cell.text;cell.neural=text;
       const cleaned=cleanedCellReading(text);
       const reading=cleaned.replace(/[$\s]/g,'')?cleaned:'';
@@ -1119,7 +1128,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
     const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
     const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&!cell.numberVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
-    for(let n=0;n<review.length;n++){
+    for(let n=0;n<review.length&&!ctx.glmMemoryExhausted;n++){
       await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
       if(box[2]<=box[0]||box[3]<=box[1])continue;
       const patch=await render(box);
