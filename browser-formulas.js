@@ -8,7 +8,7 @@ function formulaRegions(items,viewport,w,h,alignment){
     const base=pdfjsLib.Util.transform(viewport.transform,it.transform);
     const m=alignment?pdfjsLib.Util.transform(alignment,base):base;const fh=Math.max(8,Math.hypot(m[2],m[3]));
     const tagX=m[4]+(it.width||0)*viewport.scale*match.index/it.str.length;if(tagX<w*.70)continue;
-    found.push({label,right:m[4]+(it.width||0)*viewport.scale,baseline:m[5],height:fh,x0:w*.12,x1:w*.98,y0:Math.max(0,m[5]-fh*2.0),y1:Math.min(h,m[5]+fh*1.5)});
+    found.push({label,tagX,right:m[4]+(it.width||0)*viewport.scale,baseline:m[5],height:fh,x0:w*.12,x1:w*.98,y0:Math.max(0,m[5]-fh*2.0),y1:Math.min(h,m[5]+fh*1.5)});
   }
   const cluster=found.map(candidate=>found.filter(other=>Math.abs(candidate.right-other.right)<w*.014))
     .sort((a,b)=>b.length-a.length||b[0].right-a[0].right)[0];
@@ -98,6 +98,30 @@ function formulaFocus(canvas,baseline,letterHeight,width){
   const margin=Math.round(letterHeight*.26);
   return imageCrop(canvas,Math.max(0,left-margin),Math.max(0,top-margin),Math.min(width,right+margin),Math.min(height,bottom+margin));
 }
+async function readPrintedFormulaLabel(canvas,region,ctx,worker){
+  if(region.tagX==null||!/^\([A-ZА-ЯЁ]/iu.test(region.label))return null;
+  const {height,baseline,tagX,right}=region;
+  const bounds=[Math.max(0,tagX-height*.75),Math.max(0,baseline-height*1.6),
+    Math.min(canvas.width,right+height*.75),Math.min(canvas.height,baseline+height*.48)];
+  const {canvas:patch}=await ctx.renderTablePatch(canvas,bounds);
+  const tight=trimCell(patch);
+  patch.width=patch.height=1;
+  if(!tight)return null;
+  const same=label=>label?.replace('.','').toUpperCase()===region.label.replace('.','').toUpperCase();
+  const alphabet=/^\([А-ЯЁ]/iu.test(region.label)?'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ':'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  try{
+    for(const psm of ['7','8','13']){
+      await worker.setParameters({tessedit_pageseg_mode:psm,tessedit_char_whitelist:alphabet+'0123456789.()',user_defined_dpi:'400'});
+      const {data}=await worker.recognize(tight);
+      const reading=formulaLabel(data.text);
+      if(data.confidence>=60&&same(reading))return reading;
+    }
+    return null;
+  }finally{
+    tight.width=tight.height=1;
+    await worker.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});
+  }
+}
 async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   const regions=formulaRegions(items,viewport,canvas.width,canvas.height,canvas.pageMatrix);
   const detector=await getOcr(ctx.lang||'rus+eng');await detector.setParameters({tessedit_pageseg_mode:'3'});
@@ -142,6 +166,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   }
   if(!regions.length)return null;
   regions.sort((a,b)=>a.y0-b.y0);
+  for(const region of regions)region.printedLabel=await readPrintedFormulaLabel(canvas,region,ctx,detector);
   for(let i=0;i<regions.length;i++)regions[i].y0=extendClippedFormulaTop(canvas,regions[i],regions[i-1]);
   ctx.formulaStats={layout:FORMULA_LAYOUT_VERSION,count:(ctx.formulaStats?.count||0)+regions.length};
   const labels=new Set();
@@ -207,8 +232,12 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
       const inferred=latex.match(/\\tag\s*\{([^{}]+)\}/);
       const modelLabel=inferred&&formulaLabel('('+inferred[1]+')');
       const samePrintedLabel=r.visualLabel?.replace('.','')===r.label.replace('.','');
-      const label=modelLabel&&modelLabel===r.visualLabel?modelLabel:samePrintedLabel?r.visualLabel:r.label;
-      const conflict=modelLabel&&modelLabel!==label;
+      const label=r.printedLabel||(modelLabel&&modelLabel===r.visualLabel?modelLabel:samePrintedLabel?r.visualLabel:r.label);
+      const conflict=!r.printedLabel&&modelLabel&&modelLabel!==label;
+      if(r.printedLabel&&latex){
+        latex=latex.replace(/\\tag\s*\{[^{}]+\}/g,'').trim();
+        if(latex)latex+=' \\tag{'+label.slice(1,-1)+'}';
+      }
       if(conflict)ctx.pageIssue||='Расходятся чтения номера формулы '+r.label;
       if(labels.has(label))ctx.pageIssue||='Повторился номер формулы '+label;
       labels.add(label);

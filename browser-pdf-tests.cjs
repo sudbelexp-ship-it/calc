@@ -47,6 +47,14 @@ async function checkPatches(){
   assert(detail.canvas.width*detail.canvas.height<=4_000_000);
   assert.equal(detail.scale,render.viewport.scale);
   assert.deepEqual(Array.from(render.transform),[0,1,-1,0,140*detail.scale,30*detail.scale]);
+  c.trimCell=()=>({});
+  const config={renderTablePatch:async()=>({canvas:{}})};
+  const label={label:'(Ж21)',tagX:850,right:900,baseline:100,height:19};
+  const worker={setParameters:async()=>{},recognize:async()=>({data:{text:'(Ж.21)',confidence:88}})};
+  assert.equal(await c.readPrintedFormulaLabel({width:1000,height:800},label,config,worker),'(Ж.21)');
+  assert.equal(await c.readPrintedFormulaLabel({width:1000,height:800},{...label,label:'(Ж22)'},config,worker),null);
+  worker.recognize=async()=>({data:{text:'(Ж.21)',confidence:44}});
+  assert.equal(await c.readPrintedFormulaLabel({width:1000,height:800},label,config,worker),null);
 }
 checkPatches().then(()=>console.log('PASS: PDF scan detection, formula labels, capped crops and skipped oversized strips'))
   .catch(error=>{console.error(error);process.exitCode=1;});

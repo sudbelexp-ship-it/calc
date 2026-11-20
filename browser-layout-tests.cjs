@@ -78,6 +78,29 @@ for(const top of [29,79]){
   }
 }
 const sparseGrid={columns:[10,80,150,200],lines:[],bottom:115};
+// A wide table can contain just one number in a real data row, and none
+// to the right of a section heading. Blank grid cells remain distinct.
+const wideImage={width:460,height:225,data:new Uint8ClampedArray(460*225*4).fill(255)};
+const wideGrid={columns:[10,100,135,170,205,240,275,310,345,380,415,450],
+  left:10,right:450,bottom:210,lines:[20,185,210]};
+const marks=[];
+for(const [text,x,y] of [
+  ['Section',35,35],['heading',35,51],['X111',35,81],['12,5',117,81],
+  ['X222',35,110],['14,0',151,110],['X333',35,140],['15,7',118,140],
+  ['X444',35,170],['18,5',117,170],['X555',35,197],['19,0',151,197],
+]){
+  marks.push({text,x,y,height:12});
+  for(let dy=-5;dy<=5;dy++)for(let dx=-4;dx<=4;dx++)
+    wideImage.data.fill(0,((y+dy)*wideImage.width+x+dx)*4,((y+dy)*wideImage.width+x+dx)*4+3);
+}
+marks.push({text:'X999',x:35,y:65,height:12}); // text layer with no scan ink
+const sparsePlan=c.sparseBodyCells(wideImage,wideGrid,20,12,marks,2);
+assert.deepEqual(Array.from(sparsePlan.sections),[true,false,false,false,false,false]);
+assert.equal(sparsePlan.matrix[0][0].colspan,11);
+assert(sparsePlan.matrix[0].slice(1).every(cell=>cell.skip));
+assert(sparsePlan.matrix.slice(1).flat().every(cell=>!cell.skip&&cell.span===1));
+assert.equal(sparsePlan.matrix[5][0].bbox[1],185);
+assert.equal(c.sparseBodyCells(wideImage,wideGrid,20,12,marks,4),null);
 const sparse=c.bodyCells(sparseImage,sparseGrid,[23,43,63,83,103],13,12);
 for(const column of [0,1]){
   assert.equal(sparse[0][column].span,2);
