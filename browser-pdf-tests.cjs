@@ -18,6 +18,12 @@ const candidates=[item('(8.4)',820,210,28),item('(8.9)',860,260,29),item('(8.10)
 const regions=c.formulaRegions(candidates,{scale:1,transform:identity},1000,1000);
 assert.deepEqual(Array.from(regions,r=>r.label),['(8.9)','(8.10)']);
 assert.equal(c.formulaRegions([candidates[1]],{scale:1,transform:identity},1000,1000).length,1);
+assert.equal(c.formulaLabel('(Д7)'),'(Д7)');
+assert.equal(c.formulaLabel('(Б. 1)'),'(Б.1)');
+assert.equal(c.formulaLabel('(9,7)'),'(9.7)');
+assert(c.malformedFormula('x = \\left(a'));
+assert(c.malformedFormula('x = a_{1'));
+assert(!c.malformedFormula('x = \\left(a_{1}\\right)'));
 assert(c.incompleteFraction(String.raw`\eta=\frac{1}{1-\frac{N}{ }}`));
 assert(c.incompleteFraction(String.raw`\dfrac{{x} + y}{`));
 assert(!c.incompleteFraction(String.raw`\eta=\frac{1}{1-\frac{N}{N_{cr}}}`));

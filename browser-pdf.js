@@ -61,7 +61,7 @@ async function convPdf(buf, ctx){
         await exportPage(ctx,i,cached);parts.push(pageMarkdown(cached.text,i));ctx.pageProgress?.(i,pdf.numPages);continue;
       }
       const page=await pdf.getPage(i);
-      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegion=null;ctx.assets={};ctx.pageIssue='';ctx.glmSkippedOnPage=false;
+      ctx.tableStats=null;ctx.formulaStats=null;ctx.tableRegions=[];ctx.assets={};ctx.pageIssue='';ctx.glmSkippedOnPage=false;
       let cv=null;
       try{
         const base=page.getViewport({scale:1});
@@ -82,7 +82,8 @@ async function convPdf(buf, ctx){
           const y=m[5]+m[1]/direction*halfWidth+m[3]*.35;
           const height=Math.hypot(m[2],m[3]);
           const a=aligned.pageMatrix;
-          return [a?{text,height,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:{text,height,x,y}];
+          const token={text,height,width:halfWidth*2,x,y};
+          return [a?{...token,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:token];
         });
         let text=pageToMarkdown(items);
         ctx.sourceText=text;
@@ -97,7 +98,8 @@ async function convPdf(buf, ctx){
         const needsGrid=ctx.ocr&&(math||(!ctx.ocrAll&&!foreignLayer&&text.trim()));
         const grid=needsGrid?lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height)):null;
         const structuredLayer=Boolean(grid&&grid.columns.length>=4);
-        if(math&&structuredLayer&&grid.columns.length<7){
+        const captionedTable=math&&!structuredLayer&&tableCaptionLines(ctx.positionedTokens(cv)).length>0;
+        if(math&&(captionedTable||structuredLayer&&grid.columns.length<7)){
           const detailScale=Math.min(3,Math.sqrt(MAX_PX/(base.width*base.height)));
           if(detailScale>scale){
             vp=page.getViewport({scale:detailScale});
@@ -119,11 +121,13 @@ async function convPdf(buf, ctx){
               if(!formulas&&!table)table=await recognizeCellTable(cv,ctx,i);
             }else table=await recognizeCellTable(cv,ctx,i);
           }finally{ctx.math=previousMath;}
-          if(math&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
+          if(math&&!formulaFirst&&!table&&!formulas)formulas=await recognizeFormulaPage(page,cv,vp,items,ctx,i);
           if(table||formulas){text=[formulas,table].filter(Boolean).join('\n\n');ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else if(math){text=await glmPageText(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
-          if(!table&&!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
+          if(!table&&(tableCaptionLines(ctx.positionedTokens(cv)).length||!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))){
+            ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
+          }
         }
         if(ctx.pageIssue)text+='\n\n[?НЕПОЛНАЯ СТРАНИЦА: '+ctx.pageIssue+']';
         if(!text.trim())text='[нечитаемо]';

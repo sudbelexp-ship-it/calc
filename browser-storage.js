@@ -1,4 +1,5 @@
 const MAX_PX=4000000, PIPELINE='browser-3.4-tables.15';
+const TABLE_LAYOUT_VERSION=3, FORMULA_LAYOUT_VERSION=1;
 let outputHandle=null, paused=false;
 const dbPromise=new Promise((resolve,reject)=>{
   const req=indexedDB.open('bitexp-browser-ocr',1);
@@ -12,23 +13,28 @@ function safeName(name){return name.replace(/\.[^.]+$/,'').replace(/[^\p{L}\p{N}
 async function fileKey(file,ctx){const hash=await crypto.subtle.digest('SHA-256',await file.arrayBuffer());const h=Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,'0')).join('');return h+':'+[PIPELINE,ctx.math,ctx.ocr,ctx.ocrAll,ctx.lang,ctx.pages].join(':')+(ctx.policy==='scans'&&ctx.math?':glm-scans-v1':'');}
 async function resultLabel(file,key){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(key));return safeName(file.name)+'_'+Array.from(new Uint8Array(b),x=>x.toString(16).padStart(2,'0')).join('').slice(0,16);}
 function canvasBlob(cv){return new Promise((res,rej)=>cv.toBlob(b=>b?res(b):rej(new Error('Не удалось сохранить изображение')),'image/jpeg',0.92));}
+function pageAssetName(ctx,index,kind){
+  const prefix='img/p'+String(index).padStart(3,'0')+'_'+kind+'_';
+  const count=Object.keys(ctx.assets||{}).filter(path=>path.startsWith(prefix)).length;
+  return prefix+(count+1)+'.jpg';
+}
 async function writeFile(dir,name,data){const h=await dir.getFileHandle(name,{create:true});const w=await h.createWritable();try{await w.write(data);await w.close();}catch(e){await w.abort().catch(()=>{});throw e;}}
 function flagNumbers(text){
   // OCR is untrusted. Only explicit doubt wrappers and narrowly validated
   // generated markup may bypass flags; arbitrary <...> and $...$ may not.
-  return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<!--\s*таблица\s+\d+(?:\.\d+)*:\s*строк\s+\d+,\s*столбцов\s+\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
+  return String(text).split(/(\[\?[^\]\n]*\]|\$\$[\s\S]*?\$\$|\$[^$\n]+\$|!\[[^\]\n]*\]\((?:pages|img)\/p\d+[\w.-]*\.(?:jpg|png)\)|<!--\s*стр\.\s*\d+\s*-->|<!--\s*таблица\s+(?:[A-Za-zА-Яа-яЁё]\.)?\d+(?:\.\d+)*:\s*строк\s+\d+,\s*столбцов\s+\d+\s*-->|<\/?(?:table|thead|tbody|tr|th|td|br)(?:\s+(?:rowspan|colspan)="\d+")*\s*\/?\s*>)/g).map((part,i)=>i%2?(part.startsWith('$')?'[?'+part+']':part):part.replace(/[−+-]?\d+(?:[.,]\d+)*/g,'[?$&]')).join('');
 }
 function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|непрочитанная шапка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
 function pageAssetsComplete(page,index){
   if(!page?.image?.size)return false;
-  // Older mixed table/formula pages may have cached an unverified caption grid.
-  if(page.table&&page.formulas&&page.table.layout!==1)return false;
+  if(page.table&&page.table.layout!==TABLE_LAYOUT_VERSION)return false;
+  if(page.formulas&&page.formulas.layout!==FORMULA_LAYOUT_VERSION)return false;
   const references=Array.from(page.text.matchAll(/!\[[^\]]*\]\((img\/[^)]+)\)/g),match=>match[1]);
   const prefix='img/p'+String(index).padStart(3,'0')+'_';
   const belongs=path=>path.startsWith(prefix)&&/^img\/p\d+_(?:tabl|formula)_\d+\.jpg$/.test(path);
   const assets=Object.keys(page.assets||{});
   if(!assets.every(path=>belongs(path)&&page.assets[path]?.size>0))return false;
-  if(page.table&&!references.some(path=>path.includes('_tabl_')))return false;
+  if(page.table&&new Set(references.filter(path=>path.includes('_tabl_'))).size!==(page.table.tables?.length||1))return false;
   if(page.formulas&&references.filter(path=>path.includes('_formula_')).length!==page.formulas.count)return false;
   return references.every(path=>belongs(path)&&page.assets?.[path]?.size>0);
 }

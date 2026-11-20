@@ -10,7 +10,7 @@ vm.runInContext('dbGet=memoryGet;dbPut=memoryPut;',context);
 const root='output/browser-recovery-test';await fs.mkdir(root,{recursive:true});
 async function dir(path){return {getDirectoryHandle:async(n,o)=>{const p=path+'/'+n;if(o?.create)await fs.mkdir(p,{recursive:true});else try{await fs.access(p);}catch{const e=new Error();e.name='NotFoundError';throw e;}return dir(p);},getFileHandle:async(n,o)=>{const p=path+'/'+n;if(!o?.create)try{await fs.access(p);}catch{const e=new Error();e.name='NotFoundError';throw e;}return {createWritable:async()=>({write:async data=>fs.writeFile(p,typeof data==='string'?data:Buffer.from(await data.arrayBuffer())),close:async()=>{},abort:async()=>{}}),getFile:async()=>{const b=await fs.readFile(p);return new Blob([b]);}};}};}
 const ctx={key:'source:modeA',dir:await dir(root)};
-ctx.assets={'img/p001_formula_1.jpg':new Blob(['formula-crop']),'img/p001_tabl_1.jpg':new Blob(['table-crop'])};ctx.tableStats={layout:1,rows:1,columns:1,cells:[[{text:'25,0',alt:'250'}]]};ctx.formulaStats={count:1};
+ctx.assets={'img/p001_formula_1.jpg':new Blob(['formula-crop']),'img/p001_tabl_1.jpg':new Blob(['table-crop'])};ctx.tableStats={layout:3,rows:1,columns:1,cells:[[{text:'25,0',alt:'250'}]]};ctx.formulaStats={layout:1,count:1};
 const page={text:'25,0\n![Формула](img/p001_formula_1.jpg)\n![Таблица](img/p001_tabl_1.jpg)',image:new Blob(['image-test'])};
 await context.savePage(ctx,1,page.text,page.image);assert.equal(values.size,1);
 values.clear();const restored=await context.loadPage(ctx,1);assert.equal(restored.text,page.text);assert.equal(await restored.image.text(),'image-test');assert.equal(values.size,1);

@@ -34,6 +34,7 @@ assert.equal(c.tableCaption('Т а б л и ц а  2').id,'2');
 assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,'6.8');
 assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
 assert(c.tableCaption('Окончание таблицы 1').continued);
+assert.equal(c.tableCaption('Т а б л и ц а К.2').id,'К.2');
 assert.equal(c.tableCaption('см. таблицу 2'),null);
 assert(c.isNotesHeading('П р и м е ч а н и я'));
 assert(c.isNotesHeading('Примечание 1. Текст'));

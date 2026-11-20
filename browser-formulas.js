@@ -1,6 +1,10 @@
+function formulaLabel(text){
+  const label=text.trim().match(/^\(\s*(\d+\s*[.,]\s*\d+|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)$/iu);
+  return label?'('+label[1].replace(/\s/g,'').replace(',','.')+')':null;
+}
 function formulaRegions(items,viewport,w,h,alignment){
   const found=[];
-  for(const it of items){const match=it.str?.match(/\(\s*\d+\s*[. ,]\s*\d+\s*\)[.,]?\s*$/);if(!match)continue;const label=match[0].match(/\([^)]+\)/)[0];
+  for(const it of items){const match=it.str?.match(/\(\s*(?:\d+\s*[.,]\s*\d+|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)[.,]?\s*$/iu);if(!match)continue;const label=formulaLabel(match[0].match(/\([^)]+\)/)[0]);
     const base=pdfjsLib.Util.transform(viewport.transform,it.transform);
     const m=alignment?pdfjsLib.Util.transform(alignment,base):base;const fh=Math.max(8,Math.hypot(m[2],m[3]));
     const tagX=m[4]+(it.width||0)*viewport.scale*match.index/it.str.length;if(tagX<w*.70)continue;
@@ -29,6 +33,39 @@ function incompleteFraction(latex){
     }
   }
   return false;
+}
+function malformedFormula(latex){
+  if(incompleteFraction(latex))return true;
+  let braces=0,delimiters=0;
+  for(const [token] of latex.matchAll(/\\[{}]|\\left\b|\\right\b|[{}]/g)){
+    if(token==='{'||token==='}')braces+=token==='{'?1:-1;
+    if(token==='\\left'||token==='\\right')delimiters+=token==='\\left'?1:-1;
+    if(braces<0||delimiters<0)return true;
+  }
+  return braces!==0||delimiters!==0;
+}
+function extendClippedFormulaTop(canvas,region,previous){
+  const {width}=canvas;
+  const start=Math.floor(region.y0),left=Math.floor(width*.12),right=Math.floor(width*.82);
+  const limit=Math.max(0,Math.ceil(previous?.y1||0),start-Math.ceil(region.height*2.4));
+  if(start-limit<3)return region.y0;
+  const pixels=canvas.getContext('2d').getImageData(left,limit,right-left,start-limit+3);
+  const isolatedInk=y=>{
+    let first=right,last=left,ink=0;
+    for(let x=left;x<right;x++){
+      const index=((y-limit)*pixels.width+x-left)*4;
+      if(pixels.data[index]+pixels.data[index+1]+pixels.data[index+2]>=570)continue;
+      first=Math.min(first,x);last=x;ink++;
+    }
+    return ink>=2&&first>=width*.27&&last-first<width*.42;
+  };
+  if(![start,start+1,start+2].some(isolatedInk))return region.y0;
+  let first=start,gap=0;
+  for(let y=start-1;y>=limit;y--){
+    if(isolatedInk(y)){first=y;gap=0;}
+    else if(++gap>Math.max(3,region.height*.35))break;
+  }
+  return first<start-2?Math.max(limit,first-Math.ceil(region.height*.22)):region.y0;
 }
 function formulaFocus(canvas,baseline,letterHeight,width){
   const {height}=canvas,{data}=canvas.getContext('2d').getImageData(0,0,canvas.width,height);
@@ -77,20 +114,27 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   }
   const alignedRight=regions.length>=2?regions[0].right:null;
   const nearRight=x=>alignedRight===null||Math.abs(x-alignedRight)<canvas.width*.02;
-  for(const word of words){const b=word.bbox;if(!b||b.x0<canvas.width*.70||!nearRight(b.x1)||!/^\(\s*\d+[.,]\d+\s*\)$/.test(word.text))continue;const y=(b.y0+b.y1)/2,fh=Math.max(8,b.y1-b.y0);if(inline(b.x1,b.y1,fh)||regions.some(r=>y>=r.y0&&y<=r.y1))continue;regions.push({label:word.text,x0:canvas.width*.12,x1:canvas.width*.98,y0:Math.max(0,b.y1-fh*2),y1:Math.min(canvas.height,b.y1+fh*1.5)});}
-  if(regions.length<4){
+  const addVisualLabel=(word,offset=0,scale=1)=>{
+    const box=word.bbox,label=formulaLabel(word.text);
+    if(!box||!label||offset+box.x0/scale<canvas.width*.70)return;
+    const right=offset+box.x1/scale,baseline=box.y1/scale,height=Math.max(8,(box.y1-box.y0)/scale);
+    if(!nearRight(right)||inline(right,baseline,height))return;
+    const current=regions.find(region=>Math.abs((region.baseline??region.y0+region.height*2)-baseline)<height);
+    if(current){
+      if((word.confidence||0)>=75)current.visualLabel=label;
+      return;
+    }
+    const y0=Math.max(0,baseline-height*2),y1=Math.min(canvas.height,baseline+height*1.5);
+    regions.push({label,visualLabel:label,right,baseline,height,x0:canvas.width*.12,x1:canvas.width*.98,y0,y1});
+  };
+  for(const word of words)addVisualLabel(word);
+  {
     const left=Math.floor(canvas.width*.86);
     const margin=imageCrop(canvas,left,0,canvas.width,canvas.height,2);
     try{
       await detector.setParameters({tessedit_pageseg_mode:'11'});
       const result=await detector.recognize(margin);
-      for(const word of result.data.words||[]){
-        const b=word.bbox;
-        if(!b||!nearRight(left+b.x1/2)||!/^\(\d+[.,]\d+\)$/.test(word.text))continue;
-        const y=b.y1/2,fh=Math.max(8,(b.y1-b.y0)/2);
-        if(inline(left+b.x1/2,y,fh)||regions.some(r=>y>=r.y0&&y<=r.y1))continue;
-        regions.push({label:word.text,x0:canvas.width*.12,x1:canvas.width*.98,y0:Math.max(0,y-fh*2),y1:Math.min(canvas.height,y+fh*1.5)});
-      }
+      for(const word of result.data.words||[])addVisualLabel(word,left,2);
     }finally{
       margin.width=margin.height=1;
       await detector.setParameters({tessedit_pageseg_mode:'3'});
@@ -98,9 +142,11 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
   }
   if(!regions.length)return null;
   regions.sort((a,b)=>a.y0-b.y0);
-  ctx.formulaStats={count:regions.length};
+  for(let i=0;i<regions.length;i++)regions[i].y0=extendClippedFormulaTop(canvas,regions[i],regions[i-1]);
+  ctx.formulaStats={layout:FORMULA_LAYOUT_VERSION,count:(ctx.formulaStats?.count||0)+regions.length};
+  const labels=new Set();
   const body=imageCrop(canvas,0,0,canvas.width,canvas.height);const c=body.getContext('2d');c.fillStyle='#fff';for(const r of regions)c.fillRect(r.x0,r.y0,r.x1-r.x0,r.y1-r.y0);
-  if(ctx.tableRegion){const [x0,y0,x1,y1]=ctx.tableRegion;c.fillRect(x0,y0,x1-x0,y1-y0);}
+  for(const [x0,y0,x1,y1] of ctx.tableRegions||[])c.fillRect(x0,y0,x1-x0,y1-y0);
   let text;try{text=await ocrImage(body,ctx);}finally{body.width=body.height=1;}
   ctx.assets??={};
   for(let n=0;n<regions.length;n++){
@@ -130,7 +176,7 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
             }finally{focused.width=focused.height=1;}
           }finally{if(reference!==expanded)expanded.width=expanded.height=1;}
         }
-        if(incompleteFraction(latex))ctx.pageIssue||='В формуле '+r.label+' не распознана часть дроби';
+        if(malformedFormula(latex))ctx.pageIssue||='В формуле '+r.label+' не восстановлена структура LaTeX';
         const variable=latex.match(/^\s*([A-Z])\s*=/)?.[1];
         if(variable&&r.baseline!=null){
           const positions=items.filter(item=>item.str?.trim()).map(item=>{
@@ -155,14 +201,19 @@ async function recognizeFormulaPage(page,canvas,viewport,items,ctx,pageIndex){
           }
         }
       }finally{ctx.task=task;input.width=input.height=1;}
-      const name='img/p'+String(pageIndex).padStart(3,'0')+'_formula_'+(n+1)+'.jpg';
+      const name=pageAssetName(ctx,pageIndex,'formula');
       try{ctx.assets[name]=await canvasBlob(reference);}finally{if(reference!==patch)reference.width=reference.height=1;}
       latex=latex.replace(/^\s*\$\$|\$\$\s*$/g,'').trim();
-      const inferred=latex.match(/\\tag\s*\{\s*(\d+\s*\.\s*\d+)\s*\}/);
-      const label=inferred?'('+inferred[1].replace(/\s/g,'')+')':r.label;
-      const conflict=r.label.replace(/[(),.\s]/g,'')!==label.replace(/[(),.\s]/g,'');
+      const inferred=latex.match(/\\tag\s*\{([^{}]+)\}/);
+      const modelLabel=inferred&&formulaLabel('('+inferred[1]+')');
+      const samePrintedLabel=r.visualLabel?.replace('.','')===r.label.replace('.','');
+      const label=modelLabel&&modelLabel===r.visualLabel?modelLabel:samePrintedLabel?r.visualLabel:r.label;
+      const conflict=modelLabel&&modelLabel!==label;
+      if(conflict)ctx.pageIssue||='Расходятся чтения номера формулы '+r.label;
+      if(labels.has(label))ctx.pageIssue||='Повторился номер формулы '+label;
+      labels.add(label);
       const link='\n\n![Формула '+label+']('+name+')';
-      if(latex)text+='\n\n$$'+latex+'$$ '+label+link+'\n\n[?LaTeX не сверен с вырезкой]'+(conflict?'\n\n[?Номер по тексту: '+r.label+']':'')+caseNote;
+      if(latex)text+='\n\n$$'+latex+'$$ '+label+link+'\n\n[?LaTeX не сверен с вырезкой]'+(conflict?'\n\n[?Номер по GLM‑OCR: '+modelLabel+']':'')+caseNote;
       else {
         ctx.pageIssue||='В формуле '+label+' не распознан LaTeX';
         text+='\n\n[?Формула '+label+' не распознана. См. вырезку.]'+link;
