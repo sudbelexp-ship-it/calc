@@ -1417,7 +1417,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   const numeric=/^[±−+-]?\s*\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
   const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
   const read=async(patch,header=false,body=false)=>{
-    const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,empty:true};
+    const tight=trimCell(patch);if(!tight)return {text:'',confidence:100,variants:[],turn:0,empty:true};
     try{
       await worker.setParameters({tessedit_pageseg_mode:header?'6':'7',preserve_interword_spaces:'1',user_defined_dpi:'400'});
       let result=(await worker.recognize(tight)).data,variants=[],turnChosen=0;variants.push({text:result.text.trim(),confidence:result.confidence});
