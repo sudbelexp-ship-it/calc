@@ -26,7 +26,7 @@ s=s.replace('/* ---------- утилиты ---------- */',(root/'browser-names.js
 # Mark numeric tokens outside image links and math: preserve valid LaTeX and paths.
 s=s.replace('return fixUnits(text.replace', 'return (text.replace')
 s=s.replace("const bad = await gpuSupport();\n    if (bad) throw", "if (ocrWorker) { await ocrWorker.terminate(); ocrWorker = null; ocrLang = null; }\n    const bad = await gpuSupport();\n    if (bad) throw")
-s=s.replace("const w = await getOcr($('lang').value);", "const w = await getOcr(ctx.lang || $('lang').value);")
+s=s.replace("const w = await getOcr($('lang').value);", "const w = await getOcr(ctx.lang || $('lang').value);\n  await w.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});")
 s=s.replace("  const { data } = await w.recognize(src);\n  ocrCb = null;", "  let cancel; const abort=new Promise((_,reject)=>cancel=reject);ctx.abort=()=>{w.terminate();ocrWorker=null;ocrLang=null;cancel(new Error('Распознавание отменено'));};\n  let data;try{({data}=await Promise.race([w.recognize(src),abort]));}finally{ctx.abort=null;ocrCb=null;}")
 s=s.replace("const cb = e => { if (e.status === 'progress_total' && glmDl) glmDl(e.progress); };", "const cb = e => { if (e.progress != null && glmDl) glmDl(e.progress); };")
 # GLM inference lives in a separate Worker, not the interface thread.

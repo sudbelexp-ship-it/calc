@@ -332,6 +332,7 @@ async function getOcr(lang){
 }
 async function ocrImage(src, ctx){
   const w = await getOcr(ctx.lang || $('lang').value);
+  await w.setParameters({tessedit_pageseg_mode:'3',tessedit_char_whitelist:''});
   ocrCb = m => { if (m.status === 'recognizing text' && ctx.onProgress) ctx.onProgress(m.progress); };
   let cancel; const abort=new Promise((_,reject)=>cancel=reject);ctx.abort=()=>{w.terminate();ocrWorker=null;ocrLang=null;cancel(new Error('Распознавание отменено'));};
   let data;try{({data}=await Promise.race([w.recognize(src),abort]));}finally{ctx.abort=null;ocrCb=null;}
