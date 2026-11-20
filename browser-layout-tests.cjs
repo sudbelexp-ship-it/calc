@@ -35,6 +35,21 @@ assert.equal(c.tableCaption('Продолжение таблицы № 6.8').id,
 assert(c.tableCaption('Продолжение таблицы № 6.8').continued);
 assert(c.tableCaption('Окончание таблицы 1').continued);
 assert.equal(c.tableCaption('см. таблицу 2'),null);
+assert(c.isNotesHeading('П р и м е ч а н и я'));
+assert(c.isNotesHeading('Примечание 1. Текст'));
+assert(!c.isNotesHeading('Примечаниями'));
+const bow={width:520,height:325,data:new Uint8ClampedArray(520*325*4).fill(255)};
+const darken=(x,y)=>bow.data.fill(0,(y*bow.width+x)*4,(y*bow.width+x)*4+3);
+const bodyColumns=[20,136,196,256,315,375,435,495];
+for(const y of [22,161,211,261,311])for(let x=20;x<=495;x++)darken(x,y);
+for(const y of [75,120])for(let x=136;x<=495;x++)darken(x,y);
+for(const [i,x] of bodyColumns.entries()){
+  const start=i===0||i===1||i===7?22:i===4?75:120;
+  for(let y=start;y<=311;y++)darken(x,y);
+}
+const recovered=c.lineGrid(bow,true);
+assert.equal(recovered.columns.length,8);
+assert.deepEqual(Array.from(recovered.bodyEdges),[161,211,261,311]);
 const compactGrid={top:80,columns:[20,100,170,240,310,380],
   vertical:[[100,80,320],[170,128,320],[240,129,320],[310,129,320]]};
 assert.equal(c.ruledHeaderBoundary(compactGrid,18,[80,176,225,273,320]),176);

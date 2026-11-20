@@ -16,7 +16,7 @@ function deskewCanvas(canvas){
   const cv=document.createElement('canvas');cv.width=canvas.width;cv.height=canvas.height;const c=cv.getContext('2d');c.fillStyle='#fff';c.fillRect(0,0,cv.width,cv.height);c.translate(cv.width/2,cv.height/2);c.rotate(angle*Math.PI/180);c.drawImage(canvas,-canvas.width/2,-canvas.height/2);
   const a=angle*Math.PI/180,co=Math.cos(a),si=Math.sin(a);cv.pageMatrix=pdfjsLib.Util.transform([co,si,-si,co,cv.width/2-co*cv.width/2+si*cv.height/2,cv.height/2-si*cv.width/2-co*cv.height/2],canvas.pageMatrix||[1,0,0,1,0,0]);return cv;
 }
-function lineGrid(image){
+function lineGrid(image,captionHasNotes=false){
   const {width:w,height:h,data}=image;const xs=[],ys=[];const horizontal=[],vertical=[];
   const dark=(x,y)=>{const k=(y*w+x)*4;return data[k]+data[k+1]+data[k+2]<660&&data[k+3]>100;};
   const dh=(x,y)=>dark(x,y)||y>1&&dark(x,y-2)||y<h-2&&dark(x,y+2);
@@ -27,6 +27,10 @@ function lineGrid(image){
   const longest=Math.max(0,...horizontal.map(r=>r[2]-r[0]));const major=horizontal.filter(r=>r[2]-r[0]>longest*.7);
   if(!major.length)return null;
   const tableTop=Math.min(...major.map(r=>r[1]));
+  if(captionHasNotes){
+    const ruled=ruledGridAboveNotes(major,vertical,tableTop);
+    if(ruled)return ruled;
+  }
   const useVertical=vertical.filter(r=>r[2]>tableTop+minV*.7&&r[1]<tableTop+minV*2);vertical.splice(0,vertical.length,...useVertical);
   let columns=clusterPositions(vertical.map(r=>r[0]),4);const lines=clusterPositions(ys.filter(y=>y>=tableTop-3),4);
   const gaps=columns.slice(1).map((v,i)=>v-columns[i]).sort((a,b)=>a-b);
@@ -46,6 +50,27 @@ function lineGrid(image){
   const fullLines=clusterPositions(horizontal.filter(r=>r[2]-r[0]>(right-left)*.9).map(r=>r[1]),4);
   const ends=columns.map(x=>vertical.filter(r=>Math.abs(r[0]-x)<10).sort((a,b)=>(b[2]-b[1])-(a[2]-a[1]))[0]?.[2]).filter(Number.isFinite).sort((a,b)=>a-b);
   return {columns,lines,horizontal,vertical,fullLines,headerTop:Math.min(...starts),headerStart:starts[Math.floor(starts.length/2)],top:tableTop,bottom:ends[Math.floor(ends.length*.6)]||Math.max(...vertical.map(r=>r[2])),left,right};
+}
+function ruledGridAboveNotes(horizontal,vertical,top){
+  const tolerance=5;
+  const outline=horizontal.filter(([,y])=>y<=top+tolerance).sort((a,b)=>(b[2]-b[0])-(a[2]-a[0]))[0];
+  const [left,,right]=outline;
+  const width=right-left;
+  const full=clusterPositions(horizontal.filter(([x,,end])=>x<left+width*.04&&end>right-width*.04)
+    .map(([,y])=>y),tolerance);
+  if(full.length<4)return null;
+  const bottom=full.at(-1),lastRowsStart=full.at(-3);
+  const through=vertical.filter(([x,start,end])=>x>left+2*tolerance&&x<right-2*tolerance&&
+    start<=lastRowsStart+tolerance&&end>=bottom-tolerance);
+  const columns=[left,...clusterPositions(through.map(([x])=>x),tolerance),right];
+  if(columns.length<4||columns.some((x,i)=>i&&x-columns[i-1]<2*tolerance))return null;
+  const starts=columns.slice(1,-1).map(x=>Math.min(...through.filter(rule=>Math.abs(rule[0]-x)<=tolerance).map(rule=>rule[1])));
+  const levels=clusterPositions(starts.filter(y=>y>top+2*tolerance),tolerance);
+  const deepest=levels.filter(y=>starts.filter(start=>Math.abs(start-y)<=tolerance).length>=2).at(-1);
+  if(deepest==null)return null;
+  const bodyEdges=full.filter(y=>y>=deepest-tolerance);
+  if(bodyEdges.length<3)return null;
+  return {columns,lines:full,fullLines:full,horizontal,vertical,headerTop:top,top,bottom,left,right,bodyEdges};
 }
 function pixelRows(canvas,grid,first,height){
   const {width:w,height:h,data}=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height);const active=[];
@@ -446,27 +471,45 @@ function positionedLines(positioned){
   for(const line of groups)line.tokens.sort((a,b)=>a.x-b.x);
   return groups;
 }
-function captionGrid(canvas,positioned){
+function isNotesHeading(text){
+  return /^примечани[ея](?:$|[\s:.,—–-]|\d)/i.test(text.trim().replace(/^п\s*р\s*и\s*м\s*е\s*ч\s*а\s*н\s*и\s*([ея])/i,'Примечани$1'));
+}
+function captionGrid(canvas,positioned,notesOnly=false){
   const groups=positionedLines(positioned);
-  for(const line of groups){
+  const titleAt=line=>line.tokens.map(token=>token.text).join(' ');
+  const isCaption=title=>/^\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title);
+  for(let index=0;index<groups.length;index++){
+    const line=groups[index];
     const tokens=line.tokens;
-    const title=tokens.map(token=>token.text).join(' ');
-    if(!/^\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title))continue;
+    const title=titleAt(line);
+    if(!isCaption(title))continue;
     const caption=tableCaption(title);
     if(!caption)continue;
     const height=Math.max(10,...tokens.map(token=>token.height));
     const from=Math.max(0,Math.floor(line.y-height*.76));
     const to=Math.min(canvas.height,Math.ceil(line.y+canvas.height*.27));
-    const crop=imageCrop(canvas,0,from,canvas.width,to);
-    try{
-      const grid=lineGrid(crop.getContext('2d').getImageData(0,0,crop.width,crop.height));
-      if(!grid||grid.columns.length<4||grid.top>height*3.9||grid.bottom-grid.top<height*2.6)continue;
-      for(const key of ['headerTop','headerStart','top','bottom'])grid[key]+=from;
+    const note=groups.slice(index+1).find(next=>next.y>=to||isCaption(titleAt(next))||isNotesHeading(titleAt(next)));
+    const noteTop=note&&note.y<to&&!isCaption(titleAt(note))?
+      Math.floor(note.y-Math.max(...note.tokens.map(token=>token.height))*.55):null;
+    if(notesOnly&&noteTop==null)continue;
+    const readGrid=(end,withNotes)=>{
+      const crop=imageCrop(canvas,0,from,canvas.width,end);
+      try{return lineGrid(crop.getContext('2d').getImageData(0,0,crop.width,crop.height),withNotes);}
+      finally{crop.width=crop.height=1;}
+    };
+    const refined=noteTop>from+height*3?readGrid(noteTop,true):null;
+    if(notesOnly&&!refined?.bodyEdges)continue;
+    const grid=refined?.bodyEdges?refined:readGrid(to,false);
+    if(grid){
+      if(grid.columns.length<4||grid.top>height*3.9||grid.bottom-grid.top<height*2.6)continue;
+      for(const key of ['headerTop','headerStart','top','bottom'])if(grid[key]!=null)grid[key]+=from;
       grid.lines=grid.lines.map(y=>y+from);grid.fullLines=grid.fullLines.map(y=>y+from);
+      if(grid.bodyEdges)grid.bodyEdges=grid.bodyEdges.map(y=>y+from);
       grid.horizontal=grid.horizontal.map(([left,y,right])=>[left,y+from,right]);
       grid.vertical=grid.vertical.map(([x,top,bottom])=>[x,top+from,bottom+from]);
+      if(noteTop!=null&&grid.bottom>noteTop+5&&!grid.bodyEdges)grid.needsReview=true;
       return {grid,caption,from};
-    }finally{crop.width=crop.height=1;}
+    }
   }
   return null;
 }
@@ -637,9 +680,12 @@ async function recognizeCellTable(canvas,ctx,pageIndex,alongsideFormulas=false){
   const aligned=deskewCanvas(canvas);
   try{
     const image=aligned.getContext('2d',{willReadFrequently:true}).getImageData(0,0,aligned.width,aligned.height);
+    const positioned=ctx.positionedTokens?.(aligned)||[];
+    const refined=alongsideFormulas?null:captionGrid(aligned,positioned,true);
+    if(refined)return await recognizeAlignedTable(aligned,ctx,pageIndex,image,refined.grid,refined.caption,false,refined.from);
     const geometry=alongsideFormulas?null:lineGrid(image);
     if(geometry&&geometry.columns.length>=4)return await recognizeAlignedTable(aligned,ctx,pageIndex,image,geometry);
-    const local=captionGrid(aligned,ctx.positionedTokens?.(aligned)||[]);
+    const local=captionGrid(aligned,positioned);
     if(!local)return null;
     const text=await recognizeAlignedTable(aligned,ctx,pageIndex,image,local.grid,local.caption,alongsideFormulas,local.from);
     if(text&&alongsideFormulas)ctx.tableRegion=[local.grid.left,local.from,local.grid.right,local.grid.bottom];
@@ -662,7 +708,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   }):[];
   const ruledHeader=knownCaption&&narrow?(headerAboveDecimalRows(grid,ctx.positionedTokens?.(canvas)||[],height)||
     ruledHeaderBoundary(grid,height,fullWidth)):null;
-  const first=ruledHeader||grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||
+  const first=grid.bodyEdges?.[0]||ruledHeader||grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||
     (bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
   let caption=knownCaption||tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
   const top=Math.min(grid.top,grid.headerTop);
@@ -679,7 +725,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   const dividers=ruledHeader?fullWidth.filter(y=>y>first+5&&y<grid.bottom-5):narrow?clusterPositions(grid.horizontal
     .filter(([left,y,right])=>y>first+5&&y<grid.bottom-5&&left<=grid.columns[1]+6&&right>=grid.right-6)
     .map(line=>line[1]),4):[];
-  const ruledEdges=dividers.length>=2?[first,...dividers,grid.bottom]:null;
+  const ruledEdges=grid.bodyEdges||(dividers.length>=2?[first,...dividers,grid.bottom]:null);
   const body=ruledEdges?ruledEdges.slice(1).map((edge,i)=>(ruledEdges[i]+edge)/2):pixelRows(canvas,grid,first,height);
   if(body.length<2||body.length*(grid.columns.length-1)>1400){
     if(caption)ctx.pageIssue='Не удалось восстановить ячейки таблицы '+caption.id;
@@ -688,7 +734,8 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   const matrix=bodyCells(image,grid,body,first,height,words,ruledEdges);
   const headerGrid=caption?.continued?{...grid,headerTop:grid.top}:grid;
   const headers=headerCells(image,headerGrid,first,caption?.continued?(grid.right-grid.left)*.075:18);
-  ctx.tableStats={rows:body.length,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
+  ctx.tableStats={layout:1,rows:body.length,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
+  if(grid.needsReview)ctx.pageIssue||='Не удалось отделить примечания от строк таблицы';
   const crop=imageCrop(canvas,grid.left,Math.min(grid.top,grid.headerTop),grid.right,grid.bottom),name='img/p'+String(pageIndex).padStart(3,'0')+'_tabl_1.jpg';
   ctx.assets??={};ctx.assets[name]=await canvasBlob(crop);crop.width=crop.height=1;
   const id=caption?.id||'[?номер не распознан]';
@@ -1167,6 +1214,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   out+='</thead><tbody>';
   for(const row of matrix){out+='<tr>';for(const cell of row){if(cell.skip)continue;out+='<td'+(cell.span>1?' rowspan="'+cell.span+'"':'')+'>'+htmlEscape(cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]')+'</td>';}out+='</tr>';}
   ctx.tableStats.cells=matrix;
+  if(matrix.some(row=>row.some(cell=>!cell.skip&&cell.text&&isNotesHeading(cell.text)))){
+    ctx.pageIssue||='Примечания попали в строки таблицы';
+  }
   if(formulaLinks.length)ctx.formulaStats={count:formulaLinks.length};
   return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+body.length+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+[...formulaLinks,prose].join('\n\n');
 }

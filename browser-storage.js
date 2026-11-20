@@ -21,6 +21,8 @@ function flagNumbers(text){
 function pageComplete(text){return typeof text==='string'&&!!text.trim()&&!/Генерация остановлена|\[нечитаемо\]|непрочитанная ячейка|непрочитанная шапка|\[\?НЕПОЛНАЯ СТРАНИЦА/.test(text);}
 function pageAssetsComplete(page,index){
   if(!page?.image?.size)return false;
+  // Older mixed table/formula pages may have cached an unverified caption grid.
+  if(page.table&&page.formulas&&page.table.layout!==1)return false;
   const references=Array.from(page.text.matchAll(/!\[[^\]]*\]\((img\/[^)]+)\)/g),match=>match[1]);
   const prefix='img/p'+String(index).padStart(3,'0')+'_';
   const belongs=path=>path.startsWith(prefix)&&/^img\/p\d+_(?:tabl|formula)_\d+\.jpg$/.test(path);
