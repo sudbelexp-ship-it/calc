@@ -11,11 +11,13 @@ assert.equal(ctx.flagNumbers('<td rowspan="2">12</td>'), '<td rowspan="2">[?12]<
 assert.equal(ctx.flagNumbers('<!-- таблица 6.8: строк 6, столбцов 24 -->'),'<!-- таблица 6.8: строк 6, столбцов 24 -->');
 assert.equal(ctx.flagNumbers('<!-- OCR 25 -->'),'<!-- OCR [?25] -->');
 const md=ctx.pageMarkdown('25,0',2);assert(md.includes('<!-- стр. 2 -->'));assert(md.includes('pages/p002.jpg'));assert(md.includes('[?25,0]'));
+assert(ctx.hasUnplacedTableRow({table:{},text:'<table></table>\n| 1,5 | 3,2 | 4,0 | 5,5 | 6,7 |'}));
+assert(!ctx.hasUnplacedTableRow({table:{},text:'<table></table>\nПримечание 1.'}));
 const html=readFileSync('markitdown.html','utf8');
 assert.equal((html.match(/<p id="storageInfo" role="status">/g)||[]).length,1);
 assert(!/127\.0\.0\.1|install\.bat|start\.bat|ocr-local-2\.2/.test(html));
 assert(html.includes('new Worker(\'browser-glm-worker-'));
-const pdf=readFileSync('browser-pdf.js','utf8');assert(pdf.indexOf('await loadPage')<pdf.indexOf('await pdf.getPage'));assert(pdf.includes('await pdf.destroy()'));assert(pdf.includes('page.cleanup()'));
+const pdf=readFileSync('browser-pdf.js','utf8').split('async function convPdf')[1];assert(pdf.indexOf('await loadPage')<pdf.indexOf('await pdf.getPage'));assert(pdf.includes('await loadingTask.destroy()'));assert(pdf.includes('page.cleanup()'));
 new vm.Script(html.match(/<script>([\s\S]*?)<\/script>/)[1]);
 new vm.Script(readFileSync('browser-glm-worker.js','utf8'));
 console.log('Passed: numeric flags, LaTeX/image paths, page markers, browser-only links, cache-before-render, cleanup, JS syntax');

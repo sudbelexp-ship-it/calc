@@ -38,7 +38,7 @@ async function getGlm(){
     
     const bad = await gpuSupport();
     if (bad) throw new Error(bad);
-    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2');
     await configureModelCache(TX);
     const cb = e => { if (e.progress != null && glmDl) glmDl(e.progress,e.file); };
     const [processor, model] = await Promise.all([

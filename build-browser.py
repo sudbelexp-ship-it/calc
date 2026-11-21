@@ -102,8 +102,31 @@ async function glmRecognize(cv,ctx){
   return '';
 }
 async function glmPageText(cv,ctx){
-  const text=await glmRecognize(cv,ctx);
-  return ctx.glmSkippedOnPage?ocrImage(cv,ctx):text;
+  const text=ctx.wasTruncated?'':await glmRecognize(cv,ctx);
+  if(ctx.glmSkippedOnPage)return ocrImage(cv,ctx);
+  if(text&&!text.includes('Генерация остановлена'))return text;
+  const pixels=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);
+  let split=0,least=Infinity;
+  for(let y=Math.floor(cv.height*.4);y<cv.height*.6;y++){
+    let ink=0;
+    for(let x=2;x<cv.width-2;x+=2){
+      const k=(y*cv.width+x)*4;
+      if(pixels.data[k]+pixels.data[k+1]+pixels.data[k+2]<560)ink++;
+    }
+    if(ink<least){least=ink;split=y;}
+  }
+  if(least>cv.width*.002||!split)return text||await glmRecognize(cv,ctx);
+  const sections=[];
+  for(const [top,bottom] of [[0,split],[split,cv.height]]){
+    await waitResume(ctx);
+    const crop=imageCrop(cv,0,top,cv.width,bottom);
+    try{
+      const part=await glmRecognize(crop,ctx);
+      if(!part.trim()||part.includes('Генерация остановлена'))return text||await glmRecognize(cv,ctx);
+      sections.push(part);
+    }finally{crop.width=crop.height=1;}
+  }
+  return sections.join('\\n\\n');
 }
 function markGlmMemoryLimit(text,ctx){
   return ctx.glmSkippedOnPage?text+'\\n\\n[?НЕПОЛНАЯ СТРАНИЦА: GLM‑OCR не хватило памяти. Сохранён результат обычного OCR.]':text;

@@ -122,12 +122,12 @@ footer a,.info a{color:var(--accent)}
 <footer>Результат конвертации носит справочный характер; сканы проверяйте глазами. Главная: <a href="index.html">c.bit-exp.ru</a>.</footer>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mammoth@1.8.0/mammoth.browser.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/turndown@7.2.0/lib/turndown.browser.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.2/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mammoth@1.13.0/mammoth.browser.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/turndown@7.2.5/lib/turndown.browser.umd.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/turndown-plugin-gfm@1.0.2/dist/turndown-plugin-gfm.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js"></script>
 <script>
 (function(){
 'use strict';
@@ -162,6 +162,13 @@ async function getOcr(lang){
   ocrWorker = await Tesseract.createWorker(lang, 1, {
     logger: m => { if (ocrCb) ocrCb(m); }
   });
+  const recognize=ocrWorker.recognize.bind(ocrWorker);
+  ocrWorker.recognize=async(image,options,output={text:true,blocks:true})=>{
+    const result=await recognize(image,options,output);
+    result.data.words=(result.data.blocks||[]).flatMap(block=>
+      block.paragraphs.flatMap(paragraph=>paragraph.lines.flatMap(line=>line.words)));
+    return result;
+  };
   ocrLang = lang;
   return ocrWorker;
 }
@@ -194,7 +201,7 @@ async function getGlm(){
   if (!glmLoading) glmLoading = (async () => {
     const bad = await gpuSupport();
     if (bad) throw new Error(bad);
-    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.0');
+    const TX = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@4.3.2');
     const cb = e => { if (e.status === 'progress_total' && glmDl) glmDl(e.progress); };
     const [processor, model] = await Promise.all([
       TX.AutoProcessor.from_pretrained(GLM_ID, {progress_callback: cb}),
@@ -489,8 +496,8 @@ let pdfReady = false;
 let pdfjsLib;
 async function initPdf(){
   if (pdfReady) return;
-  pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+  pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/build/pdf.min.mjs');
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/build/pdf.worker.min.mjs';
   pdfReady = true;
 }
 

@@ -2,6 +2,11 @@ const vm=require('node:vm'),fs=require('node:fs'),assert=require('node:assert/st
 async function main(){
   const controls={};const context={$:id=>controls[id]??={},document:{addEventListener(){}},console,navigator:{},setTimeout,Promise};
   vm.createContext(context);vm.runInContext(fs.readFileSync('browser-queue.js','utf8'),context);
+  const countJob={complete:33,total:44,state:'error',start:{},pause:{},count:{},
+    bar:{style:{},parentNode:{setAttribute(){}}}};
+  context.updateJob(countJob);
+  assert.match(countJob.count.textContent,/33 \/ 44.*75%/);
+  assert.equal(countJob.bar.style.width,'75%');
   vm.runInContext(`updateJob=()=>{};var ran=[];var outstanding=0;var maxOutstanding=0;var releaseFirst;
   runJob=async j=>{j.state='running';ran.push(j.id);outstanding++;maxOutstanding=Math.max(maxOutstanding,outstanding);if(j.id===1)await new Promise(r=>releaseFirst=r);j.state='done';outstanding--;};
   jobs.push({id:1,state:'ready',badge:{}},{id:2,state:'ready',badge:{}},{id:3,state:'ready',badge:{}});`,context);

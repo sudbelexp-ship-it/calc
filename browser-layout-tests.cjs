@@ -154,3 +154,17 @@ fraction.ink(44,43,78,45);
 const bar=c.fractionBar(fraction.canvas,13);
 assert.deepEqual([bar.left,bar.right,bar.top,bar.bottom],[44,78,43,44]);
 console.log('PASS: grid, skew, merged cells, aligned sparse rows, multilevel headers, false rules, table captions');
+
+// Detached ruled blocks in a change notice have their own first and last rows.
+const notice={width:340,height:220,data:new Uint8ClampedArray(340*220*4).fill(255)};
+function drawRule(x0,y0,x1,y1){
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    const k=(y*notice.width+x)*4;notice.data.fill(0,k,k+3);
+  }
+}
+for(const [top,bottom,middle] of [[15,65,40],[115,185,150]]){
+  for(let x=20;x<=320;x+=30)drawRule(x,top,x,bottom);
+  for(const y of [top,middle,bottom])drawRule(20,y,320,y);
+}
+const noticeGrids=c.amendmentDataGrids(notice);
+assert.deepEqual(Array.from(noticeGrids,g=>[g.columns.length,g.bodyEdges.length]),[[11,3],[11,3]]);

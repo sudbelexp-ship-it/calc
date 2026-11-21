@@ -32,6 +32,25 @@ function lineGrid(image,captionHasNotes=false,closedCaption=false,appendix=false
     const ruled=ruledGridAboveNotes(major,vertical,tableTop);
     if(ruled)return ruled;
   }
+  // Follow repeated full-width rules through scan gaps in individual verticals.
+  const outline=major.find(rule=>rule[1]===tableTop);
+  const alignedRules=major.filter(([x,,end])=>Math.abs(x-outline[0])<10&&Math.abs(end-outline[2])<10);
+  const edges=clusterPositions(alignedRules.map(rule=>rule[1]),4);
+  if(edges.length>=7){
+    const gaps=edges.slice(1).map((edge,i)=>edge-edges[i]);
+    const pitch=gaps.slice().sort((a,b)=>a-b)[Math.floor(gaps.length/2)];
+    const regular=gaps.filter(gap=>Math.abs(gap-pitch)<=pitch*.12);
+    const left=outline[0],right=outline[2],bottom=edges.at(-1);
+    if(regular.length>=gaps.length*.7&&pitch>10){
+      const inner=vertical.filter(([x,start,end])=>x>left+8&&x<right-8&&start<bottom&&
+        end>edges[2]&&edges.filter(y=>start-4<=y&&end+4>=y).length>=3);
+      const columns=[left,...clusterPositions(inner.map(rule=>rule[0]),5),right];
+      if(columns.length>=9&&columns.every((x,i)=>!i||x-columns[i-1]>10)){
+        return {columns,lines:edges,horizontal,vertical,fullLines:edges,headerTop:tableTop,
+          headerStart:tableTop,top:tableTop,bottom,left,right,regularEdges:edges};
+      }
+    }
+  }
   const useVertical=vertical.filter(r=>r[2]>tableTop+minV*.7&&r[1]<tableTop+minV*2);vertical.splice(0,vertical.length,...useVertical);
   let columns=clusterPositions(vertical.map(r=>r[0]),4);const lines=clusterPositions(ys.filter(y=>y>=tableTop-3),4);
   const gaps=columns.slice(1).map((v,i)=>v-columns[i]).sort((a,b)=>a-b);
@@ -119,6 +138,25 @@ function ruleCoverage(image,x0,y0,x1,y1){
   const {width:w,height:h,data}=image;const vertical=Math.abs(x1-x0)<Math.abs(y1-y0);
   if(vertical){let best=0;for(let dx=-8;dx<=8;dx++){let n=0,count=0;for(let y=Math.ceil(y0+2);y<y1-2;y+=2){count++;let ink=false;for(let d=-1;d<=1;d++){const x=Math.round(x0+dx+d);if(x<0||x>=w||y<0||y>=h)continue;const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){ink=true;break;}}if(ink)n++;}best=Math.max(best,n/Math.max(1,count));}return best>=.75?best:0;}
   {let best=0;for(let dy=-3;dy<=3;dy++){let n=0,count=0;for(let x=Math.ceil(x0+2);x<x1-2;x+=2){count++;let ink=false;for(let d=-1;d<=1;d++){const y=Math.round(y0+dy+d);if(x<0||x>=w||y<0||y>=h)continue;const k=(y*w+x)*4;if(data[k]+data[k+1]+data[k+2]<660){ink=true;break;}}if(ink)n++;}best=Math.max(best,n/Math.max(1,count));}return best>=.75?best:0;}
+}
+function isDiagramCrop(image){
+  const {width,height,data}=image;
+  let longHorizontal=0,longVertical=0;
+  for(let y=8;y<height-8;y+=2){
+    let run=0;
+    for(let x=8;x<width-8;x++){
+      run=data[(y*width+x)*4]<150?run+1:0;
+      if(run>width*.22){longHorizontal++;break;}
+    }
+  }
+  for(let x=8;x<width-8;x+=2){
+    let run=0;
+    for(let y=8;y<height-8;y++){
+      run=data[(y*width+x)*4]<150?run+1:0;
+      if(run>height*.2){longVertical++;break;}
+    }
+  }
+  return longHorizontal>=2&&longVertical>=2;
 }
 function regionLines(image,box,height){
   const {width:w,data}=image,active=[];
@@ -550,9 +588,9 @@ function positionedLines(positioned){
   return groups;
 }
 async function rereadIndexedTableLabel(patch,cell,layer,worker){
-  const match=layer.match(/^(\p{Lu})(\d+(?:[.,]\d+)?)$/u);
+  const match=layer.match(/^(?:\d{1,3})?(\p{Lu}{1,3})(\d+(?:[.,]\d+)?)$/u);
   if(!match||cell.text.replace(/[.,]/g,'.')===layer.replace(/[.,]/g,'.'))return;
-  const glyphs=/^[А-ЯЁ]$/.test(match[1])?'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ':'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const glyphs=/^[А-ЯЁ]+$/.test(match[1])?'АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ':'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const tight=trimCell(patch);
   if(!tight)return;
   try{
@@ -580,7 +618,7 @@ function isNotesHeading(text){
 function tableCaptionLines(positioned){
   return positionedLines(positioned).flatMap(line=>{
     const title=line.tokens.map(token=>token.text).join(' ');
-    const caption=/^\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title)&&tableCaption(title);
+    const caption=/^\s*[«"^]?\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title)&&tableCaption(title);
     return caption?[{caption,top:line.y,height:Math.max(10,...line.tokens.map(token=>token.height))}]:[];
   });
 }
@@ -608,6 +646,76 @@ async function readAppendixCaptions(canvas,positioned,ctx){
   }
   return found;
 }
+function amendmentRowGrids(canvas,from,to){
+  const w=canvas.width,h=to-from;
+  if(h<12)return [];
+  const image=canvas.getContext('2d').getImageData(0,from,w,h);
+  const dark=(x,y)=>image.data[(y*w+x)*4]<170;
+  const rules=[];
+  for(let y=2;y<h-2;y++){
+    let start=-1;
+    for(let x=0;x<=w;x++){
+      if(x<w&&(dark(x,y)||dark(x,y-1)||dark(x,y+1))){if(start<0)start=x;}
+      else if(start>=0){if(x-start>w*.60)rules.push([start,y,x-1]);start=-1;}
+    }
+  }
+  if(!rules.length)return [];
+  const levels=clusterPositions(rules.map(rule=>rule[1]),4);
+  const result=[];
+  for(let i=1;i<levels.length;i++){
+    const top=levels[i-1],bottom=levels[i];
+    const outline=rules.filter(r=>Math.abs(r[1]-top)<5).reduce((best,r)=>r[2]-r[0]>best[2]-best[0]?r:best);
+    const [left,,right]=outline,xs=[];
+    for(let x=left+9;x<right-9;x++){
+      let hits=0,n=0;
+      for(let y=Math.ceil(top)+3;y<bottom-3;y+=2){
+        n++;if(dark(x,y)||dark(x-1,y)||dark(x+1,y))hits++;
+      }
+      if(n>4&&hits/n>.88)xs.push(x);
+    }
+    const columns=[left,...clusterPositions(xs,5),right];
+    if(columns.length<3)continue;
+    result.push({top:from+top,headerTop:from+top,headerStart:from+top,bottom:from+bottom,left,right,columns,
+      lines:levels.map(y=>y+from),fullLines:levels.map(y=>y+from),bodyEdges:[top+from,bottom+from],
+      horizontal:rules.map(([x,y,end])=>[x,y+from,end]),vertical:[],fragment:true});
+  }
+  return result;
+}
+function amendmentDataGrids(image){
+  const {width:w,height:h,data}=image,lines=[];
+  const dark=(x,y)=>data[(y*w+x)*4]<180;
+  for(let y=2;y<h-2;y++){
+    let start=-1;
+    for(let x=0;x<=w;x++){
+      if(x<w&&(dark(x,y-1)||dark(x,y)||dark(x,y+1))){if(start<0)start=x;}
+      else if(start>=0){if(x-start>w*.58)lines.push([start,y,x-1]);start=-1;}
+    }
+  }
+  const edges=clusterPositions(lines.map(l=>l[1]),4);
+  const grids=[];
+  for(let i=1;i<edges.length;i++){
+    const top=edges[i-1],bottom=edges[i];
+    if(bottom-top<10)continue;
+    const outline=lines.filter(l=>Math.abs(l[1]-top)<4).sort((a,b)=>(b[2]-b[0])-(a[2]-a[0]))[0];
+    if(!outline)continue;
+    const xs=[];
+    for(let x=Math.max(2,outline[0]-4);x<=Math.min(w-3,outline[2]+4);x++){
+      let darkRows=0,count=0;
+      for(let y=Math.ceil(top)+3;y<bottom-3;y+=2){
+        count++;if(dark(x,y)||dark(x-1,y)||dark(x+1,y))darkRows++;
+      }
+      if(count>=4&&darkRows/count>.83)xs.push(x);
+    }
+    const columns=clusterPositions(xs,4);
+    if(columns.length<8||columns[0]>outline[0]+8||columns.at(-1)<outline[2]-8)continue;
+    const prior=grids.at(-1);
+    if(prior&&prior.bottom===top&&columns.length===prior.columns.length&&columns.every((x,c)=>Math.abs(x-prior.columns[c])<6)){
+      prior.bottom=bottom;prior.bodyEdges.push(bottom);
+    }else grids.push({fragment:true,left:columns[0],right:columns.at(-1),columns,top,bottom,headerTop:top,
+      headerStart:top,bodyEdges:[top,bottom],horizontal:lines,vertical:[],lines:[],fullLines:[]});
+  }
+  return grids;
+}
 function closedTablesByCaption(canvas,positioned,extraCaptions=[]){
   const captions=[...tableCaptionLines(positioned),...extraCaptions].sort((a,b)=>a.top-b.top);
   const notes=positionedLines(positioned).filter(line=>{
@@ -615,6 +723,21 @@ function closedTablesByCaption(canvas,positioned,extraCaptions=[]){
     return isNotesHeading(heading)||/^о\s*б\s*о\s*з\s*н\s*а\s*ч\s*е\s*н\s*и\s*[ея](?:\s|:|$)/iu.test(heading);
   });
   const tables=[];
+  const lines=positionedLines(positioned);
+  let target=null;
+  for(const [i,line] of lines.entries()){
+    const title=line.tokens.map(t=>t.text).join(' ');
+    const id=title.match(/пункт\s+[\d.]+\s+таблица\s+(\d+(?:\.\d+)*)/iu);
+    if(id)target=id[1];
+    if(!target||!/строку\s+изложить\s+в\s+новой\s+редакции/iu.test(title))continue;
+    const height=Math.max(...line.tokens.map(t=>t.height));
+    const next=lines.slice(i+1).find(l=>/(?:строку|таблицу\s+\d+)\s+изложить/iu.test(l.tokens.map(t=>t.text).join(' ')));
+    if(!next)continue;
+    const from=Math.ceil(line.y+height*.7),to=Math.floor(next.y-height*.9);
+    for(const grid of amendmentRowGrids(canvas,from,to))tables.push({grid,from:grid.top,caption:{id:target,continued:true}});
+  }
+  const fragmentCount=tables.length;
+  const hasFragments=fragmentCount>0;
   for(const [i,entry] of captions.entries()){
     const from=Math.max(0,Math.floor(entry.top-entry.height*.76));
     const next=captions[i+1];
@@ -625,19 +748,20 @@ function closedTablesByCaption(canvas,positioned,extraCaptions=[]){
     if(to<=from+entry.height*3)continue;
     const crop=imageCrop(canvas,0,from,canvas.width,to);
     try{
-      const grid=lineGrid(crop.getContext('2d').getImageData(0,0,crop.width,crop.height),false,true,appendixCaption(entry.caption));
+      const grid=lineGrid(crop.getContext('2d').getImageData(0,0,crop.width,crop.height),false,true,hasFragments||appendixCaption(entry.caption));
       if(!grid||grid.top>entry.height*4||grid.bottom-grid.top<entry.height*2.5)continue;
-      if(captions.length===1&&!appendixCaption(entry.caption)&&grid.columns.length>4&&grid.bodyEdges.length>2)continue;
+      if(!hasFragments&&captions.length===1&&!appendixCaption(entry.caption)&&grid.columns.length>4&&grid.bodyEdges.length>2)continue;
       moveGridY(grid,from);
       tables.push({grid,caption:entry.caption,from});
     }finally{crop.width=crop.height=1;}
   }
-  return {tables,captions};
+  return {tables,captions,expected:captions.length+fragmentCount};
 }
 function moveGridY(grid,from){
   for(const key of ['headerTop','headerStart','top','bottom'])if(grid[key]!=null)grid[key]+=from;
   grid.lines=grid.lines.map(y=>y+from);grid.fullLines=grid.fullLines.map(y=>y+from);
   if(grid.bodyEdges)grid.bodyEdges=grid.bodyEdges.map(y=>y+from);
+  if(grid.regularEdges)grid.regularEdges=grid.regularEdges.map(y=>y+from);
   grid.horizontal=grid.horizontal.map(([left,y,right])=>[left,y+from,right]);
   grid.vertical=grid.vertical.map(([x,top,bottom])=>[x,top+from,bottom+from]);
 }
@@ -651,7 +775,7 @@ function hasFigureCaptionBelow(grid,positioned){
 function captionGrid(canvas,positioned,notesOnly=false){
   const groups=positionedLines(positioned);
   const titleAt=line=>line.tokens.map(token=>token.text).join(' ');
-  const isCaption=title=>/^\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title);
+  const isCaption=title=>/^\s*[«"^]?\s*(?:(?:Продолжение|Окончание)\s+)?т\s*а\s*б\s*л/i.test(title);
   for(let index=0;index<groups.length;index++){
     const line=groups[index];
     const tokens=line.tokens;
@@ -851,6 +975,26 @@ async function recognizeCellTable(canvas,ctx,pageIndex,alongsideFormulas=false){
   try{
     const image=aligned.getContext('2d',{willReadFrequently:true}).getImageData(0,0,aligned.width,aligned.height);
     const positioned=ctx.positionedTokens?.(aligned)||[];
+    const amendment=!alongsideFormulas&&await ctx.amendmentCaption?.();
+    if(amendment){
+      const grids=amendmentDataGrids(image);
+      if(grids.length){
+        const output=[],stats=[],regions=[];
+        const worker=await getOcr(ctx.lang||'rus+eng');
+        await worker.setParameters({tessedit_pageseg_mode:'3'});
+        const whole=await worker.recognize(aligned);
+        for(const grid of grids){
+          const text=await recognizeAlignedTable(aligned,ctx,pageIndex,image,grid,amendment,true,grid.top,whole);
+          if(!text){ctx.pageIssue||='Не удалось восстановить фрагмент изменённой таблицы';continue;}
+          stats.push(ctx.tableStats);output.push(text);regions.push([grid.left,grid.top,grid.right,grid.bottom]);
+        }
+        if(stats.length){
+          ctx.tableStats=stats.length===1?stats[0]:{...stats[0],tables:stats};
+          output.push(await tableRemainder(aligned,regions,ctx));
+          return output.join('\n\n');
+        }
+      }
+    }
     const refined=alongsideFormulas?null:captionGrid(aligned,positioned,true);
     if(refined)return await recognizeAlignedTable(aligned,ctx,pageIndex,image,refined.grid,refined.caption,false,refined.from);
     const extraCaptions=await readAppendixCaptions(aligned,positioned,ctx);
@@ -866,7 +1010,7 @@ async function recognizeCellTable(canvas,ctx,pageIndex,alongsideFormulas=false){
         if(!text)continue;
         output.push(text);stats.push(ctx.tableStats);regions.push([grid.left,from,grid.right,grid.bottom]);
       }
-      if(output.length<closed.captions.length)ctx.pageIssue||='Не восстановлена сетка части таблиц с подписями';
+      if(output.length<closed.expected)ctx.pageIssue||='Не восстановлена сетка части таблиц с подписями';
       if(output.length){
         ctx.tableStats=stats.length===1?stats[0]:{...stats[0],tables:stats};
         if(alongsideFormulas)ctx.tableRegions=regions;
@@ -900,6 +1044,17 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   const worker=await getOcr(ctx.lang||'rus+eng');await worker.setParameters({tessedit_pageseg_mode:'3'});
   const whole=pageOcr||await worker.recognize(canvas),words=whole.data.words||[],candidates=[];
   for(const word of words){const b=word.bbox;if(b&&/^[−+-]?\d+(?:[.,]\d+)?[*%]?$/.test(word.text)&&b.x0>=grid.left&&b.x1<=grid.right&&b.y0>grid.top&&b.y1<grid.bottom)candidates.push({y:(b.y0+b.y1)/2,x:(b.x0+b.x1)/2,h:b.y1-b.y0});}
+  if(grid.regularEdges?.length>=3){
+    const bottom=grid.bottom,pitch=bottom-grid.regularEdges.at(-2);
+    const limit=Math.min(canvas.height,bottom+pitch);
+    const next=(ctx.positionedTokens?.(canvas)||[]).filter(t=>t.x>grid.left&&t.x<grid.right&&
+      t.y>bottom+pitch*.15&&t.y<limit&&/^\d+(?:[.,]\d+)?$/.test(t.text));
+    const occupied=new Set(next.map(t=>grid.columns.findIndex(x=>x>t.x)));
+    const verticals=grid.columns.filter(x=>ruleCoverage(image,x,bottom+2,x,limit-3));
+    if(occupied.size>=Math.max(4,grid.columns.length*.45)&&verticals.length>=grid.columns.length*.55){
+      grid.regularEdges=[...grid.regularEdges,limit];grid.bottom=limit;
+    }
+  }
   const height=candidates.length?candidates.map(v=>v.h).sort((a,b)=>a-b)[Math.floor(candidates.length/2)]:10;
   const bands=clusterPositions(candidates.map(v=>v.y),Math.max(3,height*.5)).filter(y=>new Set(candidates.filter(v=>Math.abs(v.y-y)<height*.6).map(v=>grid.columns.findIndex(x=>x>v.x))).size>=Math.max(3,(grid.columns.length-1)*.35));
   const narrow=grid.columns.length<=6;
@@ -911,7 +1066,9 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   }):[];
   const ruledHeader=knownCaption&&narrow?(headerAboveDecimalRows(grid,ctx.positionedTokens?.(canvas)||[],height)||
     ruledHeaderBoundary(grid,height,fullWidth)):null;
-  const first=grid.bodyEdges?.[0]||ruledHeader||grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||
+  const firstBandData=grid.regularEdges&&(ctx.positionedTokens?.(canvas)||[]).filter(t=>
+    t.y>grid.top&&t.y<grid.regularEdges[1]&&t.x>grid.left&&t.x<grid.right&&/^\d+[.,]\d+$/.test(t.text)).length>=4;
+  const first=firstBandData?grid.top:grid.bodyEdges?.[0]||ruledHeader||grid.fullLines.find(y=>y>grid.top+height*2&&(!bands.length||y<bands[0]-height*.4))||
     (bands.length?grid.lines.filter(y=>y<bands[0]-height*.4).at(-1):grid.lines[1])||grid.top;
   let caption=knownCaption||tableCaption(ctx.sourceText)||tableCaption(whole.data.text);
   const top=Math.min(grid.top,grid.headerTop);
@@ -925,27 +1082,38 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
       await worker.setParameters({tessedit_pageseg_mode:'3'});
     }
   }
+  if(!caption&&ctx.amendmentCaption)caption=await ctx.amendmentCaption();
   const dividers=ruledHeader?fullWidth.filter(y=>y>first+5&&y<grid.bottom-5):narrow?clusterPositions(grid.horizontal
     .filter(([left,y,right])=>y>first+5&&y<grid.bottom-5&&left<=grid.columns[1]+6&&right>=grid.right-6)
     .map(line=>line[1]),4):[];
   const unruledBody=grid.closed&&(grid.bodyEdges.length===2||appendixCaption(caption))&&
     bands.filter(y=>y>first+height*.4).length>=grid.bodyEdges.length;
-  const ruledEdges=unruledBody?null:grid.bodyEdges||(dividers.length>=2?[first,...dividers,grid.bottom]:null);
+  const ruledEdges=unruledBody?null:grid.bodyEdges||grid.regularEdges?.filter(y=>y>=first-1)||(dividers.length>=2?[first,...dividers,grid.bottom]:null);
   const denseBody=ruledEdges?ruledEdges.slice(1).map((edge,i)=>(ruledEdges[i]+edge)/2):pixelRows(canvas,grid,first,height);
   const positionedTokens=ctx.positionedTokens?.(canvas)||[];
   const sparse=sparseBodyCells(image,grid,first,height,positionedTokens,denseBody.length);
   const body=sparse?.centers||denseBody;
-  if(body.length<(grid.closed&&!unruledBody?1:2)||body.length*(grid.columns.length-1)>1400){
+  if(body.length<((grid.closed||grid.fragment)&&!unruledBody?1:2)||body.length*(grid.columns.length-1)>1400){
     if(caption)ctx.pageIssue='Не удалось восстановить ячейки таблицы '+caption.id;
     return null;
   }
   const matrix=sparse?.matrix||bodyCells(image,grid,body,first,height,words,ruledEdges);
   if(grid.closed&&!sparse)mergeBodyColumns(matrix,image);
   const headerGrid=caption?.continued?{...grid,headerTop:grid.top}:grid;
-  const headers=headerCells(image,headerGrid,first,caption?.continued?(grid.right-grid.left)*.075:18);
-  const sectionRows=sparse?sparse.sections.filter(Boolean).length:0;
+  const headers=grid.fragment?{rows:[],cells:[]}:headerCells(image,headerGrid,first,caption?.continued?(grid.right-grid.left)*.075:18);
+  const sections=sparse?sparse.sections:matrix.map(row=>{
+    if(!grid.regularEdges||row.some(cell=>cell.skip||cell.span!==1))return false;
+    const left=row[0],top=left.bbox[1],bottom=left.bbox[3];
+    const tokens=positionedTokens.filter(t=>t.x>grid.left&&t.x<grid.right&&t.y>top&&t.y<bottom);
+    if(!tokens.some(t=>/[а-яё]{3}/iu.test(t.text))||tokens.some(t=>/^\d+[.,]\d+$/.test(t.text)))return false;
+    if(grid.columns.slice(1,-1).some(x=>ruleCoverage(image,x,top+2,x,bottom-2)))return false;
+    left.bbox[2]=grid.right;left.colspan=row.length;left.multiline=true;
+    for(const cell of row.slice(1))cell.skip=true;
+    return true;
+  });
+  const sectionRows=sections.filter(Boolean).length;
   const dataRows=body.length-sectionRows;
-  ctx.tableStats={layout:TABLE_LAYOUT_VERSION,rows:dataRows,columns:grid.columns.length-1,headerRows:headers.rows.length-1,headers:headers.cells};
+  ctx.tableStats={layout:TABLE_LAYOUT_VERSION,rows:dataRows,columns:grid.columns.length-1,headerRows:Math.max(0,headers.rows.length-1),headers:headers.cells};
   if(sectionRows)ctx.tableStats.sectionRows=sectionRows;
   if(grid.needsReview)ctx.pageIssue||='Не удалось отделить примечания от строк таблицы';
   const crop=imageCrop(canvas,grid.left,Math.min(grid.top,grid.headerTop),grid.right,grid.bottom),
@@ -957,7 +1125,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   const tokensInCell=box=>positionedTokens.filter(word=>word.x>box[0]+3&&word.x<box[2]-3&&word.y>box[1]+2&&word.y<box[3]-2);
   const render=async(box,fullResolutionOnly=false)=>ctx.renderTablePatch?
     ctx.renderTablePatch(canvas,box,fullResolutionOnly):{canvas:imageCrop(canvas,...box,2),scale:2};
-  const formulaLinks=[];
+  const formulaLinks=[],cellLinks=[];
   const numeric=/^[±−+-]?\s*\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
   const same=s=>String(s||'').replace(/\s/g,'').replace(/,/g,'.');
   const read=async(patch,header=false,body=false)=>{
@@ -1187,6 +1355,18 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
             else await rereadIndexedTableLabel(patch,cell,values.join(''),worker);
           }
           const alt=cell.alt.replace(/^[|\s]+|[|\s]+$/g,'');
+          const identifier=values.join('').replace(/\s/g,'');
+          if(!cell.c&&/^\d{1,3}[А-ЯЁA-Z]{1,3}\d{1,3}$/u.test(identifier)&&alt===identifier){
+            cell.identifierVerified=true;
+            if(cell.text!==alt){
+              cell.firstReading=cell.text;cell.text=alt;cell.cellAgreement='PDF + OCR марки на странице';
+            }
+          }
+          if(!cell.c&&!cell.identifierVerified&&/^\d{1,3}[А-ЯЁA-Z]{1,3}\d{1,3}$/u.test(identifier)&&cell.text!==identifier){
+            cell.sourceIdentifier=identifier;
+            await rereadIndexedTableLabel(patch,cell,identifier,worker);
+            cell.identifierVerified=cell.text===identifier;
+          }
           const layer=values.length===1&&numeric.test(values[0])?values[0]:'';
           if(!ctx.math&&!cell.empty&&clearCellRules(patch)){
             const clean=await read(patch,cell.multiline,true);
@@ -1226,8 +1406,72 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
           }
           const dash=/^[-–—−]$/;
           const cpuDash=dash.test(cell.text),altDash=cell.alt.replace(/[|\s]/g,'');
+          if(!cell.text&&!/[\p{L}\d]/u.test(alt+values.join(''))){
+            const insetX=Math.min(12,(b[2]-b[0])*.08),insetY=Math.min(10,(b[3]-b[1])*.1);
+            const inside=imageCrop(canvas,b[0]+insetX,b[1]+insetY,b[2]-insetX,b[3]-insetY,2);
+            try{if(printedDash(inside)){cell.text='—';cell.empty=false;cell.dash=true;}}
+            finally{inside.width=inside.height=1;}
+          }
+          if(!cell.text&&values.length===1&&dash.test(values[0])&&(!altDash||dash.test(altDash)||altDash==='_')){
+            const t=positioned[0],x=(t.x-cellBox[0])*k,y=(t.y-cellBox[1])*k;
+            const width=Math.max(t.width*k,height*k),pad=Math.max(6,height*k*.65);
+            const x0=Math.max(0,x-width*.65-pad),x1=Math.min(patch.width,x+width*.65+pad);
+            const y0=Math.max(0,y-pad),y1=Math.min(patch.height,y+pad);
+            if(x1>x0&&y1>y0){
+              const focus=imageCrop(patch,x0,y0,x1,y1);
+              try{if(printedDash(focus)){cell.text=values[0];cell.empty=false;cell.dash=true;}}
+              finally{focus.width=focus.height=1;}
+            }
+          }
+          if(!cell.text&&dash.test(altDash)){
+            const word=words.find(w=>dash.test(w.text.trim())&&w.bbox&&
+              w.bbox.x0>=b[0]&&w.bbox.x1<=b[2]&&w.bbox.y0>=b[1]&&w.bbox.y1<=b[3]);
+            if(word){
+              const pad=Math.max(5,height*.45),g=word.bbox;
+              const around=imageCrop(canvas,Math.max(b[0]+2,g.x0-pad),Math.max(b[1]+2,g.y0-pad),
+                Math.min(b[2]-2,g.x1+pad),Math.min(b[3]-2,g.y1+pad),2);
+              try{if(printedDash(around)){cell.text=altDash;cell.empty=false;cell.dash=true;}}
+              finally{around.width=around.height=1;}
+            }
+          }
+          if(!cell.text&&!cell.empty&&cell.multiline&&isDiagramCrop(patch.getContext('2d').getImageData(0,0,patch.width,patch.height))){
+            cell.image=pageAssetName(ctx,pageIndex,'cell');ctx.assets[cell.image]=await canvasBlob(patch);
+            cell.text='Схема, см. вырезку строки '+(cell.r+1)+', столбца '+(cell.c+1);
+          }
           if(cpuDash||(!/\d/.test(cell.text)&&(dash.test(altDash)||!cell.text))){
-            if(cpuDash||printedDash(patch)){
+            if(!cell.text&&!/[\p{L}\d]/u.test(alt+values.join(''))){
+            const insetX=Math.min(12,(b[2]-b[0])*.08),insetY=Math.min(10,(b[3]-b[1])*.1);
+            const inside=imageCrop(canvas,b[0]+insetX,b[1]+insetY,b[2]-insetX,b[3]-insetY,2);
+            try{if(printedDash(inside)){cell.text='—';cell.empty=false;cell.dash=true;}}
+            finally{inside.width=inside.height=1;}
+          }
+          if(!cell.text&&values.length===1&&dash.test(values[0])&&(!altDash||dash.test(altDash)||altDash==='_')){
+            const t=positioned[0],x=(t.x-cellBox[0])*k,y=(t.y-cellBox[1])*k;
+            const width=Math.max(t.width*k,height*k),pad=Math.max(6,height*k*.65);
+            const x0=Math.max(0,x-width*.65-pad),x1=Math.min(patch.width,x+width*.65+pad);
+            const y0=Math.max(0,y-pad),y1=Math.min(patch.height,y+pad);
+            if(x1>x0&&y1>y0){
+              const focus=imageCrop(patch,x0,y0,x1,y1);
+              try{if(printedDash(focus)){cell.text=values[0];cell.empty=false;cell.dash=true;}}
+              finally{focus.width=focus.height=1;}
+            }
+          }
+          if(!cell.text&&dash.test(altDash)){
+            const word=words.find(w=>dash.test(w.text.trim())&&w.bbox&&
+              w.bbox.x0>=b[0]&&w.bbox.x1<=b[2]&&w.bbox.y0>=b[1]&&w.bbox.y1<=b[3]);
+            if(word){
+              const pad=Math.max(5,height*.45),g=word.bbox;
+              const around=imageCrop(canvas,Math.max(b[0]+2,g.x0-pad),Math.max(b[1]+2,g.y0-pad),
+                Math.min(b[2]-2,g.x1+pad),Math.min(b[3]-2,g.y1+pad),2);
+              try{if(printedDash(around)){cell.text=altDash;cell.empty=false;cell.dash=true;}}
+              finally{around.width=around.height=1;}
+            }
+          }
+          if(!cell.text&&!cell.empty&&cell.multiline&&isDiagramCrop(patch.getContext('2d').getImageData(0,0,patch.width,patch.height))){
+            cell.image=pageAssetName(ctx,pageIndex,'cell');ctx.assets[cell.image]=await canvasBlob(patch);
+            cell.text='Схема, см. вырезку строки '+(cell.r+1)+', столбца '+(cell.c+1);
+          }
+          if(cpuDash||printedDash(patch)){
               cell.dash=true;cell.text=cpuDash?cell.text:dash.test(altDash)?altDash:'—';cell.empty=false;
             }
           }
@@ -1392,7 +1636,7 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
     }finally{if(input!==patch.canvas)input.width=input.height=1;patch.canvas.width=patch.canvas.height=1;}
   }
     const number=/^[−+-]?\d+(?:[.,]\d+)?(?:\/\d+(?:[.,]\d+)?)?(?:[А-ЯA-Zа-яa-z]\d*)?\*?$/;
-    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&!cell.numberVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
+    const review=matrix.flat().filter(cell=>!cell.skip&&!cell.empty&&!cell.dash&&!cell.separatorVerified&&!cell.numberVerified&&!cell.identifierVerified&&(cell.c===0||cell.span>1||cell.confidence<88||!number.test(cell.text)||number.test(cell.alt)&&same(cell.text)!==same(cell.alt)));
     ctx.tableStats.reviewedCells=review.length;
     for(let n=0;n<review.length&&!ctx.glmMemoryExhausted;n++){
       await waitResume(ctx);const cell=review[n],b=cell.bbox,box=[localBoundaryX(image,b[0],b[1],b[3])+3,b[1]+2,localBoundaryX(image,b[2],b[1],b[3])-3,b[3]-2];
@@ -1404,7 +1648,19 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
         const text=await glmRecognize(patch.canvas,ctx);cell.tesseract=cell.text;cell.neural=text;
         if(!text.trim()||/Генерация остановлена/.test(text)||text.length>=400)continue;
         const clean=value=>value.replace(/^```\w*\s*|```\s*$/g,'').trim().replace(/^\$\$?|\$\$?$/g,'').trim().replace(/\s+/g,' ');
-        cell.text=clean(text);cell.engine='GLM';
+        const cleaned=clean(text);
+        if(!cleaned){
+          if(cell.multiline&&patch.canvas.height>80&&patch.canvas.width>80){
+            const asset=pageAssetName(ctx,pageIndex,'cell');
+            ctx.assets[asset]=await canvasBlob(patch.canvas);
+            cell.image=asset;
+            const ink=patch.canvas.getContext('2d').getImageData(0,0,patch.canvas.width,patch.canvas.height);
+            if(isDiagramCrop(ink))cell.text='Схема, см. вырезку строки '+(cell.r+1)+', столбца '+(cell.c+1);
+            else if(cell.confidence<80)cell.text='';
+          }
+          continue;
+        }
+        cell.text=cleaned;cell.engine='GLM';
         const ambiguous=cell.text.match(/^(\d+)[eE](\d+)$/);
         if(ambiguous&&same(cell.tesseract)!==same(cell.text)){
           const tight=trimCell(patch.canvas);
@@ -1432,10 +1688,11 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
   for(let r=0;r<headers.rows.length-1;r++){out+='<tr>';for(const cell of headers.cells.filter(c=>c.r===r).sort((a,b)=>a.c-b.c))out+='<th'+(cell.span>1?' rowspan="'+cell.span+'"':'')+(cell.colspan>1?' colspan="'+cell.colspan+'"':'')+'>'+htmlEscape(cell.text?'[?'+cell.text+']':cell.empty?'':'[?непрочитанная шапка]')+'</th>';out+='</tr>';}
   out+='</thead><tbody>';
   for(const [i,row] of matrix.entries()){
-    const tag=sparse?.sections[i]?'th':'td';
+    const tag=sections[i]?'th':'td';
     out+='<tr>';
     for(const cell of row){
       if(cell.skip)continue;
+      if(cell.image)cellLinks.push('![Ячейка, строка '+(cell.r+1)+', столбец '+(cell.c+1)+']('+cell.image+')');
       const text=cell.empty?'':cell.text?'[?'+cell.text+']':'[?непрочитанная ячейка]';
       out+='<'+tag+(cell.span>1?' rowspan="'+cell.span+'"':'')+
         (cell.colspan>1?' colspan="'+cell.colspan+'"':'')+'>'+htmlEscape(text)+'</'+tag+'>';
@@ -1447,5 +1704,5 @@ async function recognizeAlignedTable(canvas,ctx,pageIndex,image,grid,knownCaptio
     ctx.pageIssue||='Примечания попали в строки таблицы';
   }
   if(formulaLinks.length)ctx.formulaStats={layout:FORMULA_LAYOUT_VERSION,count:(ctx.formulaStats?.count||0)+formulaLinks.length};
-  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+dataRows+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+[...formulaLinks,prose].join('\n\n');
+  return out+'</tbody></table>\n\n<!-- таблица '+id+': строк '+dataRows+', столбцов '+(grid.columns.length-1)+' -->\n\n[?Границы и объединения ячеек требуют сверки по вырезке]\n\n'+[...formulaLinks,...cellLinks,prose].join('\n\n');
 }

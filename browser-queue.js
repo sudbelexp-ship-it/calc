@@ -8,7 +8,7 @@ function updateJob(job){
   job.start.disabled=['running','pausing','queued','done'].includes(job.state);
   job.pause.disabled=!['running','queued'].includes(job.state);
   const n=job.complete||0,t=job.total;
-  job.count.textContent='Обработано страниц: '+n+' / '+(t??'—')+(t?' · '+Math.floor(n/t*100)+'%':'');
+  job.count.textContent='Готово страниц: '+n+' / '+(t??'—')+(t?' · '+Math.floor(n/t*100)+'%':'');
   job.bar.style.width=(t?Math.floor(n/t*100):0)+'%';
   job.bar.parentNode.setAttribute('aria-valuenow',String(n));
   job.bar.parentNode.setAttribute('aria-valuemax',String(t||1));
@@ -33,17 +33,17 @@ async function countPages(job){
   if(['djvu','djv'].includes(extOf(job.file.name))){let worker;try{worker=await openDjvu(job.file);job.total=await worker.doc.getPagesQuantity().run();}catch(e){if(job.state==='ready')job.badge.textContent=e.message;}finally{worker?.terminate();updateJob(job);}return;}
   if(extOf(job.file.name)!=='pdf'){job.total=1;updateJob(job);return;}
   if(job.file.size>250*1024*1024){job.badge.textContent='Лимит файла: 250 МБ';return;}
-  let pdf;try{await initPdf();pdf=await pdfjsLib.getDocument({data:await job.file.arrayBuffer(),isEvalSupported:false}).promise;job.total=pdf.numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await pdf?.destroy();updateJob(job);}
+  let loadingTask;try{await initPdf();loadingTask=pdfjsLib.getDocument(pdfOptions(await job.file.arrayBuffer()));job.total=(await loadingTask.promise).numPages;}catch(e){if(job.state==='ready')job.badge.textContent='Не удалось прочитать PDF: '+e.message;}finally{await loadingTask?.destroy();updateJob(job);}
 }
 function header(file,total){return ['---','обозначение:','название:','редакция:','дата_введения:','источник_скана: '+JSON.stringify(file.name),'страниц: '+(total||1),'распознано: '+new Date().toISOString().slice(0,10),'---','','> Автоматический черновик. Числа [?…] и формулы не сверены.',''].join('\n');}
 async function runJob(job){
   if(!job.options)job.options=settings();
-  job.state='running';job.badge.className='badge';job.result.replaceChildren();updateJob(job);
+  job.complete=0;job.state='running';job.badge.className='badge';job.result.replaceChildren();updateJob(job);
   job.shortName.disabled=true;
   const ctx={...job.options,cached:0,ocrPages:0,
     status:s=>{if(job.state!=='removed')job.badge.textContent=s;},
     progress:()=>{},onProgress:null,
-    pageProgress:(n,t)=>{job.complete=n;job.total=t;updateJob(job);},
+    pageProgress:(n,t)=>{job.complete=Math.max(0,n-(ctx.incomplete||0));job.total=t;updateJob(job);},
     isRemoved:()=>job.state==='removed',shouldPause:()=>job.state==='pausing'};
   job.ctx=ctx;
   try{
@@ -58,16 +58,25 @@ async function runJob(job){
     const md=header(job.file,ctx.total)+'\n'+(ctx.total?raw:flagNumbers(raw));
     if(ctx.dir)await writeFile(ctx.dir,'document.md',md);
     if(job.state==='removed')return;
-    job.state=ctx.incomplete?'error':'done';job.complete=job.total=ctx.total||1;job.badge.className='badge '+(ctx.incomplete?'bad':'ok');
+    job.state=ctx.incomplete?'error':'done';job.total=ctx.total||1;job.complete=job.total-(ctx.incomplete||0);job.badge.className='badge '+(ctx.incomplete?'bad':'ok');
     const partial=ctx.glmMemoryExhausted?' · GLM‑OCR не хватило памяти':' — повторите распознавание';
     job.badge.textContent=(ctx.incomplete?'Неполный результат: '+ctx.incomplete+' стр.'+partial:'Готово')+(ctx.cached?' · из сохранения: '+ctx.cached+' стр.':'');
+    if(ctx.issues?.length){
+      const details=document.createElement('details'),summary=document.createElement('summary');
+      summary.textContent='Страницы, требующие проверки';
+      details.append(summary);
+      for(const issue of ctx.issues){
+        const line=document.createElement('p');line.textContent='Лист '+issue.page+' — '+issue.reason;details.append(line);
+      }
+      job.result.append(details);
+    }
     const ta=document.createElement('textarea');ta.value=md;ta.spellcheck=false;ta.setAttribute('aria-label','Markdown для '+job.file.name);
     const acts=document.createElement('div');acts.className='acts';
     const copy=jobButton('Копировать',()=>navigator.clipboard.writeText(ta.value).catch(e=>alert(e.message)));
     const dl=jobButton('Скачать .md',()=>download(safeName(job.file.name)+'.md',ta.value));
     const zip=jobButton('Скачать с изображениями (.zip)',async()=>{zip.disabled=true;try{const z=new JSZip();z.file('document.md',ta.value);z.file('Промпт для ИИ.txt',AI_PROMPT);for(let i=1;i<=(ctx.total||1);i++){const p=await dbGet(ctx.key+':'+i);if(p?.image)z.file('pages/p'+String(i).padStart(3,'0')+'.jpg',p.image);for(const [path,blob]of Object.entries(p?.assets||{}))z.file(path,blob);}const a=document.createElement('a');a.href=URL.createObjectURL(await z.generateAsync({type:'blob',compression:'STORE'}));a.download=ctx.label+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),30000);}catch(e){alert(e.message);}finally{zip.disabled=false;}});
     const prompt=jobButton('Промпт для ИИ',()=>navigator.clipboard.writeText(AI_PROMPT).catch(e=>alert(e.message)));
-    acts.append(copy,dl,zip,prompt);job.result.append(ta,acts);done.push({name:job.file.name,ta,card:job.card});bulk.hidden=false;
+    acts.append(copy,dl,zip,prompt);job.result.append(ta,acts);done.splice(0,done.length,...done.filter(entry=>entry.card!==job.card),{name:job.file.name,ta,card:job.card});bulk.hidden=false;
   }catch(e){if(job.state!=='removed'){job.state=e.name==='PauseError'?'paused':'error';job.badge.className='badge '+(job.state==='error'?'bad':'');job.badge.textContent=e.message;}}
   finally{job.ctx=null;job.shortName.disabled=job.state==='done';updateJob(job);}
 }

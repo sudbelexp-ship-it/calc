@@ -1,3 +1,7 @@
+function pdfOptions(data){
+  const base='https://cdn.jsdelivr.net/npm/pdfjs-dist@6.5.438/';
+  return {data,isEvalSupported:false,wasmUrl:base+'wasm/',cMapUrl:base+'cmaps/',cMapPacked:true,standardFontDataUrl:base+'standard_fonts/',iccUrl:base+'iccs/'};
+}
 function hasScanLayer(ops,area,styles={}){
   const O=pdfjsLib.OPS;let matrix=[1,0,0,1,0,0];const stack=[];
   if(Object.values(styles).some(s=>/glyphless/i.test(s.fontFamily||'')))return true;
@@ -38,14 +42,30 @@ async function renderPdfPatch(page,viewport,aligned,box,fullResolutionOnly=false
   const m=aligned.pageMatrix||[1,0,0,1,0,0];
   const patch=document.createElement('canvas');patch.width=width;patch.height=height;
   try{
-    await page.render({canvasContext:patch.getContext('2d'),viewport:detail,
+    await page.render({canvas:patch,canvasContext:patch.getContext('2d'),viewport:detail,
       transform:[m[0],m[1],m[2],m[3],(m[4]-box[0])*scale,(m[5]-box[1])*scale],intent:'print'}).promise;
     return {canvas:patch,scale};
   }catch(e){patch.width=patch.height=1;throw e;}
 }
+async function amendmentTableCaption(pdf,index,text){
+  const continuation=/продолжение\s+изменения/iu;
+  if(!continuation.test(text)||/(?:^|\s)таблица\s+\d/iu.test(text))return null;
+  for(let i=index-1;i>=1;i--){
+    const preceding=await pdf.getPage(i);
+    const items=await preceding.getTextContent();
+    const prose=items.items.map(item=>item.str).join(' ');
+    const instructions=[...prose.matchAll(/(?:пункт\s+\d+[.\d]*\s*\.?\s*)таблица\s+(\d+(?:\.\d+)*)\s*\./giu)];
+    if(instructions.length&&/(?:исключить|дополнить|изложить)\s+строк/iu.test(prose.slice(instructions.at(-1).index))){
+      return {id:instructions.at(-1)[1],continued:true};
+    }
+    if(!continuation.test(prose)||/таблиц[ау]\s+\d/iu.test(prose))break;
+  }
+  return null;
+}
 async function convPdf(buf, ctx){
   await initPdf();
-  const pdf=await pdfjsLib.getDocument({data:buf,isEvalSupported:false}).promise;
+  const loadingTask=pdfjsLib.getDocument(pdfOptions(buf));
+  const pdf=await loadingTask.promise;
   ctx.total=pdf.numPages;
   ctx.pageProgress?.(0,pdf.numPages);
   const parts=[];
@@ -69,7 +89,7 @@ async function convPdf(buf, ctx){
         const scale=Math.min(3,Math.sqrt((math?GLM_PX:MAX_PX)/(base.width*base.height)));
         let vp=page.getViewport({scale});cv=document.createElement('canvas');cv.width=Math.max(1,Math.floor(vp.width));cv.height=Math.max(1,Math.floor(vp.height));
         ctx.renderTablePatch=(aligned,box,fullResolutionOnly)=>renderPdfPatch(page,vp,aligned,box,fullResolutionOnly);
-        await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
+        await page.render({canvas:cv,canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
         const content=await page.getTextContent();const items=content.items;
         ctx.positionedTokens=aligned=>items.flatMap(item=>{
           const text=item.str?.trim();
@@ -86,7 +106,7 @@ async function convPdf(buf, ctx){
           return [a?{...token,x:a[0]*x+a[2]*y+a[4],y:a[1]*x+a[3]*y+a[5]}:token];
         });
         let text=pageToMarkdown(items);
-        ctx.sourceText=text;
+        ctx.sourceText=text;ctx.amendmentCaption=()=>amendmentTableCaption(pdf,i,text);
         let foreignLayer=false;
         if(ctx.ocr&&!ctx.ocrAll&&text.trim()){
           const ops=await page.getOperatorList();
@@ -99,12 +119,12 @@ async function convPdf(buf, ctx){
         const grid=needsGrid?lineGrid(cv.getContext('2d',{willReadFrequently:true}).getImageData(0,0,cv.width,cv.height)):null;
         const structuredLayer=Boolean(grid&&grid.columns.length>=4);
         const captionedTable=math&&!structuredLayer&&tableCaptionLines(ctx.positionedTokens(cv)).length>0;
-        if(math&&(captionedTable||structuredLayer&&grid.columns.length<7)){
+        if(math&&(captionedTable||structuredLayer&&grid.columns.length<7||/продолжение\s+таблицы/iu.test(text))){
           const detailScale=Math.min(3,Math.sqrt(MAX_PX/(base.width*base.height)));
           if(detailScale>scale){
             vp=page.getViewport({scale:detailScale});
             cv.width=Math.floor(vp.width);cv.height=Math.floor(vp.height);delete cv.pageMatrix;
-            await page.render({canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
+            await page.render({canvas:cv,canvasContext:cv.getContext('2d'),viewport:vp,intent:'print'}).promise;
             const upright=rotatePageCanvas(cv,items,vp);if(upright!==cv){cv.width=cv.height=1;cv=upright;}
           }
         }
@@ -125,7 +145,7 @@ async function convPdf(buf, ctx){
           if(table||formulas){text=[formulas,table].filter(Boolean).join('\n\n');ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else if(math){text=await glmPageText(cv,ctx);if(/\$\$/.test(text))ctx.pageIssue||='Выносные формулы без отдельных вырезок';ctx.ocrPages=(ctx.ocrPages||0)+1;}
           else {text=await ocrImage(cv,ctx);ctx.ocrPages=(ctx.ocrPages||0)+1;}
-          if(!table&&(tableCaptionLines(ctx.positionedTokens(cv)).length||!formulas&&(tableCaption(ctx.sourceText)||tableCaption(text)))){
+          if(!table&&(tableCaptionLines(ctx.positionedTokens(cv)).length||!formulas&&text.split(/\r?\n/).some(line=>/^\s*(?:(?:продолжение|окончание)\s+)?таблица\s+(?:№\s*)?(?:[А-Я]\.)?\d+(?:\.\d+)*(?:\s*[—–-]|\s*$)/iu.test(line)))){
             ctx.pageIssue||='Не удалось восстановить ячейки таблицы';
           }
         }
@@ -139,5 +159,5 @@ async function convPdf(buf, ctx){
       }finally{if(cv)cv.width=cv.height=1;page.cleanup();}
     }
     ctx.progress(1);return parts.join('\n\n');
-  }finally{await pdf.destroy();}
+  }finally{await loadingTask.destroy();}
 }

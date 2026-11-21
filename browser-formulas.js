@@ -1,10 +1,10 @@
 function formulaLabel(text){
-  const label=text.trim().match(/^\(\s*(\d+\s*[.,]\s*\d+|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)$/iu);
+  const label=text.trim().match(/^\(\s*(\d+(?:\s*[.,]\s*\d+)?|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)$/iu);
   return label?'('+label[1].replace(/\s/g,'').replace(',','.')+')':null;
 }
 function formulaRegions(items,viewport,w,h,alignment){
   const found=[];
-  for(const it of items){const match=it.str?.match(/\(\s*(?:\d+\s*[.,]\s*\d+|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)[.,]?\s*$/iu);if(!match)continue;const label=formulaLabel(match[0].match(/\([^)]+\)/)[0]);
+  for(const it of items){const match=it.str?.match(/\(\s*(?:\d+(?:\s*[.,]\s*\d+)?|[A-ZА-ЯЁ]\s*[.,]?\s*\d+)\s*\)[.,]?\s*$/iu);if(!match)continue;const label=formulaLabel(match[0].match(/\([^)]+\)/)[0]);
     const base=pdfjsLib.Util.transform(viewport.transform,it.transform);
     const m=alignment?pdfjsLib.Util.transform(alignment,base):base;const fh=Math.max(8,Math.hypot(m[2],m[3]));
     const tagX=m[4]+(it.width||0)*viewport.scale*match.index/it.str.length;if(tagX<w*.70)continue;
